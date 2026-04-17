@@ -1,0 +1,28 @@
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+
+# macOS
+.DS_Store
+
+# Truman runtime state
+truman/truman.db
+truman/truman.db-wal
+truman/truman.db-shm
+realtimesst.log
+*.log
+
+# graphify caches (keep outputs, ignore intermediate)
+graphify-out/cache/
+graphify-out/.graphify_*
+truman/graphify-out/cache/
+truman/graphify-out/.graphify_*

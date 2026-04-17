@@ -1,0 +1,87 @@
+# TRUMAN — Build Log
+### Every decision, every file, every level. Logged as we go.
+
+---
+
+## DECISIONS & ARCHITECTURE
+
+| Decision | Choice | Reason |
+|---|---|---|
+| Agent Framework | LangChain + LangGraph | Already in stack, LangSmith native, industry standard |
+| Brain | GPT-4o-mini | Capable for all tasks, cheap on Om's OpenAI credits |
+| Memory | System Prompt + Mem0 + Tools | Dynamic, self-updating — Truman learns and grows |
+| TTS | OpenAI TTS | Free with existing API, ElevenLabs added later for celebrity voices |
+| STT | Whisper-1 | Already in stack, 99 languages |
+| Tracing | LangSmith | Native to LangChain, professor can verify every step |
+| Voice Auth | Pyannote.audio | Speaker verification, Om's voice print |
+| Browser | Playwright | Full automation, login, navigation |
+| No Fine-tuning | — | Info changes too fast, overkill, expensive |
+| No RAG | — | Static retrieval, Mem0 is smarter and dynamic |
+
+---
+
+## BUILD LEVELS
+
+| Level | Name | Status |
+|---|---|---|
+| 1 | Truman Comes Alive — core voice loop, FastAPI, LangSmith | ✅ Done |
+| 2 | Security & Awareness — voice auth, cough + clap detection, unknown voice protocol | ✅ Done |
+| 3 | Core Tools — web search, weather, news, Gmail, Twilio | Pending |
+| 4 | Dev Tools — write/read files, execute Python, GitHub, build + deploy to Netlify/Vercel | Pending |
+| 5 | Forex Brain — OANDA scan, morning email, logic gap finder | Pending |
+| 6 | Browser Automation — Playwright, login, Google accounts | Pending |
+| 7 | Media & Productivity — PDF to audio, iCloud, reminders, Sheets | Pending |
+| 8 | Always On — LaunchAgent, boots on startup, silent background | Pending |
+| 9 | Mission 1 — Truman builds Sprint 6 (MAYA agent upgrade) | Pending |
+
+---
+
+## LOG
+
+### 2026-04-11
+
+#### Planning & Setup
+- Project named **Truman**
+- README written — full architecture, capabilities, missions, tech stack
+- Architecture finalized: LangChain + LangGraph + GPT-4o-mini + Mem0 + OpenAI TTS + Whisper
+- Memory strategy: System Prompt (identity) + Mem0 (dynamic) + Tools (real-time lookup)
+- Conda env `truman` created on Python 3.11
+- All packages installed: openai, langchain, langgraph, langsmith, mem0ai, pyaudio, pygame, SpeechRecognition, resemblyzer, tensorflow, tensorflow-hub, ddgs, requests, pyannote.audio
+
+#### Level 1 — Truman Comes Alive ✅
+- `config.py` — loads all env vars (OpenAI, LangSmith, Mem0, HuggingFace)
+- `voice.py` — SpeechRecognition for STT, Whisper-1 transcription, OpenAI TTS + pygame playback
+- `agent.py` — LangGraph `create_react_agent` with GPT-4o-mini, Mem0 memory, LangSmith tracing, session chat history
+- `tools.py` — web search (DuckDuckGo/ddgs) + weather (wttr.in), no API key needed
+- `main.py` — voice loop, silence detection, shutdown commands
+- `seed_memory.py` — seeded 18 memories about Om into Mem0
+- Fixed: ddgs package rename, Mem0 v2 filter API, LangChain 1.x agent API changes
+- Fixed: Whisper hallucination on silence (min speech duration check)
+- Fixed: conversation history — Truman remembers within session
+
+#### Level 2 — Security & Awareness ✅
+- `auth.py` — Resemblyzer voice enrollment + verification. Om's voice stored as `om_voice.npy`. Threshold: 0.60
+- `sound_classifier.py` — YAMNet (Google, 521 sound classes) replaces fake amplitude heuristic. Detects real cough and clap sounds.
+- `lockdown.py` — unauthorized voice → 6-second fullscreen pygame visual (aggressive nodes, matrix rain, flashing warning) → `pmset displaysleepnow` locks Mac
+- `ambient.py` — background ambient monitoring thread
+- Cough/clap responses: routed through agent for natural dynamic responses, not hardcoded
+- Unknown voice protocol: challenge → birthdate → lockdown if wrong
+- Speaking flag: ambient detection mutes while Truman is talking
+
+#### Known Issues / To Tune
+- Voice auth threshold (0.60) may need adjustment per environment
+- Clap detection accuracy depends on YAMNet confidence — test and tune `CONFIDENCE_THRESHOLD` in `sound_classifier.py`
+
+---
+
+
+
+
+1. PWA (30 min work, easiest)
+Add a manifest file → Chrome shows "Install Truman" button → becomes its own app icon in your dock. Runs in its own window, no browser tab needed. Can launch on Mac startup. Still uses WebRTC AEC underneath. Same code we're about to write.
+
+2. Electron wrapper (few hours)
+Wrap the orb in a native Mac app. Looks like a regular Mac app, lives in dock or menu bar. Best UX, feels like a real desktop app. Same WebRTC AEC inside.
+
+3. Menu bar app (advanced)
+Tiny icon in your Mac menu bar (top-right). Click it → starts session. Hidden Chromium does the audio. Cleanest UX possible — Truman lives in your menu bar always, no window at all.

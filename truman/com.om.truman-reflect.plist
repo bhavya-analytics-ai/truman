@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  com.om.truman-reflect.plist
+  Runs Truman's nightly reflection at 2:00 AM every day.
+  Summarizes yesterday's sessions, promotes durable facts to Mem0.
+
+  Install:
+    cp com.om.truman-reflect.plist ~/Library/LaunchAgents/
+    launchctl load  ~/Library/LaunchAgents/com.om.truman-reflect.plist
+
+  Uninstall:
+    launchctl unload ~/Library/LaunchAgents/com.om.truman-reflect.plist
+    rm               ~/Library/LaunchAgents/com.om.truman-reflect.plist
+
+  Run manually any time:
+    /opt/anaconda3/envs/truman/bin/python /Users/ompandya/Desktop/friday/truman/reflect.py
+
+  Inspect logs:
+    tail -f /tmp/truman-reflect.log
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.om.truman-reflect</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/opt/anaconda3/envs/truman/bin/python</string>
+        <string>/Users/ompandya/Desktop/friday/truman/reflect.py</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/ompandya/Desktop/friday/truman</string>
+
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>2</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <false/>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/truman-reflect.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/tmp/truman-reflect.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/anaconda3/envs/truman/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+</dict>
+</plist>

@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  com.om.truman-scheduler.plist
+  Fires Truman's scheduler.py every 60 seconds, regardless of whether the
+  main Truman process is running.
+
+  Install:
+    cp com.om.truman-scheduler.plist ~/Library/LaunchAgents/
+    launchctl load  ~/Library/LaunchAgents/com.om.truman-scheduler.plist
+
+  Uninstall:
+    launchctl unload ~/Library/LaunchAgents/com.om.truman-scheduler.plist
+    rm               ~/Library/LaunchAgents/com.om.truman-scheduler.plist
+
+  Inspect:
+    launchctl list | grep truman
+    tail -f /tmp/truman-scheduler.log
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.om.truman-scheduler</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/opt/anaconda3/envs/truman/bin/python</string>
+        <string>/Users/ompandya/Desktop/friday/truman/scheduler.py</string>
+    </array>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/ompandya/Desktop/friday/truman</string>
+
+    <key>StartInterval</key>
+    <integer>60</integer>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/truman-scheduler.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/tmp/truman-scheduler.log</string>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/anaconda3/envs/truman/bin:/usr/local/bin:/usr/bin:/bin</string>
+    </dict>
+</dict>
+</plist>
