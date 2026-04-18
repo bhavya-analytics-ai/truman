@@ -12,10 +12,14 @@ States: idle | listening | thinking | speaking
 """
 
 import json
+import subprocess
+import sys
 import threading
 import webbrowser
 from flask import Flask, jsonify
 from flask_sock import Sock
+
+ORB_URL = "http://localhost:5001"
 
 # ── State constants ───────────────────────────────────────────────────────────
 IDLE      = "idle"
@@ -26,6 +30,14 @@ SPEAKING  = "speaking"
 # ── Shared state ──────────────────────────────────────────────────────────────
 _state      = IDLE
 _state_lock = threading.Lock()
+
+# ── Single-client audio guard ─────────────────────────────────────────────────
+# Only ONE browser tab can own the audio stream at a time. If a second tab
+# connects, it evicts the first. Without this, multiple tabs split the audio
+# queue and you hear fragmented "2-3 bot" echo.
+_active_ws          = None
+_active_ws_stop_ev  = None
+_active_ws_lock     = threading.Lock()
 
 app  = Flask(__name__)
 sock = Sock(app)
@@ -61,10 +73,29 @@ def audio_ws(ws):
     Inbound  (browser binary frames, 24kHz int16 PCM) → realtime.mic_in
     Outbound (realtime.audio_out frames)              → browser binary frames
     A None sentinel on audio_out is translated to a JSON flush message.
-    """
-    import realtime  # deferred import to avoid circular dep
 
+    Single-client: when a new tab connects, the previous one is evicted so
+    only ONE browser pulls from the audio queue. Prevents "multiple bots
+    speaking" echo when old tabs linger across restarts.
+    """
+    from truman.voice import realtime  # deferred import to avoid circular dep
+
+    global _active_ws, _active_ws_stop_ev
     stop_flag = threading.Event()
+
+    # Evict any prior client before we take over the audio queue
+    with _active_ws_lock:
+        if _active_ws_stop_ev is not None:
+            _active_ws_stop_ev.set()
+            try:
+                # Tell the old tab to shut itself (prevents auto-reconnect storm)
+                _active_ws.send(json.dumps({"type": "evicted"}))
+                _active_ws.close()
+            except Exception:
+                pass
+        _active_ws         = ws
+        _active_ws_stop_ev = stop_flag
+        print("[Orb] Audio client connected (sole consumer)")
 
     def reader():
         # Browser → OpenAI
@@ -106,14 +137,54 @@ def audio_ws(ws):
                 break
     finally:
         stop_flag.set()
+        with _active_ws_lock:
+            if _active_ws is ws:
+                _active_ws         = None
+                _active_ws_stop_ev = None
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
+def _open_browser():
+    """Open the orb UI in a NEW browser window and bring it to the front.
+    Uses osascript on Mac so the window can't hide behind existing tabs/spaces."""
+    try:
+        if sys.platform == "darwin":
+            # osascript: open URL in a brand-new Chrome/Safari/default window AND activate it
+            script = f'''
+            tell application "System Events"
+                set frontApp to name of (first application process whose frontmost is true)
+            end tell
+            try
+                tell application "Google Chrome"
+                    activate
+                    make new window
+                    set URL of active tab of front window to "{ORB_URL}"
+                end tell
+            on error
+                try
+                    tell application "Safari"
+                        activate
+                        make new document with properties {{URL:"{ORB_URL}"}}
+                    end tell
+                on error
+                    do shell script "open '{ORB_URL}'"
+                end try
+            end try
+            '''
+            subprocess.Popen(["osascript", "-e", script])
+        else:
+            webbrowser.open_new(ORB_URL)
+        print(f"[Orb] Opened {ORB_URL} in new window")
+    except Exception as e:
+        print(f"[Orb] Could not auto-open browser ({e}). Visit {ORB_URL} manually.")
+
+
 def run():
     """Start orb server in background thread and open browser. Non-blocking."""
     t = threading.Thread(target=_serve, daemon=True)
     t.start()
-    threading.Timer(1.2, lambda: webbrowser.open("http://localhost:5001")).start()
+    # give Flask a beat to bind the port before the browser tries to connect
+    threading.Timer(1.5, _open_browser).start()
 
 
 def start():
@@ -287,6 +358,7 @@ let micSrc = null;
 let nextStart = 0;
 let activeSources = [];
 let audioStarted = false;
+let evicted = false;   // set when server boots us because a newer tab took over
 
 async function startAudio() {
   if (audioStarted) return;
@@ -333,7 +405,7 @@ async function startAudio() {
     ws.send(i16.buffer);
   };
 
-  hint.textContent = 'mic live — Cmd+Shift+T to talk';
+  hint.textContent = 'mic live — Cmd+Option+T to talk';
 }
 
 function connectWS() {
@@ -345,7 +417,15 @@ function connectWS() {
     if (typeof ev.data === 'string') {
       try {
         const msg = JSON.parse(ev.data);
-        if (msg.type === 'flush') flushPlayback();
+        if (msg.type === 'flush')   flushPlayback();
+        if (msg.type === 'evicted') {
+          // another tab took over audio — stop and stay silent
+          evicted = true;
+          audioStarted = false;
+          flushPlayback();
+          try { ws.close(); } catch(e) {}
+          hint.textContent = 'another Truman tab took over — close this one';
+        }
       } catch(e) {}
       return;
     }
@@ -372,8 +452,9 @@ function connectWS() {
   };
 
   ws.onclose = () => {
-    // reconnect after brief pause
-    setTimeout(() => { if (audioStarted) connectWS(); }, 800);
+    // Don't reconnect if we were evicted by another tab
+    if (evicted) return;
+    setTimeout(() => { if (audioStarted && !evicted) connectWS(); }, 800);
   };
   ws.onerror = () => { try { ws.close(); } catch(e) {} };
 }

@@ -1,4 +1,4 @@
-import config
+from truman.core import config
 from mem0 import MemoryClient
 
 memory = MemoryClient(api_key=config.MEM0_API_KEY)

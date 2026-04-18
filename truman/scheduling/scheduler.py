@@ -18,16 +18,10 @@ Notes on reach:
   - If the Mac is fully powered off, reminders fire on next boot.
 """
 
-import os
 import subprocess
 import sys
 
-# ensure we can import db.py from this same directory
-_HERE = os.path.dirname(os.path.abspath(__file__))
-if _HERE not in sys.path:
-    sys.path.insert(0, _HERE)
-
-import db  # noqa: E402
+from truman.storage import db
 
 
 def _notify(note: str):

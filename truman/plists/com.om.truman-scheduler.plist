@@ -25,11 +25,12 @@
     <key>ProgramArguments</key>
     <array>
         <string>/opt/anaconda3/envs/truman/bin/python</string>
-        <string>/Users/ompandya/Desktop/friday/truman/scheduler.py</string>
+        <string>-m</string>
+        <string>truman.scheduling.scheduler</string>
     </array>
 
     <key>WorkingDirectory</key>
-    <string>/Users/ompandya/Desktop/friday/truman</string>
+    <string>/Users/ompandya/Desktop/friday</string>
 
     <key>StartInterval</key>
     <integer>60</integer>

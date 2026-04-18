@@ -14,16 +14,11 @@ Run manually any time:
 """
 
 import json
-import os
 import sys
 import traceback
 
-_HERE = os.path.dirname(os.path.abspath(__file__))
-if _HERE not in sys.path:
-    sys.path.insert(0, _HERE)
-
-import db  # noqa: E402
-from config import get_llm  # noqa: E402
+from truman.storage import db
+from truman.core.config import get_llm
 
 
 REFLECT_PROMPT = """You are a reflection agent. Read this voice conversation between Om and his AI assistant Truman.
@@ -105,7 +100,7 @@ def _push_facts(facts: list[str]):
     if not facts:
         return
     try:
-        from agent import memory, USER_ID
+        from truman.text.agent import memory, USER_ID
     except Exception as e:
         print(f"[reflect] Mem0 import failed: {e}", file=sys.stderr)
         return

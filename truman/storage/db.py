@@ -22,7 +22,12 @@ from contextlib import contextmanager
 from datetime import datetime
 from typing import Any, Optional
 
-DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "truman.db")
+# db.py lives at truman/storage/db.py; truman.db lives at truman/truman.db.
+# Two dirname() hops: truman/storage/db.py → truman/storage/ → truman/.
+DB_PATH = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "truman.db",
+)
 
 _init_lock = threading.Lock()
 _initialized = False

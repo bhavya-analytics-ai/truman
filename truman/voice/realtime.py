@@ -18,14 +18,15 @@ import difflib
 import json
 import queue
 import threading
+import time
 import websockets
 
-import orb
-import proactive
-import db
-from config import OPENAI_API_KEY, REALTIME_MODEL, REALTIME_VOICE
-from agent import SYSTEM, mem_search, memory, USER_ID
-from realtime_tools import TOOL_SCHEMAS, dispatch_tool
+from truman.voice import orb
+from truman.scheduling import proactive
+from truman.storage import db
+from truman.core.config import OPENAI_API_KEY, REALTIME_MODEL, REALTIME_VOICE
+from truman.text.agent import SYSTEM, mem_search, memory, USER_ID
+from truman.voice.realtime_tools import TOOL_SCHEMAS, dispatch_tool
 
 SAMPLE_RATE = 24000
 
@@ -93,6 +94,12 @@ _pending_calls   = {}      # call_id → {name, args}
 _user_transcript = ""
 _asst_transcript = ""
 _session_id      = None    # db.sessions.id for the currently-active session
+_last_activity   = 0.0     # epoch seconds of last speech event — powers idle auto-close
+
+# ── Idle auto-close (cost control) ────────────────────────────────────────────
+# Realtime bills per second of connection, not per message. Leaving a session
+# open silently = still burning tokens. Auto-close after this much silence.
+IDLE_TIMEOUT_SEC = 180     # 3 min of no speech → hang up
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -141,7 +148,7 @@ def _mic_get():
 
 # ── Event handler ─────────────────────────────────────────────────────────────
 async def _handle_events(ws):
-    global _user_transcript, _asst_transcript, _pending_calls, _session_id
+    global _user_transcript, _asst_transcript, _pending_calls, _session_id, _last_activity
 
     async for raw in ws:
         if not _session_active:
@@ -157,12 +164,14 @@ async def _handle_events(ws):
             except Exception as e:
                 print(f"[DB] start_session failed: {e}")
                 _session_id = None
+            _last_activity = time.time()
             print("[Realtime] Connected. Listening...")
             orb.set_state(orb.LISTENING)
 
         # ── User speaking → barge-in + reset orb
         elif etype == "input_audio_buffer.speech_started":
             _barge_in()
+            _last_activity = time.time()
             orb.set_state(orb.LISTENING)
             proactive.record_interaction()
 
@@ -241,6 +250,7 @@ async def _handle_events(ws):
 
         # ── Turn complete
         elif etype == "response.done":
+            _last_activity = time.time()
             if _asst_transcript:
                 print(f"Truman: {_asst_transcript.strip()}")
                 # feed the echo-detection deque so the next user turn can drop speaker bleed
@@ -287,10 +297,13 @@ def _build_instructions() -> str:
     facts_ctx = "\n".join(memories) if memories else ""
 
     # ── SQLite episodic context (what we talked about recently) ──────────────
+    # 5 turns = last couple minutes of conversation. Long-term thread is kept
+    # alive by the session summary (written nightly by reflect.py) — so trimming
+    # recent turns from 20 → 5 drops token cost without losing memory of yesterday.
     recent_ctx  = ""
     summary_ctx = ""
     try:
-        recent = db.recent_turns(20)
+        recent = db.recent_turns(5)
         if recent:
             lines = [f"{t['role']}: {t['content']}" for t in recent if t.get("content")]
             recent_ctx = "\n".join(lines)
@@ -322,12 +335,29 @@ RESPONSE LENGTH — non-negotiable:
     if summary_ctx:
         blocks.append(f"\nLAST SESSION (summary):\n{summary_ctx}")
     if recent_ctx:
-        blocks.append(f"\nRECENT CONTEXT (last 20 turns, oldest → newest):\n{recent_ctx}")
+        blocks.append(f"\nRECENT CONTEXT (last 5 turns, oldest → newest):\n{recent_ctx}")
     return "".join(blocks)
 
 
+async def _idle_watchdog(ws):
+    """Close the Realtime session after IDLE_TIMEOUT_SEC of silence.
+    Realtime bills on connection time — an open-but-idle session still costs."""
+    global _session_active
+    while _session_active:
+        await asyncio.sleep(30)
+        if _last_activity and (time.time() - _last_activity) > IDLE_TIMEOUT_SEC:
+            print(f"[Realtime] Idle {IDLE_TIMEOUT_SEC}s — auto-closing session")
+            _session_active = False
+            _barge_in()
+            try:
+                await ws.close()
+            except Exception:
+                pass
+            break
+
+
 async def _run_session():
-    global _ws, _session_active
+    global _ws, _session_active, _last_activity
 
     try:
         async with websockets.connect(WS_URL, additional_headers=WS_HEADERS) as ws:
@@ -354,20 +384,15 @@ async def _run_session():
                 }
             }))
 
-            # prime the model with a silent context message so memory loads before first turn
-            await ws.send(json.dumps({
-                "type": "conversation.item.create",
-                "item": {
-                    "type": "message",
-                    "role": "user",
-                    "content": [{"type": "input_text", "text": "[system: session started, Om is here]"}]
-                }
-            }))
-            await ws.send(json.dumps({"type": "response.create"}))
+            # NO unprompted greeting — Truman just listens. Session instructions
+            # + memory are already loaded in session.update above, so he has
+            # everything he needs the moment Om actually speaks first.
 
+            _last_activity = time.time()
             await asyncio.gather(
                 _mic_sender(ws),
                 _handle_events(ws),
+                _idle_watchdog(ws),
             )
 
     except websockets.exceptions.ConnectionClosed:
@@ -397,7 +422,7 @@ def start():
         print(f"[DB] init failed: {e}")
     _event_loop = asyncio.new_event_loop()
     threading.Thread(target=_event_loop.run_forever, daemon=True).start()
-    print("[Realtime] Engine ready. Press Cmd+Shift+T to start talking.")
+    print("[Realtime] Engine ready. Press Cmd+Option+T to start talking.")
 
 
 def start_session():

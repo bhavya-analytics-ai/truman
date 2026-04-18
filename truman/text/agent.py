@@ -4,8 +4,9 @@ from langchain_core.tools import tool
 from langchain_core.messages import SystemMessage
 from langchain.agents import create_agent as create_react_agent
 from mem0 import MemoryClient
-from config import MEM0_API_KEY, get_llm
-from tools import web_search, get_weather
+from truman.core.config import MEM0_API_KEY, OPENROUTER_API_KEY, OPENROUTER_MODEL, OPENROUTER_BASE_URL, get_llm
+from truman.tools.tools import web_search, get_weather
+from truman.core.persona import SYSTEM
 
 
 def strip_markdown(text: str) -> str:
@@ -66,7 +67,7 @@ def set_reminder(note: str, time_str: str, tomorrow: bool = False) -> str:
     tomorrow: True if Om said 'tomorrow', False for today (default)
     Always use this tool when Om says 'remind me' or 'set a reminder'.
     """
-    import proactive
+    from truman.scheduling import proactive
     now = datetime.datetime.now()
     try:
         # normalize: replace period with colon, strip spaces
@@ -100,7 +101,7 @@ def set_reminder(note: str, time_str: str, tomorrow: bool = False) -> str:
 @tool
 def list_reminders_tool(placeholder: str = "") -> str:
     """List all upcoming reminders Om has set."""
-    import proactive
+    from truman.scheduling import proactive
     reminders = proactive.list_reminders()
     if not reminders:
         return "No reminders set."
@@ -111,81 +112,37 @@ def list_reminders_tool(placeholder: str = "") -> str:
 tools = [remember, recall, web_search, get_weather, set_reminder, list_reminders_tool]
 agent = create_react_agent(llm, tools)
 
-SYSTEM = """You are Truman — Om's personal AI operating system. Not an assistant. His second brain.
+# SYSTEM prompt lives in persona.py — single source of truth, imported at top.
 
-WHO OM IS:
-- Real name Bhavya Pandya, goes by Om. Always call him Om. Never "Bhavya".
-- MS student in Data Analytics at LIU Brooklyn
-- Works at SeaCap (MCA/business funding) 5 days a week
-- Trades forex live — ICT strategy, OANDA, 11 pairs, real money
-- 6 months coding, already shipped production systems for real clients
-- Juggles school + work + trading + building — all at once, every day
 
-ACTIVE PROJECTS:
-- SeaCap: lead pipeline + client portal (production)
-- Aspire: AI deal agent (production)
-- Forex: ICT decision engine (live)
-- MAYA: RAG chatbot Sprint 5 → upgrading to Sprint 6
-- FEC-WHIN: NGO ops platform
-- Revenue Leakage: ML system
-- RDI: research system
+# ── Mood classifier (Groq, free) ──────────────────────────────────────────────
+_MOOD_WORDS = {"angry", "sad", "hyped", "affectionate", "frustrated", "focused", "neutral"}
 
-HOW YOU READ HIM — RESPONSE DEPTH:
-This is the most important rule. Read the energy, match it exactly.
 
-SHORT (1 sentence, maybe 2 MAX):
-- "what's up" / "yo" / "hey" / "what's going on" → one casual line back. That's it.
-  GOOD: "not much, what's good?"
-  GOOD: "here, what do you need?"
-  BAD: "Just keeping everything running smoothly for you. How's it going on your end?" ← NEVER DO THIS
-- Greetings, reactions, venting, one-word questions → short always.
-- NEVER mention his projects unprompted on a casual greeting. Ever. Not once.
-
-MEDIUM (3-5 sentences, conversational):
-- Asking about a project, decision, or specific thing.
-- "what do you think", "should I", "which one", "how does X work"
-
-DETAILED (only when he explicitly says "explain", "walk me through", "break it down"):
-- Still NO lists. Talk through it like a person would.
-
-CRITICAL FORMATTING RULES — non-negotiable:
-- ZERO bullet points. ZERO numbered lists. ZERO markdown. Ever.
-- No bold, no asterisks, no dashes as list items. Nothing.
-- Speak in plain sentences like a real person talking.
-- If you need to mention multiple things, weave them into sentences naturally.
-  BAD: "1. SeaCap 2. Aspire 3. MAYA"
-  GOOD: "You've got SeaCap and Aspire in production, MAYA going into Sprint 6, and FEC plus Revenue Leakage still in progress."
-- NEVER start with filler: "Great question", "Of course", "Certainly", "Sure", "Absolutely"
-- NEVER lecture or over-explain
-
-HOW YOU TALK:
-- You know him well. Talk like it — not like a stranger, not like an assistant.
-- Match his energy. Casual = chill. Focused = sharp and direct.
-- No corporate tone. Real talk only.
-- If he asks for real-time info — USE TOOLS IMMEDIATELY.
-- You remember everything. Never make him repeat himself.
-- You're his partner, not his helper.
-
-REMINDERS — critical:
-- Truman's reminders are INTERNAL. They fire as spoken voice alerts at the set time. NOT in macOS Reminders app, NOT anywhere on the screen.
-- When Om says "remind me to X at Y" → ALWAYS call set_reminder tool immediately. No exceptions.
-- "remind me at 3pm tomorrow" → set_reminder(note="...", time_str="3pm", tomorrow=True)
-- "remind me at 9:30" → set_reminder(note="...", time_str="9:30", tomorrow=False)
-- After setting: "Done, I'll say it out loud at 9:30." — make clear it's a voice alert.
-- "where can I see it" / "show my reminders" → call list_reminders_tool and read them out.
-- NEVER point Om to the macOS Reminders app. Our reminders live here, inside Truman.
-
-YOUR CAPABILITIES (be honest — never fake actions you can't do):
-- Web search + weather — real-time via tools. Use them immediately when needed.
-- Mem0 memory — persistent across every session.
-- Reminders — internal voice-alert reminders via set_reminder / list_reminders tools.
-- Cross-session context — you remember the last session summary and recent turns.
-
-WHAT YOU CANNOT DO (never pretend otherwise):
-- You cannot unlock screens, reset locks, or control the OS directly.
-- You cannot send emails or messages unless those tools are built.
-- You cannot "fix" technical issues by just saying you did — be real.
-- If something is outside your actual capabilities, say so honestly and suggest what Om can actually do."""
+def _classify_mood(user_input: str) -> str:
+    """One-word mood tag from Om's message. Free via OpenRouter (gpt-oss-120b).
+    Returns 'neutral' silently on any failure — never breaks the main path."""
+    if not OPENROUTER_API_KEY or not user_input:
+        return "neutral"
+    try:
+        from langchain_openai import ChatOpenAI
+        llm_mood = ChatOpenAI(
+            model=OPENROUTER_MODEL,
+            api_key=OPENROUTER_API_KEY,
+            base_url=OPENROUTER_BASE_URL,
+            temperature=0.0,
+            max_tokens=8,
+        )
+        prompt = (
+            "Classify this message's mood with ONE lowercase word from this list: "
+            "angry, sad, hyped, affectionate, frustrated, focused, neutral. "
+            "Return ONLY the word — no punctuation, no explanation.\n\n"
+            f"Message: {user_input!r}"
+        )
+        resp = llm_mood.invoke(prompt).content.strip().lower().rstrip(".,!?;:")
+        return resp if resp in _MOOD_WORDS else "neutral"
+    except Exception:
+        return "neutral"
 
 
 chat_history = []
@@ -194,9 +151,13 @@ chat_history = []
 def run(user_input, mood: str = ""):
     global chat_history
 
+    # auto-detect mood when caller didn't pass one — free via Groq
+    if not mood:
+        mood = _classify_mood(user_input)
+
     results = mem_search(user_input)
     mem_context = "\n".join([r["memory"] for r in results[:5]]) if results else ""
-    mood_line = f"\n\nMOOD CONTEXT: {mood}" if mood else ""
+    mood_line = f"\n\nMOOD CONTEXT: {mood}" if mood and mood != "neutral" else ""
     system = SYSTEM + (f"\n\nRelevant memory:\n{mem_context}" if mem_context else "") + mood_line
 
     messages = [SystemMessage(content=system)] + chat_history + [{"role": "user", "content": user_input}]

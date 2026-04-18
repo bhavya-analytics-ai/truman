@@ -2,15 +2,20 @@
 main.py — Truman core
 Realtime API voice loop + proactive system + orb UI
 """
+# ── config MUST be first module-level import ──────────────────────────────────
+# load_dotenv(override=True) fires when truman.core.config loads. Any import
+# placed before this line at module level that reads env vars (directly or
+# transitively) would pick up stale shell env instead of .env values.
+from truman.core import config  # noqa: F401
+
 import time
 import threading
-import config   # noqa: F401 — sets env vars before anything else
-import orb
-import proactive
-import realtime
-import hotkey
-import agent
-from voice import speak
+from truman.voice import orb
+from truman.scheduling import proactive
+from truman.voice import realtime
+from truman.core import hotkey
+from truman.text import agent
+from truman.voice.voice import speak
 
 
 # ── Startup ────────────────────────────────────────────────────────────────────

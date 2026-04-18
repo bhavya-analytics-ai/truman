@@ -15,7 +15,7 @@ import time
 import threading
 import datetime
 
-import db
+from truman.storage import db
 
 
 # ── Shared state (set by main.py) ─────────────────────────────────────────────

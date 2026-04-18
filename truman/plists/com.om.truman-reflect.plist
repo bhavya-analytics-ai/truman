@@ -27,11 +27,12 @@
     <key>ProgramArguments</key>
     <array>
         <string>/opt/anaconda3/envs/truman/bin/python</string>
-        <string>/Users/ompandya/Desktop/friday/truman/reflect.py</string>
+        <string>-m</string>
+        <string>truman.storage.reflect</string>
     </array>
 
     <key>WorkingDirectory</key>
-    <string>/Users/ompandya/Desktop/friday/truman</string>
+    <string>/Users/ompandya/Desktop/friday</string>
 
     <key>StartCalendarInterval</key>
     <dict>

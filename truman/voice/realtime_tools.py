@@ -7,7 +7,7 @@ import re
 import subprocess
 import requests
 from ddgs import DDGS
-from agent import mem_search as _mem_search, mem_add as _mem_add
+from truman.text.agent import mem_search as _mem_search, mem_add as _mem_add
 
 
 # ── Time parsing ──────────────────────────────────────────────────────────────
@@ -169,7 +169,7 @@ def _recall(query: str) -> str:
 
 
 def _set_reminder(note: str, time_str: str, tomorrow: bool = False) -> str:
-    import proactive
+    from truman.scheduling import proactive
 
     at = _parse_time(time_str, tomorrow=tomorrow)
     if at is None:
@@ -204,7 +204,7 @@ def _set_reminder(note: str, time_str: str, tomorrow: bool = False) -> str:
 
 
 def _list_reminders() -> str:
-    import proactive
+    from truman.scheduling import proactive
     reminders = proactive.list_reminders()
     if not reminders:
         return "No reminders set."
