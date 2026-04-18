@@ -17,6 +17,45 @@ HUGGINGFACE_TOKEN   = os.getenv("HUGGINGFACE_TOKEN")
 ELEVENLABS_API_KEY  = os.getenv("ELEVENLABS_API_KEY")
 ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID")
 
+# Groq fallback — automatic failover when OpenAI hits quota / rate limits.
+# Set GROQ_API_KEY in .env to enable; leave unset to stay pure OpenAI.
+GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+GROQ_MODEL   = os.getenv("GROQ_MODEL", "moonshotai/kimi-k2-instruct")
+
+
+def get_llm(temperature: float = 0.7, json_mode: bool = False):
+    """Build a ChatOpenAI with automatic Groq fallback.
+
+    Primary: GPT-4o on OpenAI.
+    Fallback: Kimi K2 on Groq (engages only if OpenAI raises — quota/429/5xx).
+    If GROQ_API_KEY is unset, returns the primary LLM alone.
+    """
+    from langchain_openai import ChatOpenAI
+
+    oai_kwargs = {
+        "model": "gpt-4o",
+        "api_key": OPENAI_API_KEY,
+        "temperature": temperature,
+    }
+    if json_mode:
+        oai_kwargs["model_kwargs"] = {"response_format": {"type": "json_object"}}
+    primary = ChatOpenAI(**oai_kwargs)
+
+    if not GROQ_API_KEY:
+        return primary
+
+    from langchain_groq import ChatGroq
+    groq_kwargs = {
+        "model": GROQ_MODEL,
+        "api_key": GROQ_API_KEY,
+        "temperature": temperature,
+    }
+    if json_mode:
+        groq_kwargs["model_kwargs"] = {"response_format": {"type": "json_object"}}
+    fallback = ChatGroq(**groq_kwargs)
+
+    return primary.with_fallbacks([fallback])
+
 os.environ["HUGGINGFACE_TOKEN"] = HUGGINGFACE_TOKEN or ""
 
 os.environ["LANGCHAIN_TRACING_V2"] = "true"

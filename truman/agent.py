@@ -1,11 +1,10 @@
 import re
 import datetime
-from langchain_openai import ChatOpenAI
 from langchain_core.tools import tool
 from langchain_core.messages import SystemMessage
 from langchain.agents import create_agent as create_react_agent
 from mem0 import MemoryClient
-from config import OPENAI_API_KEY, MEM0_API_KEY
+from config import MEM0_API_KEY, get_llm
 from tools import web_search, get_weather
 
 
@@ -21,7 +20,7 @@ def strip_markdown(text: str) -> str:
     text = re.sub(r'\n', ' ', text)                      # flatten to sentences
     return text.strip()
 
-llm = ChatOpenAI(model="gpt-4o", api_key=OPENAI_API_KEY, temperature=0.7)
+llm = get_llm(temperature=0.7)
 memory = MemoryClient(api_key=MEM0_API_KEY)
 USER_ID = "om"
 MEM_FILTER = {"AND": [{"user_id": USER_ID}]}
@@ -177,11 +176,10 @@ REMINDERS — critical:
 - NEVER point Om to the macOS Reminders app. Our reminders live here, inside Truman.
 
 YOUR CAPABILITIES (be honest — never fake actions you can't do):
-- Voice auth — you know Om's voice print. Strangers get locked out.
-- Cough/clap detection — ambient awareness always running.
 - Web search + weather — real-time via tools. Use them immediately when needed.
 - Mem0 memory — persistent across every session.
-- Gesture mode — MediaPipe hand tracking on demand.
+- Reminders — internal voice-alert reminders via set_reminder / list_reminders tools.
+- Cross-session context — you remember the last session summary and recent turns.
 
 WHAT YOU CANNOT DO (never pretend otherwise):
 - You cannot unlock screens, reset locks, or control the OS directly.

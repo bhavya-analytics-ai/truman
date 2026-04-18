@@ -23,7 +23,7 @@ if _HERE not in sys.path:
     sys.path.insert(0, _HERE)
 
 import db  # noqa: E402
-from config import OPENAI_API_KEY  # noqa: E402
+from config import get_llm  # noqa: E402
 
 
 REFLECT_PROMPT = """You are a reflection agent. Read this voice conversation between Om and his AI assistant Truman.
@@ -70,23 +70,31 @@ def _format_turns(turns: list[dict]) -> str:
 
 
 def _call_llm(convo: str) -> dict | None:
-    """Single-shot reflection call. Returns {"summary": str, "facts": [str]} or None on failure."""
+    """Single-shot reflection call. Returns {"summary": str, "facts": [str]} or None on failure.
+
+    Uses get_llm() which auto-falls-back from OpenAI to Groq on quota/rate errors.
+    One retry on malformed JSON before giving up.
+    """
     try:
         # lazy import so the script doesn't pay the LangChain load cost unless needed
-        from langchain_openai import ChatOpenAI
         from langchain_core.messages import SystemMessage, HumanMessage
 
-        llm = ChatOpenAI(
-            model="gpt-4o",
-            api_key=OPENAI_API_KEY,
-            temperature=0.2,
-            model_kwargs={"response_format": {"type": "json_object"}},
-        )
-        resp = llm.invoke([
+        llm = get_llm(temperature=0.2, json_mode=True)
+        messages = [
             SystemMessage(content="You are a precise reflection agent. You only return JSON."),
             HumanMessage(content=REFLECT_PROMPT % convo),
-        ])
-        return json.loads(resp.content)
+        ]
+
+        for attempt in range(2):  # primary call + 1 retry on bad JSON
+            resp = llm.invoke(messages)
+            try:
+                return json.loads(resp.content)
+            except json.JSONDecodeError:
+                if attempt == 0:
+                    print("[reflect] malformed JSON, retrying once", file=sys.stderr)
+                    continue
+                print(f"[reflect] JSON retry failed. Raw: {resp.content[:200]}", file=sys.stderr)
+                return None
     except Exception as e:
         print(f"[reflect] LLM call failed: {e}", file=sys.stderr)
         traceback.print_exc()

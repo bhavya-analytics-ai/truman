@@ -1,6 +1,6 @@
 """
 main.py — Truman core
-Realtime API voice loop + proactive system + orb UI + ambient events
+Realtime API voice loop + proactive system + orb UI
 """
 import time
 import threading
@@ -10,24 +10,7 @@ import proactive
 import realtime
 import hotkey
 import agent
-import lockdown
-import gestures
 from voice import speak
-
-
-# ── Ambient events (cough / double clap) ──────────────────────────────────────
-def handle_ambient(event: str):
-    """Called from ambient monitor thread when cough or clap is detected."""
-    if event == "cough":
-        orb.set_state(orb.THINKING)
-        response = agent.run("Om just coughed. Check in naturally, super short.", mood="")
-        orb.set_state(orb.SPEAKING)
-        speak(response)
-    elif event == "double_clap":
-        orb.set_state(orb.THINKING)
-        response = agent.run("Om double clapped. Acknowledge, one line.", mood="")
-        orb.set_state(orb.SPEAKING)
-        speak(response)
 
 
 # ── Startup ────────────────────────────────────────────────────────────────────
