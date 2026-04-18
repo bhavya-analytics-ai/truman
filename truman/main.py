@@ -24,11 +24,11 @@ def main():
     # 3. Realtime engine — event loop + playback thread
     realtime.start()
 
-    # 4. Global hotkey — Cmd+Shift+T toggles session
+    # 4. Global hotkey — Cmd+Option+T toggles session
     hotkey.start(realtime.toggle_session)
 
     # Boot message
-    speak("Truman online. Press Command Shift T to talk.")
+    speak("Truman online. Press Command Option T to talk.")
 
     # 5. Main thread — keep alive, handle shutdown
     try:
