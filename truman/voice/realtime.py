@@ -53,7 +53,13 @@ _HALLUCINATIONS = {
 # Recent assistant transcripts; user input that fuzzy-matches one of these
 # is the mic picking up Truman's own voice through the speaker (AEC miss).
 _recent_assistant = collections.deque(maxlen=10)
-_ECHO_SIMILARITY_THRESHOLD = 0.80
+_ECHO_SIMILARITY_THRESHOLD = 0.72   # lowered from 0.80 — catches partial echo matches
+
+# Epoch timestamp of the last audio chunk sent to the browser speaker.
+# Any user transcript arriving within _ECHO_COOLDOWN_SEC of this is treated
+# as mic bleed of Truman's own voice and silently dropped.
+_asst_last_audio_at: float = 0.0
+_ECHO_COOLDOWN_SEC  = 1.5
 
 
 def _clean(text: str) -> str:
@@ -148,7 +154,7 @@ def _mic_get():
 
 # ── Event handler ─────────────────────────────────────────────────────────────
 async def _handle_events(ws):
-    global _user_transcript, _asst_transcript, _pending_calls, _session_id, _last_activity
+    global _user_transcript, _asst_transcript, _pending_calls, _session_id, _last_activity, _asst_last_audio_at
 
     async for raw in ws:
         if not _session_active:
@@ -186,7 +192,10 @@ async def _handle_events(ws):
                 print(f"[Filter] dropped hallucination: {raw_text!r}")
                 _user_transcript = ""
             elif raw_text and _is_echo(raw_text):
-                print(f"[Filter] dropped echo: {raw_text!r}")
+                print(f"[Filter] dropped echo (fuzzy match): {raw_text!r}")
+                _user_transcript = ""
+            elif raw_text and (time.time() - _asst_last_audio_at) < _ECHO_COOLDOWN_SEC:
+                print(f"[Filter] dropped echo (post-speech cooldown): {raw_text!r}")
                 _user_transcript = ""
             else:
                 _user_transcript = raw_text
@@ -242,6 +251,7 @@ async def _handle_events(ws):
                 audio_out.put_nowait(audio)
             except queue.Full:
                 pass   # drop on backpressure
+            _asst_last_audio_at = time.time()   # track when we last sent audio to speaker
             orb.set_state(orb.SPEAKING)
 
         # ── Transcript delta (assistant text)
@@ -374,9 +384,9 @@ async def _run_session():
                     "input_audio_transcription": {"model": "whisper-1"},
                     "turn_detection": {
                         "type":                "server_vad",
-                        "threshold":           0.5,
+                        "threshold":           0.55,   # slightly stricter — less speaker bleed
                         "prefix_padding_ms":   300,
-                        "silence_duration_ms": 700,
+                        "silence_duration_ms": 800,    # wait a bit longer before committing
                     },
                     "tools":        tool_schemas(),
                     "tool_choice":  "auto",

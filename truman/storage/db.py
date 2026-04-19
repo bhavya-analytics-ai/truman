@@ -92,12 +92,13 @@ CREATE TABLE IF NOT EXISTS session_summaries (
 );
 
 CREATE TABLE IF NOT EXISTS reminders (
-    id         INTEGER PRIMARY KEY AUTOINCREMENT,
-    note       TEXT    NOT NULL,
-    fire_at    TEXT    NOT NULL,
-    fired      INTEGER NOT NULL DEFAULT 0,
-    fired_at   TEXT,
-    created_at TEXT    NOT NULL
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    note             TEXT    NOT NULL,
+    fire_at          TEXT    NOT NULL,
+    fired            INTEGER NOT NULL DEFAULT 0,
+    fired_at         TEXT,
+    created_at       TEXT    NOT NULL,
+    apple_reminder_id TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_reminders_due ON reminders(fire_at) WHERE fired = 0;
 
@@ -123,6 +124,11 @@ def init():
             c.execute("PRAGMA journal_mode = WAL")
             c.execute("PRAGMA synchronous = NORMAL")
             c.executescript(_SCHEMA)
+            # Migration: add apple_reminder_id if the table existed before this column.
+            try:
+                c.execute("ALTER TABLE reminders ADD COLUMN apple_reminder_id TEXT")
+            except Exception:
+                pass  # column already present — normal after first migration
         _initialized = True
         print(f"[DB] Ready at {DB_PATH}")
 
@@ -229,11 +235,11 @@ def last_session_summary() -> Optional[dict]:
 
 
 # ── Reminders ─────────────────────────────────────────────────────────────────
-def add_reminder(note: str, fire_at: datetime) -> int:
+def add_reminder(note: str, fire_at: datetime, apple_reminder_id: Optional[str] = None) -> int:
     with _conn() as c:
         cur = c.execute(
-            "INSERT INTO reminders(note, fire_at, created_at) VALUES (?, ?, ?)",
-            (note, fire_at.isoformat(timespec="seconds"), _now()),
+            "INSERT INTO reminders(note, fire_at, created_at, apple_reminder_id) VALUES (?, ?, ?, ?)",
+            (note, fire_at.isoformat(timespec="seconds"), _now(), apple_reminder_id),
         )
         return cur.lastrowid
 
@@ -242,7 +248,7 @@ def get_due_reminders(now: Optional[datetime] = None) -> list[dict]:
     now = (now or datetime.now()).isoformat(timespec="seconds")
     with _conn() as c:
         rows = c.execute(
-            "SELECT id, note, fire_at FROM reminders WHERE fired = 0 AND fire_at <= ? ORDER BY fire_at",
+            "SELECT id, note, fire_at, apple_reminder_id FROM reminders WHERE fired = 0 AND fire_at <= ? ORDER BY fire_at",
             (now,),
         ).fetchall()
     return [dict(r) for r in rows]

@@ -118,23 +118,32 @@ def set_reminder(note: str, time_str: str, tomorrow: bool = False) -> str:
             f"'in 2 minutes', '30s', or '1 hour'."
         )
 
-    proactive.add_reminder(note, at)
-
-    # also save to macOS Reminders app
+    # Try to create Apple reminder and capture its ID for later cleanup
+    apple_id: str | None = None
     try:
         date_str = at.strftime("%B %d, %Y %I:%M:%S %p")
         script = (
-            f'tell application "Reminders" to make new reminder with properties '
-            f'{{name:"{note}", remind me date:date "{date_str}"}}'
+            'tell application "Reminders"\n'
+            f'  set r to make new reminder with properties {{name:"{note}", remind me date:date "{date_str}"}}\n'
+            '  return id of r\n'
+            'end tell'
         )
-        subprocess.Popen(["osascript", "-e", script])
+        res = subprocess.run(["osascript", "-e", script], capture_output=True, text=True, timeout=5)
+        captured = res.stdout.strip()
+        if captured:
+            apple_id = captured
     except Exception:
         pass
 
+    proactive.add_reminder(note, at, apple_reminder_id=apple_id)
+
     now = datetime.datetime.now()
     delta = at - now
-    if delta.total_seconds() < 3600:
-        mins = max(1, round(delta.total_seconds() / 60))
+    secs = delta.total_seconds()
+    if secs < 60:
+        when = f"in about {int(secs)} seconds"
+    elif secs < 3600:
+        mins = round(secs / 60)
         when = f"in about {mins} minute{'s' if mins != 1 else ''}"
     else:
         day = "tomorrow" if tomorrow or at.date() > now.date() else "today"

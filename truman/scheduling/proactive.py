@@ -11,6 +11,7 @@ Reminders persist to SQLite (db.py), so they survive process death. A separate
 Both use claim_reminder() — atomic, no double-fires.
 """
 
+import subprocess
 import time
 import threading
 import datetime
@@ -90,6 +91,7 @@ def start_reminder_loop(speak_fn, agent_fn):
                 continue
 
             for r in due:
+                apple_id = r.get("apple_reminder_id")
                 if not db.claim_reminder(r["id"]):
                     continue   # scheduler beat us to it
                 prompt = (
@@ -101,14 +103,29 @@ def start_reminder_loop(speak_fn, agent_fn):
                     speak_fn(response)
                 except Exception as e:
                     print(f"[Reminders] Fire failed for '{r['note']}': {e}")
+                    continue
+                # Truman fired it — delete the Apple Reminders backup so
+                # Om doesn't get a duplicate notification on his iPhone.
+                if apple_id:
+                    try:
+                        script = (
+                            'tell application "Reminders"\n'
+                            f'  delete (first reminder whose id is "{apple_id}")\n'
+                            'end tell'
+                        )
+                        subprocess.run(["osascript", "-e", script], capture_output=True, timeout=5)
+                        print(f"[Reminders] Cleared Apple reminder {apple_id}")
+                    except Exception as e:
+                        print(f"[Reminders] Apple cleanup failed: {e}")
 
     threading.Thread(target=_run, daemon=True).start()
 
 
-def add_reminder(note: str, at: datetime.datetime) -> int:
+def add_reminder(note: str, at: datetime.datetime, apple_reminder_id: str | None = None) -> int:
     """Persist a reminder. Returns the DB id."""
-    rid = db.add_reminder(note, at)
-    print(f"[Reminder] Set: '{note}' at {at.strftime('%I:%M %p')} (id={rid})")
+    rid = db.add_reminder(note, at, apple_reminder_id=apple_reminder_id)
+    apple_tag = f" | apple_id={apple_reminder_id}" if apple_reminder_id else ""
+    print(f"[Reminder] Set: '{note}' at {at.strftime('%I:%M %p')} (id={rid}{apple_tag})")
     return rid
 
 
