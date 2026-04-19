@@ -2,7 +2,7 @@
 
 Om's personal voice assistant. Not a toy — a daily-driver "personal AI operating system" running on Mac with browser-hosted audio, long-term memory, reminders, and a persona tuned to how Om actually talks.
 
-**Status as of 2026-04-18:** Levels 1–6 shipped and live. Level 7 (Builder Mode) is next.
+**Status as of 2026-04-19:** Levels 1–6 shipped + unified tool layer + MCP bridge live. Level 7 (Builder Mode) is next.
 
 ---
 
@@ -12,11 +12,12 @@ Om's personal voice assistant. Not a toy — a daily-driver "personal AI operati
 - **Browser-hosted audio** — mic + speaker run in a Chrome/Safari tab so you get WebRTC AEC for free. Orb UI at `localhost:5001`.
 - **Long-term memory** via Mem0 hosted (`MemoryClient`, `user_id="om"`). Durable facts persist across every session.
 - **Short-term context** from SQLite — last 5 turns + last session summary auto-injected into every session's system prompt.
-- **Reminders** — "remind me at 3pm to call SeaCap" → fires as a spoken voice alert at the set time. Fully internal, not macOS Reminders.
+- **Reminders** — "remind me at 3pm to call SeaCap" → fires as a spoken voice alert. Writes to both Truman DB and macOS Reminders (for iPhone backup). When Truman fires it himself, he deletes the Apple copy so you don't get double-notified.
 - **Nightly reflection** — at 2am, every ended session gets summarized + durable facts get promoted to Mem0. Runs via launchd.
 - **Mood-aware** — classifies every text turn (free via OpenRouter) as angry/sad/hyped/frustrated/affectionate/focused/neutral and adjusts tone.
 - **Persona-strict** — `persona.py` encodes Om's speech style. Short casual replies on greetings, 3-5 sentences on real questions, no filler openers, no lists/bullets, matches Om's lowercase run-on register.
 - **Cost control** — auto-closes Realtime session after 3 min of silence; trimmed context window; free OpenRouter text fallback.
+- **MCP servers** — external tools (filesystem, databases, APIs) mountable via `tools/mcp_config.py`. Filesystem server live with 14 `fs__*` tools.
 
 ---
 
@@ -72,8 +73,12 @@ Layout is a proper Python package — `truman/` at the repo root, subpackages by
 | `truman/voice/realtime.py` | OpenAI Realtime API WS loop, session lifecycle, filters, context injection, idle auto-close. |
 | `truman/voice/orb.py` | Flask server + `/audio` WebSocket + browser JS. Single-client audio guard. |
 | `truman/voice/realtime_tools.py` | Tool schemas + dispatcher for Realtime function-calling. |
-| `truman/voice/voice.py` | Kokoro TTS for boot message only. |
-| `truman/tools/tools.py` | `web_search`, `get_weather` implementations. |
+| `truman/voice/voice.py` | Kokoro TTS for boot message only. Stamps `tts_state` after each play. |
+| `truman/voice/tts_state.py` | Shared last-spoke timestamp — speak() writes, realtime.py reads for echo cooldown. |
+| `truman/tools/all_tools.py` | Canonical tool definitions — single source for both voice and text paths. |
+| `truman/tools/dispatch.py` | Schema → Realtime flat format + dispatch. Lazy `_by_name()` so MCP tools are reachable. |
+| `truman/tools/mcp_bridge.py` | MCP client bridge. Daemon asyncio loop + AsyncExitStack + JSON Schema → pydantic mapper. |
+| `truman/tools/mcp_config.py` | Declarative MCP server list. Uncomment entries to mount at boot. |
 | `truman/storage/db.py` | SQLite persistence (WAL + FTS5) — sessions, turns, summaries, reminders, tool_calls. |
 | `truman/storage/reflect.py` | Nightly session summarization + fact promotion to Mem0. |
 | `truman/storage/seed_memory.py` | One-shot Mem0 seeding script. |
@@ -181,12 +186,50 @@ Rules encoded came from observing how Om talks: casual lowercase, commas over pe
 
 ---
 
-## Roadmap
+## Next Steps
 
-- **Level 7 — Builder Mode** (next). Agentic coding inside git worktrees. First mission: FEC HTML form + Google Sheets webhook. Stack: `qwen/qwen3-coder:free` primary, `moonshotai/kimi-k2.5` fallback, both free on OpenRouter.
-- **Level 8** — always-on robustness: `pmset` wake-on-reminder, pyannote voice auth, Railway cloud fallback, mobile PWA.
-- **Level 9+** — orb UI 2.0, calendar, comms, dev tools, forex brain bridge, browser automation.
-- **Mission 1** — MAYA Sprint 6. **Mission 2** — FEC SaaS v2.
+### 🔜 Level 7 — Builder Mode
+Truman builds real code for Om's actual projects. First target: **FEC HTML form + Google Sheets integration**.
+
+**What it means:** Say "Truman, build mode — add a submit button to the FEC form" and Truman:
+1. Reads the relevant files
+2. Makes the change in an isolated git worktree (can NEVER touch main repo directly)
+3. Runs a quick test (local server + curl)
+4. Reports back by voice: "Done. Added the button, tested the POST, diff is clean."
+
+**Model stack (free):**
+- Primary: `qwen/qwen3-coder:free` — top free coding model on OpenRouter
+- Fallback: `moonshotai/kimi-k2.5` — strong on agentic/tool-use tasks
+- Voice narration: existing Realtime path (already there)
+
+**Build order:**
+- **7a** — `builder.py`: new agent with read_file, write_file, list_dir, run_shell tools + worktree isolation
+- **7b** — Voice handoff: "build mode" / detected build intent → routes to builder agent, streams status back by voice
+- **7c** — Test loop: spin local server, curl endpoints, capture output, auto-retry on fail
+- **7d** — Google Sheets: Apps Script webhook OR service account to read/write sheet data
+- **7e** — Review mode: "Truman, review this file" → coder model reads + suggests, no writes
+
+---
+
+### 🔜 Level 8 — Always-On Robustness
+- `pmset schedule wake` on reminder add — Mac wakes at reminder time even if asleep
+- pyannote.audio speaker verification (Resemblyzer was unreliable, upgrade deferred to here)
+- Railway cloud fallback — Truman survives laptop closed
+- Mobile PWA — orb in the browser on iPhone
+
+---
+
+### 🔜 Level 9+ — Aspirational
+9. Orb UI 2.0
+10. Calendar integration
+11. Comms (email/messages read/send)
+12. Dev tools (GitHub, CI status)
+13. Forex brain bridge (ICT engine ↔ Truman)
+14. Browser automation
+15. Media controls
+16. Always-on main process (launchd Truman boot)
+17. **Mission 1** — MAYA Sprint 6
+18. **Mission 2** — FEC SaaS v2
 
 ---
 
