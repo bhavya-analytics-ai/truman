@@ -24,6 +24,26 @@ def main():
     orb.run()
 
     # 2. Proactive system — morning brief + idle check-in + reminders
+    # Mount MCP servers FIRST so their tools land in TOOLS before the agent
+    # binds. create_react_agent captures the tool list at construction time,
+    # so any tools appended later would be invisible to the text path.
+    # (Voice path reads tool_schemas() lazily per-session, so it sees them
+    # either way — but we align both paths on the same build-time snapshot.)
+    from truman.tools.mcp_config import MCP_SERVERS
+    if MCP_SERVERS:
+        from truman.tools.mcp_bridge import mount_server  # lazy import — only cost on actual use
+        from truman.tools.all_tools import TOOLS
+        mcp_added: list[str] = []
+        for sid, cfg in MCP_SERVERS.items():
+            try:
+                mounted = mount_server(sid, cfg["command"], cfg["args"])
+                TOOLS.extend(mounted)
+                mcp_added.extend(t.name for t in mounted)
+            except Exception as e:
+                print(f"[MCP] mount failed for {sid}: {e}")
+        if mcp_added:
+            print(f"[MCP] mounted: {', '.join(mcp_added)}")
+
     # Force-build the text agent before proactive starts so morning briefing
     # and idle check-in callbacks never race the lazy-init inside agent.run.
     agent.get_agent()

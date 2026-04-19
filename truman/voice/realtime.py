@@ -26,7 +26,7 @@ from truman.scheduling import proactive
 from truman.storage import db
 from truman.core.config import OPENAI_API_KEY, REALTIME_MODEL, REALTIME_VOICE
 from truman.text.agent import SYSTEM, mem_search, memory, USER_ID
-from truman.voice.realtime_tools import TOOL_SCHEMAS, dispatch_tool
+from truman.voice.realtime_tools import tool_schemas, dispatch_tool
 
 SAMPLE_RATE = 24000
 
@@ -378,7 +378,7 @@ async def _run_session():
                         "prefix_padding_ms":   300,
                         "silence_duration_ms": 700,
                     },
-                    "tools":        TOOL_SCHEMAS,
+                    "tools":        tool_schemas(),
                     "tool_choice":  "auto",
                     "temperature":  0.7,
                 }

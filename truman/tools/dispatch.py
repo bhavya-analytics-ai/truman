@@ -10,7 +10,14 @@ Realtime rejects that.
 from truman.tools.all_tools import TOOLS
 
 
-_BY_NAME = {t.name: t for t in TOOLS}
+def _by_name() -> dict:
+    """Build the name→tool map fresh each call.
+
+    MCP tools get appended to TOOLS at boot (after this module imports),
+    so caching this at import time would miss them. Called per-dispatch —
+    tiny list, dict comp is effectively free.
+    """
+    return {t.name: t for t in TOOLS}
 
 
 def _strip_pydantic(obj):
@@ -63,7 +70,7 @@ def realtime_schemas() -> list[dict]:
 def dispatch(name: str, args: dict) -> str:
     """Invoke a canonical @tool by name. Returns the tool's string result, or a
     friendly error string if the tool is unknown or raises."""
-    t = _BY_NAME.get(name)
+    t = _by_name().get(name)
     if not t:
         return f"Unknown tool: {name}"
     try:
