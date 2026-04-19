@@ -13,13 +13,12 @@ happens in main.py BEFORE agent.get_agent() so the LangChain agent binds
 the MCP tools alongside the natives.
 """
 MCP_SERVERS: dict = {
-    # Example — filesystem sandbox. Uncomment to enable, requires npx.
-    # "fs": {
-    #     "command": "npx",
-    #     "args": [
-    #         "-y",
-    #         "@modelcontextprotocol/server-filesystem",
-    #         "/Users/ompandya/Desktop/mcp-sandbox",
-    #     ],
-    # },
+    "fs": {
+        "command": "npx",
+        "args": [
+            "-y",
+            "@modelcontextprotocol/server-filesystem",
+            "/Users/ompandya/Desktop/mcp-sandbox",
+        ],
+    },
 }
