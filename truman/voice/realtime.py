@@ -27,6 +27,7 @@ from truman.storage import db
 from truman.core.config import OPENAI_API_KEY, REALTIME_MODEL, REALTIME_VOICE
 from truman.text.agent import SYSTEM, mem_search, memory, USER_ID
 from truman.voice.realtime_tools import tool_schemas, dispatch_tool
+from truman.voice.tts_state import last_spoke_at as _tts_last_spoke
 
 SAMPLE_RATE = 24000
 
@@ -59,7 +60,11 @@ _ECHO_SIMILARITY_THRESHOLD = 0.72   # lowered from 0.80 — catches partial echo
 # Any user transcript arriving within _ECHO_COOLDOWN_SEC of this is treated
 # as mic bleed of Truman's own voice and silently dropped.
 _asst_last_audio_at: float = 0.0
-_ECHO_COOLDOWN_SEC  = 1.5
+_ECHO_COOLDOWN_SEC  = 1.5   # for in-session Realtime audio
+
+# Longer cooldown for out-of-session speak() calls (morning brief, reminders,
+# boot message) — those can be longer and more resonant.
+_TTS_COOLDOWN_SEC = 3.0
 
 
 def _clean(text: str) -> str:
@@ -195,7 +200,10 @@ async def _handle_events(ws):
                 print(f"[Filter] dropped echo (fuzzy match): {raw_text!r}")
                 _user_transcript = ""
             elif raw_text and (time.time() - _asst_last_audio_at) < _ECHO_COOLDOWN_SEC:
-                print(f"[Filter] dropped echo (post-speech cooldown): {raw_text!r}")
+                print(f"[Filter] dropped echo (realtime cooldown): {raw_text!r}")
+                _user_transcript = ""
+            elif raw_text and (time.time() - _tts_last_spoke()) < _TTS_COOLDOWN_SEC:
+                print(f"[Filter] dropped echo (TTS cooldown): {raw_text!r}")
                 _user_transcript = ""
             else:
                 _user_transcript = raw_text

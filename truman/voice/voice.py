@@ -27,6 +27,11 @@ def speak(text: str) -> bool:
     tts = _get_tts()
     tts.feed(text)
     tts.play()
+    # Stamp the shared last-spoke time so realtime.py's echo filter knows
+    # to guard against mic bleed even when this TTS call happened before
+    # the Realtime session opened (morning brief, reminders, boot message).
+    from truman.voice.tts_state import mark_spoke
+    mark_spoke()
     return False
 
 
