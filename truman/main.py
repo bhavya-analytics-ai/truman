@@ -24,6 +24,9 @@ def main():
     orb.run()
 
     # 2. Proactive system — morning brief + idle check-in + reminders
+    # Force-build the text agent before proactive starts so morning briefing
+    # and idle check-in callbacks never race the lazy-init inside agent.run.
+    agent.get_agent()
     proactive.start_all(speak, agent.run, idle_minutes=20)
 
     # 3. Realtime engine — event loop + playback thread
