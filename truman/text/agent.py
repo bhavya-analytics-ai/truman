@@ -208,9 +208,15 @@ def run(user_input: str, mood: str = "", pool: str | None = None) -> dict:
     global chat_history
 
     if not mood:
-        mood = _classify_mood(user_input)
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=2) as ex:
+            mood_fut = ex.submit(_classify_mood, user_input)
+            mem_fut  = ex.submit(mem_search, user_input)
+            mood     = mood_fut.result()
+            results  = mem_fut.result()
+    else:
+        results = mem_search(user_input)
 
-    results = mem_search(user_input)
     mem_context = "\n".join([r["memory"] for r in results[:5]]) if results else ""
     mood_line = f"\n\nMOOD CONTEXT: {mood}" if mood and mood != "neutral" else ""
     persona_reminder = "\n\nCRITICAL: You are texting Om on his dashboard. Be direct, casual, lowercase. No bullet points. No asking permission. Commit to your answer. Match Om's energy."
