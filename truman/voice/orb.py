@@ -867,7 +867,7 @@ function switchSession(i) {
   // save current messages
   sessions[currentSession].msgs = messages.innerHTML;
   currentSession = i;
-  messages.innerHTML = sessions[i].msgs || '<div class="msg truman"><div class="bubble">yo. what\'s up?</div></div>';
+  messages.innerHTML = sessions[i].msgs || '<div class="msg truman"><div class="bubble">yo. what\\'s up?</div></div>';
   renderSessionBar();
 }
 
@@ -876,12 +876,12 @@ function newSession() {
   const n = sessions.length + 1;
   sessions.push({id: Date.now(), label: `chat ${n}`, msgs: ''});
   currentSession = sessions.length - 1;
-  messages.innerHTML = '<div class="msg truman"><div class="bubble">yo. what\'s up?</div></div>';
+  messages.innerHTML = '<div class="msg truman"><div class="bubble">yo. what\\'s up?</div></div>';
   renderSessionBar();
 }
 
 function clearChat() {
-  messages.innerHTML = '<div class="msg truman"><div class="bubble">yo. what\'s up?</div></div>';
+  messages.innerHTML = '<div class="msg truman"><div class="bubble">yo. what\\'s up?</div></div>';
   sessions[currentSession].msgs = '';
 }
 
