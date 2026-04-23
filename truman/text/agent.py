@@ -50,20 +50,28 @@ def mem_add(info):
         pass
 
 
+_last_session_cache: str | None = None
+
 def _last_session_str() -> str:
-    """Return last session's structured reflection as a short context string."""
+    """Return last session's structured reflection — cached for the process lifetime."""
+    global _last_session_cache
+    if _last_session_cache is not None:
+        return _last_session_cache
     try:
         import json as _j
         from truman.storage import db as _db
         s = _db.last_session_summary()
         if not s or not s.get("summary"):
+            _last_session_cache = ""
             return ""
         d = _j.loads(s["summary"])
         parts = [d.get("summary", "")]
         for k, label in [("key_decisions","Decisions"), ("next_day_priorities","Priorities"), ("errors","Errors")]:
             if d.get(k): parts.append(f"{label}: " + ", ".join(d[k]))
-        return "\n\nLAST SESSION: " + " | ".join(p for p in parts if p)
+        _last_session_cache = "\n\nLAST SESSION: " + " | ".join(p for p in parts if p)
+        return _last_session_cache
     except Exception:
+        _last_session_cache = ""
         return ""
 
 
@@ -76,9 +84,9 @@ def _get_llm(temperature: float = 0.7):
         return ChatOpenAI(model=model, api_key=GROQ_API_KEY, base_url=GROQ_BASE_URL,
                           temperature=temperature, timeout=25)
 
-    primary = _nv("deepseek-ai/deepseek-v3.2", timeout=5)
-    f1      = _nv("glm-4.7",          timeout=10)
-    f2      = _nv("mistral-nemotron", timeout=10)
+    primary = _nv("glm-4.7",                    timeout=10)
+    f1      = _nv("deepseek-ai/deepseek-v3.2", timeout=8)
+    f2      = _nv("mistral-nemotron",           timeout=10)
     f3      = _gq("llama-3.3-70b-versatile")   # last resort
     return primary.with_fallbacks([f1, f2, f3])
 
@@ -242,7 +250,7 @@ def run(user_input: str, mood: str = "", pool: str | None = None) -> dict:
 
     # build messages for groq
     messages = [SystemMessage(content=system_content)]
-    for h in chat_history[-8:]:
+    for h in chat_history[-16:]:
         if h["role"] == "user":
             messages.append(HumanMessage(content=h["content"]))
         else:
@@ -262,16 +270,14 @@ def run(user_input: str, mood: str = "", pool: str | None = None) -> dict:
 
     chat_history.append({"role": "user", "content": user_input})
     chat_history.append({"role": "assistant", "content": final_text})
-    if len(chat_history) > 20:
-        chat_history = chat_history[-20:]
+    if len(chat_history) > 32:
+        chat_history = chat_history[-32:]
 
-    try:
-        memory.add([
-            {"role": "user",      "content": user_input},
-            {"role": "assistant", "content": final_text},
-        ], user_id=USER_ID)
-    except Exception:
-        pass
+    import threading
+    threading.Thread(target=lambda: memory.add([
+        {"role": "user",      "content": user_input},
+        {"role": "assistant", "content": final_text},
+    ], user_id=USER_ID), daemon=True).start()
 
     _sm = get_session_model()
     model_label = short_label(_sm) if _sm else "deepseek-v3.2"
