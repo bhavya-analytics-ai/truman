@@ -161,4 +161,134 @@ def list_reminders() -> str:
     return "\n".join([f"- {r['note']} at {r['time'].strftime('%I:%M %p')}" for r in reminders])
 
 
-TOOLS = [web_search, get_weather, remember, recall, set_reminder, list_reminders]
+@tool
+def search_history(query: str, limit: int = 10) -> str:
+    """Search EVERY past conversation Om has had with Truman — all sessions, all turns. Use this when Om asks 'what did we talk about', 'what do you have on X', 'what's in your database/history', or references a past exchange. Returns matching turns with who said it and when. FTS5 search, so use keywords not full sentences."""
+    from truman.storage import db
+    try:
+        rows = db.search_turns(query, limit=limit)
+    except Exception as e:
+        return f"Search failed: {e}"
+    if not rows:
+        return f"No past turns matched '{query}'."
+    lines = []
+    for r in rows:
+        who = "Om" if r["role"] == "user" else "Truman"
+        ts = (r.get("ts") or "")[:16].replace("T", " ")
+        content = (r.get("content") or "").strip()
+        if len(content) > 160:
+            content = content[:157] + "..."
+        lines.append(f"[{ts}] {who}: {content}")
+    return "\n".join(lines)
+
+
+@tool
+def recent_conversations(n: int = 10) -> str:
+    """Pull the last N turns across all sessions, chronological. Use when Om asks 'what did we just talk about', 'remind me what I said last time', or wants recent context Truman doesn't have in the live window. Default 10, cap 50."""
+    from truman.storage import db
+    n = max(1, min(int(n or 10), 50))
+    try:
+        rows = db.recent_turns(n)
+    except Exception as e:
+        return f"Lookup failed: {e}"
+    if not rows:
+        return "No turns logged yet."
+    lines = []
+    for r in rows:
+        who = "Om" if r["role"] == "user" else "Truman"
+        ts = (r.get("ts") or "")[:16].replace("T", " ")
+        content = (r.get("content") or "").strip()
+        if len(content) > 160:
+            content = content[:157] + "..."
+        lines.append(f"[{ts}] {who}: {content}")
+    return "\n".join(lines)
+
+
+@tool
+def read_mac_file(path: str) -> str:
+    """Read a file from Om's Mac. Use when Om says 'show me that file', 'read X', or references a file on his laptop. Path can be absolute or use ~."""
+    from truman.voice.orb import mac_request
+    result = mac_request("read_file", {"path": path})
+    return result.get("result") if result.get("ok") else f"Error: {result.get('error')}"
+
+
+@tool
+def list_mac_dir(path: str = "~") -> str:
+    """List files and folders in a directory on Om's Mac. Use when Om asks what's in a folder or wants to browse his files."""
+    from truman.voice.orb import mac_request
+    result = mac_request("list_dir", {"path": path})
+    return result.get("result") if result.get("ok") else f"Error: {result.get('error')}"
+
+
+@tool
+def search_mac_files(root: str, pattern: str) -> str:
+    """Search for files matching a pattern on Om's Mac (e.g. pattern='*.py', root='~/Desktop/friday'). Use when Om asks to find a file."""
+    from truman.voice.orb import mac_request
+    result = mac_request("search_files", {"root": root, "pattern": pattern})
+    return result.get("result") if result.get("ok") else f"Error: {result.get('error')}"
+
+
+@tool
+def write_mac_file(path: str, content: str) -> str:
+    """Write or create a file on Om's Mac. Use when Om says 'save this', 'create a file', 'write this to my desktop/notes/etc'. iCloud syncs it to his phone automatically. Path supports ~ for home dir."""
+    from truman.voice.orb import mac_request
+    result = mac_request("write_file", {"path": path, "content": content})
+    return result.get("result") if result.get("ok") else f"Error: {result.get('error')}"
+
+
+@tool
+def list_models(pool: str = "") -> str:
+    """List available AI models for a specific pool or all pools. Use when Om asks 'what models do I have', 'what models for coding', 'show me the pools', etc. Pool options: coding, creative, design, docs, vision, general, reasoning, fast, agentic. Leave empty for all pools."""
+    from truman.core.model_router import list_pool_models, get_session_model
+    target = pool.lower().strip() if pool else None
+    data = list_pool_models(target)
+    if not data:
+        return f"No pool named '{pool}'. Options: coding, creative, design, docs, vision, general, reasoning, fast, agentic."
+    from truman.core.model_router import short_label
+    lines = []
+    override = get_session_model()
+    if override:
+        lines.append(f"⚡ Session override active: {short_label(override)}\n")
+    for p, models in data.items():
+        lines.append(f"[{p}]")
+        for i, m in enumerate(models):
+            marker = "→" if i == 0 else " "
+            label = short_label(m['slug'])
+            lines.append(f"  {marker} {label}  —  {m['info']}")
+    return "\n".join(lines)
+
+
+@tool
+def set_model(model_slug: str) -> str:
+    """Force Truman to use a specific model for all text responses this session. Use when Om says 'use qwen', 'switch to deepseek', 'use minimax', etc. Short names: glm, qwen, devstral, kimi, mistral, deepseek, step, minimax, maverick, terminus, nemotron, llama. Pass 'auto' or 'clear' to go back to automatic routing."""
+    from truman.core.model_router import set_session_model, clear_session_model, _resolve_slug, MODEL_INFO
+
+    slug = model_slug.strip().lower()
+
+    if slug in ("auto", "clear", "reset", "off"):
+        clear_session_model()
+        return "Back to automatic pool routing."
+
+    resolved = _resolve_slug(slug)
+    set_session_model(resolved)
+    info = MODEL_INFO.get(resolved, "")
+    return f"Using {resolved}{f' — {info}' if info else ''} for this session. Say 'auto' to switch back."
+
+
+@tool
+def pipeline_mode(request: str, pool: str = "coding") -> str:
+    """Run a high-stakes task through the 3-stage pipeline: deepseek-v3.2 reasons → pool model generates → glm-4.7 reviews. Use when Om says 'pipeline this', 'use pipeline', 'double check', or for complex code/architecture tasks. Pool options: coding, creative, design, docs, general, reasoning."""
+    from truman.core.model_router import run_pipeline
+    pool = pool.lower().strip() or "coding"
+    result = run_pipeline(request, pool=pool)
+    output = result["content"]
+    stages = result.get("pipeline_stages", [])
+    if stages:
+        used = " → ".join(s["model"].split("/")[-1].split(":")[0] for s in stages)
+        output = f"[pipeline: {used}]\n\n{output}"
+    return output
+
+
+TOOLS = [web_search, get_weather, remember, recall, set_reminder, list_reminders,
+         search_history, recent_conversations, read_mac_file, list_mac_dir, search_mac_files,
+         write_mac_file, list_models, set_model, pipeline_mode]
