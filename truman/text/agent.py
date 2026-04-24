@@ -262,11 +262,12 @@ def _classify_mood(user_input: str) -> str:
     return "neutral"
 
 
-chat_history: list = []
+_chat_histories: dict[str, list] = {}   # session_id → list of turns
 
 
-def run(user_input: str, mood: str = "", pool: str | None = None) -> dict:
-    global chat_history
+def run(user_input: str, mood: str = "", pool: str | None = None, session_id: str = "default") -> dict:
+    global _chat_histories
+    chat_history = _chat_histories.setdefault(session_id, [])
     t_start = time.time()
     error_str = ""
 
@@ -319,7 +320,7 @@ def run(user_input: str, mood: str = "", pool: str | None = None) -> dict:
     chat_history.append({"role": "user", "content": user_input})
     chat_history.append({"role": "assistant", "content": final_text})
     if len(chat_history) > 32:
-        chat_history = chat_history[-32:]
+        _chat_histories[session_id] = chat_history[-32:]
 
     import threading
     threading.Thread(target=_mem_add_smart, args=(user_input, final_text), daemon=True).start()
