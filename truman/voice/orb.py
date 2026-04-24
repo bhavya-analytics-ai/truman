@@ -119,6 +119,7 @@ def api_chat():
     data = request.get_json(silent=True) or {}
     user_input = (data.get("message") or "").strip()
     session_id = (data.get("session_id") or "default").strip()
+    pool_hint  = (data.get("pool") or None)
     if not user_input:
         return jsonify({"error": "empty message"}), 400
     try:
@@ -126,7 +127,7 @@ def api_chat():
         from truman.storage import db as _db
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
-            future = ex.submit(agent_run, user_input, "", None, session_id)
+            future = ex.submit(agent_run, user_input, "", pool_hint, session_id)
             try:
                 result = future.result(timeout=45)
             except concurrent.futures.TimeoutError:

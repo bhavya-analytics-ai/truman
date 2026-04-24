@@ -107,6 +107,7 @@
     <button class="hdr-btn" onclick="openLogs()">logs</button>
     <button class="hdr-btn" onclick="newSession()">+ new</button>
     <button class="hdr-btn" onclick="clearChat()">clear</button>
+    <span id="pool-badge" style="font-size:10px;color:#7c7caa;background:#16162a;border:1px solid #2a2a4a;border-radius:6px;padding:2px 8px;display:none;"></span>
     <span style="font-size:11px;color:#555570;" id="mac-status">mac offline</span>
     <div class="mac-dot" id="mac-dot"></div>
   </div>
@@ -312,11 +313,13 @@ async function send() {
 
   let displayText = text;
   let sendText = text;
+  let sendPool = null;
 
   // if a file is pending, show card in chat and send file content to backend
   if (_pendingFile) {
     displayText = `📎 ${_pendingFile.filename}`;
     sendText = `[File: ${_pendingFile.filename}]\n\n${_pendingFile.text}`;
+    sendPool = 'docs';
     _pendingFile = null;
   }
 
@@ -332,7 +335,7 @@ async function send() {
     const r = await fetch('/api/chat', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({message: sendText, session_id: currentSessionId()})
+      body: JSON.stringify({message: sendText, session_id: currentSessionId(), ...(sendPool && {pool: sendPool})})
     });
     const d = await r.json();
     clearInterval(toolInterval);
@@ -341,9 +344,11 @@ async function send() {
     const respText = (d.response || '').trim();
     if (!respText) { addMsg('truman', '(no response — try again)', null); return; }
     addMsg('truman', respText, {model: d.model || 'deepseek-v3.2', pool: d.pool || 'general', tool_calls: d.tool_calls});
-    // update mac dot
+    // update mac dot + pool badge
     macDot.className = 'mac-dot' + (d.mac === 'connected' ? ' on' : '');
     macStatus.textContent = d.mac === 'connected' ? 'mac online' : 'mac offline';
+    const pb = document.getElementById('pool-badge');
+    if (d.pool) { pb.textContent = d.pool; pb.style.display = 'inline'; }
   } catch(e) {
     clearInterval(toolInterval);
     status.remove();

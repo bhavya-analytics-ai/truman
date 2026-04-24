@@ -263,10 +263,14 @@ def _classify_mood(user_input: str) -> str:
 
 
 _chat_histories: dict[str, list] = {}   # session_id → list of turns
+_session_pools:  dict[str, str]  = {}   # session_id → sticky pool
+
+# pools that count as "strong signal" — stick to them once chosen
+_STICKY_POOLS = {"coding", "design", "creative", "docs", "vision", "reasoning", "agentic"}
 
 
 def run(user_input: str, mood: str = "", pool: str | None = None, session_id: str = "default") -> dict:
-    global _chat_histories
+    global _chat_histories, _session_pools
     chat_history = _chat_histories.setdefault(session_id, [])
     t_start = time.time()
     error_str = ""
@@ -328,7 +332,25 @@ def run(user_input: str, mood: str = "", pool: str | None = None, session_id: st
     _sm = get_session_model()
     if _sm:
         model_label = short_label(_sm)
-    chosen_pool = pool or detect_pool(user_input)
+
+    # ── Sticky routing ────────────────────────────────────────────────────────
+    if pool:
+        # explicit pool passed (e.g. file upload) → use it, update sticky
+        chosen_pool = pool
+        _session_pools[session_id] = pool
+    else:
+        detected = detect_pool(user_input)
+        sticky   = _session_pools.get(session_id)
+        if detected in _STICKY_POOLS:
+            # strong signal → switch to new pool, update sticky
+            chosen_pool = detected
+            _session_pools[session_id] = detected
+        elif sticky:
+            # weak signal (general/fast) → stay on sticky pool
+            chosen_pool = sticky
+        else:
+            chosen_pool = detected
+
     elapsed = time.time() - t_start
 
     log_event(user_input, model_label, chosen_pool, elapsed, tool_calls_made, error_str)
