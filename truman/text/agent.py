@@ -128,14 +128,33 @@ def _last_session_str() -> str:
         return ""
 
 
+# ── Complexity detection ──────────────────────────────────────────────────────
+_TASK_KW = re.compile(
+    r"\b(build|write|code|debug|fix|function|script|class|implement|refactor|"
+    r"error|bug|test|api|endpoint|explain|analyze|analyse|compare|why|plan|"
+    r"design|architect|create|generate|make|deploy|review|optimize)\b", re.I
+)
+
+def _is_complex(msg: str) -> bool:
+    return len(msg.split()) > 20 or bool(_TASK_KW.search(msg))
+
+
 # ── LLM — NVIDIA only, no groq ───────────────────────────────────────────────
-def _get_llm(temperature: float = 0.7):
-    """NVIDIA-only chain: deepseek-v3.2 → mistral-nemotron. No groq."""
-    def _nv(model, timeout=8):
+def _get_llm(temperature: float = 0.7, complex_msg: bool = False):
+    """
+    General chat chain — NVIDIA only, no groq.
+    simple msg: kimi-k2-instruct (8s) → step-3.5-flash (10s)
+    complex msg: kimi-k2-instruct (12s) → step-3.5-flash (15s)
+    """
+    t1 = 12 if complex_msg else 8
+    t2 = 15 if complex_msg else 10
+
+    def _nv(model, timeout):
         return ChatOpenAI(model=model, api_key=NVIDIA_API_KEY, base_url=NVIDIA_BASE_URL,
                           temperature=temperature, timeout=timeout)
-    primary = _nv("deepseek-ai/deepseek-v3.2", timeout=8)
-    f1      = _nv("nvidia/mistral-nemotron",   timeout=10)
+
+    primary = _nv("moonshotai/kimi-k2-instruct", t1)
+    f1      = _nv("stepfun-ai/step-3.5-flash",   t2)
     return primary.with_fallbacks([f1])
 
 
@@ -302,7 +321,7 @@ def run(user_input: str, mood: str = "", pool: str | None = None) -> dict:
     else:
         messages.append(HumanMessage(content=user_input))
 
-    llm = _get_llm()
+    llm = _get_llm(complex_msg=_is_complex(user_input))
     try:
         response = llm.invoke(messages)
         final_text = strip_markdown(response.content or "")

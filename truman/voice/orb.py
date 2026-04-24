@@ -802,13 +802,48 @@ DASHBOARD_HTML = """<!DOCTYPE html>
   @keyframes pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(124,58,237,0.4); } 50% { box-shadow: 0 0 0 8px rgba(124,58,237,0); } }
 
   svg { pointer-events: none; }
+
+  /* Logs modal */
+  .modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:100; align-items:center; justify-content:center; }
+  .modal-overlay.open { display:flex; }
+  .modal { background:#0d0d1a; border:1px solid #2a2a4a; border-radius:16px; width:min(680px,94vw); max-height:80vh; display:flex; flex-direction:column; overflow:hidden; }
+  .modal-hdr { padding:14px 18px; border-bottom:1px solid #1a1a2e; display:flex; justify-content:space-between; align-items:center; }
+  .modal-hdr h2 { font-size:14px; color:#a78bfa; font-weight:600; }
+  .modal-close { background:none; border:none; color:#555570; font-size:18px; cursor:pointer; padding:2px 6px; }
+  .modal-close:hover { color:#e8e8f0; }
+  .modal-body { overflow-y:auto; padding:12px; display:flex; flex-direction:column; gap:8px; }
+  .log-row { background:#16162a; border:1px solid #1e1e3a; border-radius:10px; padding:10px 14px; display:grid; grid-template-columns:52px 1fr auto; gap:8px; align-items:start; }
+  .log-dot { width:10px; height:10px; border-radius:50%; margin-top:3px; flex-shrink:0; }
+  .log-dot.ok   { background:#22c55e; }
+  .log-dot.slow { background:#f59e0b; }
+  .log-dot.error{ background:#ef4444; }
+  .log-time { font-size:10px; color:#555570; margin-top:1px; }
+  .log-msg  { font-size:13px; color:#e8e8f0; margin-bottom:4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .log-meta { font-size:11px; color:#7c7caa; display:flex; gap:6px; flex-wrap:wrap; }
+  .log-secs { font-size:12px; font-weight:600; text-align:right; }
+  .log-secs.ok   { color:#22c55e; }
+  .log-secs.slow { color:#f59e0b; }
+  .log-secs.error{ color:#ef4444; }
+  .log-err  { font-size:11px; color:#ef4444; margin-top:4px; word-break:break-all; }
 </style>
 </head>
 <body>
 
+<!-- Logs modal -->
+<div class="modal-overlay" id="logs-modal" onclick="if(event.target===this)closeLogs()">
+  <div class="modal">
+    <div class="modal-hdr">
+      <h2>request log</h2>
+      <button class="modal-close" onclick="closeLogs()">✕</button>
+    </div>
+    <div class="modal-body" id="logs-body"></div>
+  </div>
+</div>
+
 <div class="header">
   <h1>TRUMAN</h1>
   <div style="display:flex;align-items:center;gap:8px;">
+    <button class="hdr-btn" onclick="openLogs()">logs</button>
     <button class="hdr-btn" onclick="newSession()">+ new</button>
     <button class="hdr-btn" onclick="clearChat()">clear</button>
     <span style="font-size:11px;color:#555570;" id="mac-status">mac offline</span>
@@ -1177,6 +1212,49 @@ function stopVoice() {
 }
 
 voiceBtn.addEventListener('click', () => { isVoiceActive ? stopVoice() : startVoice(); });
+
+// ── Logs modal ───────────────────────────────────────────────────────────────
+async function openLogs() {
+  document.getElementById('logs-modal').classList.add('open');
+  const body = document.getElementById('logs-body');
+  body.innerHTML = '<div style="color:#555570;padding:20px;text-align:center">loading...</div>';
+  try {
+    const r = await fetch('/api/logs');
+    const d = await r.json();
+    const logs = d.logs || [];
+    if (!logs.length) { body.innerHTML = '<div style="color:#555570;padding:20px;text-align:center">no requests yet</div>'; return; }
+    body.innerHTML = '';
+    logs.forEach(l => {
+      const row = document.createElement('div');
+      row.className = 'log-row';
+      const tools = l.tools && l.tools.length ? l.tools.map(t => '<span class="badge tool">⚙ '+t+'</span>').join('') : '';
+      const errHtml = l.error ? '<div class="log-err">'+l.error+'</div>' : '';
+      row.innerHTML = `
+        <div style="display:flex;flex-direction:column;align-items:center;gap:4px">
+          <div class="log-dot ${l.status}"></div>
+          <div class="log-time">${l.ts}</div>
+        </div>
+        <div>
+          <div class="log-msg">${l.msg}</div>
+          <div class="log-meta">
+            <span class="badge">${l.model}</span>
+            <span class="badge pool-${l.pool}">${l.pool}</span>
+            ${tools}
+          </div>
+          ${errHtml}
+        </div>
+        <div class="log-secs ${l.status}">${l.secs}s</div>
+      `;
+      body.appendChild(row);
+    });
+  } catch(e) {
+    body.innerHTML = '<div style="color:#ef4444;padding:20px">failed to load logs</div>';
+  }
+}
+
+function closeLogs() {
+  document.getElementById('logs-modal').classList.remove('open');
+}
 </script>
 </body>
 </html>
