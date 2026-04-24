@@ -15,8 +15,7 @@ from collections import deque
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 from langchain_openai import ChatOpenAI
 from mem0 import MemoryClient
-from truman.core.config import MEM0_API_KEY, OPENROUTER_API_KEY, OPENROUTER_BASE_URL
-from truman.core.config import NVIDIA_API_KEY, NVIDIA_BASE_URL
+from truman.core.config import MEM0_API_KEY, NVIDIA_API_KEY, NVIDIA_BASE_URL
 from truman.core.persona import SYSTEM
 from truman.core.model_router import detect_pool, get_session_model, short_label
 
@@ -246,32 +245,21 @@ class _SimpleAgent:
         return {"messages": msgs + [AIMessage(content=result["response"])]}
 
 
-# ── Mood classifier ───────────────────────────────────────────────────────────
-_MOOD_WORDS = {"angry", "sad", "hyped", "affectionate", "frustrated", "focused", "neutral"}
-
+# ── Mood classifier — local keyword detection, zero API calls ─────────────────
+_MOOD_MAP = [
+    ("angry",       re.compile(r"\b(fuck|shit|wtf|retard|idiot|stupid|useless|pissed|angry|mad|rage)\b", re.I)),
+    ("frustrated",  re.compile(r"\b(ugh|argh|again|still|broken|why.*not|doesn.t work|keeps|wont)\b", re.I)),
+    ("hyped",       re.compile(r"\b(let.?s go|yoo+|hype|fire|sick|banger|finally|yess+|lets do|letsss)\b", re.I)),
+    ("sad",         re.compile(r"\b(sad|tired|exhausted|rough|hard day|not good|struggling|overwhelmed)\b", re.I)),
+    ("affectionate",re.compile(r"\b(love|miss|appreciate|thanks man|good job|proud|grateful|means a lot)\b", re.I)),
+    ("focused",     re.compile(r"\b(let.?s focus|back to|continue|resume|pick up|next step|moving on)\b", re.I)),
+]
 
 def _classify_mood(user_input: str) -> str:
-    if not OPENROUTER_API_KEY or not user_input:
-        return "neutral"
-    try:
-        llm_mood = ChatOpenAI(
-            model="openai/gpt-oss-120b:free",
-            api_key=OPENROUTER_API_KEY,
-            base_url=OPENROUTER_BASE_URL,
-            timeout=5,
-            temperature=0.0,
-            max_tokens=8,
-        )
-        prompt = (
-            "Classify this message's mood with ONE lowercase word from this list: "
-            "angry, sad, hyped, affectionate, frustrated, focused, neutral. "
-            "Return ONLY the word — no punctuation, no explanation.\n\n"
-            f"Message: {user_input!r}"
-        )
-        resp = llm_mood.invoke(prompt).content.strip().lower().rstrip(".,!?;:")
-        return resp if resp in _MOOD_WORDS else "neutral"
-    except Exception:
-        return "neutral"
+    for mood, pattern in _MOOD_MAP:
+        if pattern.search(user_input):
+            return mood
+    return "neutral"
 
 
 chat_history: list = []
@@ -283,14 +271,8 @@ def run(user_input: str, mood: str = "", pool: str | None = None) -> dict:
     error_str = ""
 
     if not mood:
-        from concurrent.futures import ThreadPoolExecutor
-        with ThreadPoolExecutor(max_workers=2) as ex:
-            mood_fut = ex.submit(_classify_mood, user_input)
-            mem_fut  = ex.submit(mem_search, user_input)
-            mood     = mood_fut.result()
-            results  = mem_fut.result()
-    else:
-        results = mem_search(user_input)
+        mood = _classify_mood(user_input)  # instant, local
+    results = mem_search(user_input)
 
     mem_context = "\n".join([r["memory"] for r in results[:5]]) if results else ""
     mood_line = f"\n\nMOOD CONTEXT: {mood}" if mood and mood != "neutral" else ""

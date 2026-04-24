@@ -1091,10 +1091,18 @@ document.getElementById('file-input').addEventListener('change', async (e) => {
     const d = await r.json();
     status.remove();
     if (d.error) { addMsg('truman', 'upload error: ' + d.error, null); return; }
-    // send extracted content to chat
+    // show file card in chat, send content silently to backend
+    addMsg('user', `📎 ${d.filename}`, null);
     const prompt = `[File: ${d.filename}]\n\n${d.text}`;
-    input.value = prompt;
-    send();
+    const statusMsg = addStatus();
+    try {
+      const cr = await fetch('/api/chat', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({message: prompt})});
+      const cd = await cr.json();
+      statusMsg.remove();
+      const respText = (cd.response || '').trim();
+      if (!respText) { addMsg('truman', '(no response — try again)', null); return; }
+      addMsg('truman', respText, {model: cd.model || 'kimi-k2', pool: cd.pool || 'docs', tool_calls: cd.tool_calls});
+    } catch(e) { statusMsg.remove(); addMsg('truman', 'error processing file', null); }
   } catch(e) {
     status.remove();
     addMsg('truman', 'upload failed', null);
