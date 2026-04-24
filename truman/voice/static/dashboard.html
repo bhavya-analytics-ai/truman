@@ -240,7 +240,7 @@ function addMsg(role, text, meta) {
 
   const bubble = document.createElement('div');
   bubble.className = 'bubble';
-  bubble.textContent = text;
+  bubble.innerHTML = text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n\n/g,'<br><br>').replace(/\n/g,' ');
   div.appendChild(bubble);
 
   if (meta) {
@@ -315,15 +315,22 @@ async function send() {
   let sendText = text;
   let sendPool = null;
 
-  // if a file is pending, show card in chat and send file content to backend
+  // if a file is pending, show card/image in chat and send content to backend
   if (_pendingFile) {
-    displayText = `📎 ${_pendingFile.filename}`;
-    sendText = `[File: ${_pendingFile.filename}]\n\n${_pendingFile.text}`;
-    sendPool = 'docs';
+    if (_pendingFile.isImage) {
+      addImageMsg(_pendingFile.file);
+      sendText = `[Image: ${_pendingFile.filename}]\n\n${_pendingFile.text}`;
+      sendPool = 'vision';
+      displayText = null; // image already added above
+    } else {
+      displayText = `📎 ${_pendingFile.filename}`;
+      sendText = `[File: ${_pendingFile.filename}]\n\n${_pendingFile.text}`;
+      sendPool = 'docs';
+    }
     _pendingFile = null;
   }
 
-  addMsg('user', displayText, null);
+  if (displayText) addMsg('user', displayText, null);
   const status = addStatus();
 
   // animate tool names while waiting
@@ -376,10 +383,9 @@ document.getElementById('file-input').addEventListener('change', async (e) => {
   const isImage = IMAGE_EXTS.has(ext);
 
   if (isImage) {
-    // show image in chat immediately, then send to vision model
-    addImageMsg(file);
+    // show preview in input area — Om hits send to dispatch
     const status = addStatus();
-    status.querySelector('.status-text').textContent = 'analyzing image...';
+    status.querySelector('.status-text').textContent = `reading ${file.name}...`;
     try {
       const fd = new FormData();
       fd.append('file', file);
@@ -387,13 +393,13 @@ document.getElementById('file-input').addEventListener('change', async (e) => {
       const d = await r.json();
       status.remove();
       if (d.error) { addMsg('truman', 'vision error: ' + d.error, null); return; }
-      const cr = await fetch('/api/chat', {method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({message: `[Image: ${d.filename}]\n\n${d.text}`, session_id: currentSessionId()})});
-      const cd = await cr.json();
-      const respText = (cd.response || '').trim();
-      if (!respText) { addMsg('truman', '(no response — try again)', null); return; }
-      addMsg('truman', respText, {model: cd.model || 'maverick', pool: cd.pool || 'vision', tool_calls: cd.tool_calls});
+      _pendingFile = {filename: d.filename, text: d.text, isImage: true, file};
+      input.value = `📎 ${d.filename}`;
+      input.style.height = 'auto';
+      input.style.height = Math.min(input.scrollHeight, 120) + 'px';
+      input.focus();
     } catch(err) {
+      status.remove();
       addMsg('truman', 'image upload failed', null);
     }
   } else {
