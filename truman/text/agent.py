@@ -140,22 +140,27 @@ def _is_complex(msg: str) -> bool:
 
 
 # ── LLM — NVIDIA only, no groq ───────────────────────────────────────────────
-def _get_llm(temperature: float = 0.7, complex_msg: bool = False):
-    """
-    General chat chain — NVIDIA only, no groq.
-    simple msg: kimi-k2-instruct (8s) → step-3.5-flash (10s)
-    complex msg: kimi-k2-instruct (12s) → step-3.5-flash (15s)
-    """
+_CHAT_MODELS = [
+    ("moonshotai/kimi-k2-instruct", "kimi-k2"),
+    ("stepfun-ai/step-3.5-flash",   "step-flash"),
+]
+
+def _call_llm(messages: list, complex_msg: bool = False, temperature: float = 0.7):
+    """Try each model in order, return (response_text, model_label)."""
     t1 = 12 if complex_msg else 8
     t2 = 15 if complex_msg else 10
+    timeouts = [t1, t2]
 
-    def _nv(model, timeout):
-        return ChatOpenAI(model=model, api_key=NVIDIA_API_KEY, base_url=NVIDIA_BASE_URL,
-                          temperature=temperature, timeout=timeout)
-
-    primary = _nv("moonshotai/kimi-k2-instruct", t1)
-    f1      = _nv("stepfun-ai/step-3.5-flash",   t2)
-    return primary.with_fallbacks([f1])
+    for i, (model, label) in enumerate(_CHAT_MODELS):
+        try:
+            llm = ChatOpenAI(model=model, api_key=NVIDIA_API_KEY, base_url=NVIDIA_BASE_URL,
+                             temperature=temperature, timeout=timeouts[i])
+            resp = llm.invoke(messages)
+            return resp.content or "", label
+        except Exception as e:
+            print(f"[LLM] {label} failed: {e}")
+            continue
+    return "", "none"
 
 
 # ── Tool intent detection ─────────────────────────────────────────────────────
@@ -321,13 +326,13 @@ def run(user_input: str, mood: str = "", pool: str | None = None) -> dict:
     else:
         messages.append(HumanMessage(content=user_input))
 
-    llm = _get_llm(complex_msg=_is_complex(user_input))
     try:
-        response = llm.invoke(messages)
-        final_text = strip_markdown(response.content or "")
+        raw_text, model_label = _call_llm(messages, complex_msg=_is_complex(user_input))
+        final_text = strip_markdown(raw_text)
     except Exception as e:
         error_str = str(e)
         final_text = ""
+        model_label = "none"
 
     chat_history.append({"role": "user", "content": user_input})
     chat_history.append({"role": "assistant", "content": final_text})
@@ -338,7 +343,8 @@ def run(user_input: str, mood: str = "", pool: str | None = None) -> dict:
     threading.Thread(target=_mem_add_smart, args=(user_input, final_text), daemon=True).start()
 
     _sm = get_session_model()
-    model_label = short_label(_sm) if _sm else "deepseek-v3.2"
+    if _sm:
+        model_label = short_label(_sm)
     chosen_pool = pool or detect_pool(user_input)
     elapsed = time.time() - t_start
 
