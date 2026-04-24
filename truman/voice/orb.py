@@ -230,8 +230,9 @@ def api_upload():
             from langchain_openai import ChatOpenAI
             from truman.core.config import NVIDIA_API_KEY, NVIDIA_BASE_URL
             b64 = base64.b64encode(data).decode()
-            mime = "image/png" if ext == ".png" else "image/jpeg"
-            llm = ChatOpenAI(model="nvidia/llama-4-maverick-17b-128e-instruct",
+            mime_map = {".png":"image/png",".gif":"image/gif",".webp":"image/webp",".bmp":"image/bmp"}
+            mime = mime_map.get(ext, "image/jpeg")
+            llm = ChatOpenAI(model="meta/llama-4-maverick-17b-128e-instruct",
                              api_key=NVIDIA_API_KEY, base_url=NVIDIA_BASE_URL)
             resp = llm.invoke([{
                 "role": "user",
