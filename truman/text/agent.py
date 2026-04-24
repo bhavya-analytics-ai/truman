@@ -3,17 +3,20 @@ agent.py — Truman text agent.
 
 Architecture:
   - Tool intent detection from message keywords
-  - Direct tool execution (no bind_tools — avoids API-level tool call format issues)
-  - Groq (llama-3.3) formats the final response with tool results injected
-  - NVIDIA handles heavy tasks (coding, reasoning) via run_with_pool() in tools
+  - Direct tool execution (no bind_tools)
+  - NVIDIA-only model chain (no groq)
+  - Smart memory filter — only meaningful turns written to Mem0
+  - Error log ring buffer (last 50 events)
 """
 import re
+import time
 import json
+from collections import deque
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 from langchain_openai import ChatOpenAI
 from mem0 import MemoryClient
 from truman.core.config import MEM0_API_KEY, OPENROUTER_API_KEY, OPENROUTER_BASE_URL
-from truman.core.config import GROQ_API_KEY, GROQ_BASE_URL, NVIDIA_API_KEY, NVIDIA_BASE_URL
+from truman.core.config import NVIDIA_API_KEY, NVIDIA_BASE_URL
 from truman.core.persona import SYSTEM
 from truman.core.model_router import detect_pool, get_session_model, short_label
 
@@ -34,6 +37,31 @@ memory = MemoryClient(api_key=MEM0_API_KEY)
 USER_ID = "om"
 MEM_FILTER = {"AND": [{"user_id": USER_ID}]}
 
+# ── Error log ring buffer ─────────────────────────────────────────────────────
+_error_log: deque = deque(maxlen=50)
+
+def log_event(user_msg: str, model: str, pool: str, elapsed: float,
+              tool_calls: list, error: str = ""):
+    _error_log.appendleft({
+        "ts":         time.strftime("%H:%M:%S"),
+        "msg":        user_msg[:60],
+        "model":      model,
+        "pool":       pool,
+        "secs":       round(elapsed, 1),
+        "tools":      [t["name"] for t in tool_calls],
+        "error":      error,
+        "status":     "error" if error else ("slow" if elapsed > 8 else "ok"),
+    })
+
+def get_error_log():
+    return list(_error_log)
+
+
+# ── Memory helpers ────────────────────────────────────────────────────────────
+_GREETINGS = re.compile(
+    r"^(yo+|hey+|hi+|sup|what'?s up|thanks?|thx|nice|ok|okay|cool|lol|haha|got it|sure|yep|nope|no|yes|k|np)[\s!?.]*$",
+    re.I
+)
 
 def mem_search(query):
     try:
@@ -41,6 +69,31 @@ def mem_search(query):
         return results.get("results", []) if isinstance(results, dict) else results
     except Exception:
         return []
+
+def _should_save(text: str) -> bool:
+    """Return True only if the message is worth saving to Mem0."""
+    t = text.strip()
+    if len(t) < 20:          return False   # too short
+    if _GREETINGS.match(t):  return False   # greeting/reaction
+    return True
+
+def _mem_add_smart(user_input: str, response: str):
+    """Write to Mem0 only if user message has real substance. Background thread."""
+    if not _should_save(user_input):
+        return
+    try:
+        # basic dedup: skip if Mem0 already has very similar entry
+        hits = memory.search(user_input[:80], filters=MEM_FILTER)
+        existing = hits.get("results", []) if isinstance(hits, dict) else hits
+        for h in existing[:3]:
+            if h.get("memory", "")[:60].lower() == user_input[:60].lower():
+                return  # duplicate, skip
+        memory.add([
+            {"role": "user",      "content": user_input},
+            {"role": "assistant", "content": response},
+        ], user_id=USER_ID)
+    except Exception:
+        pass
 
 
 def mem_add(info):
@@ -50,10 +103,10 @@ def mem_add(info):
         pass
 
 
+# ── Last session cache ────────────────────────────────────────────────────────
 _last_session_cache: str | None = None
 
 def _last_session_str() -> str:
-    """Return last session's structured reflection — cached for the process lifetime."""
     global _last_session_cache
     if _last_session_cache is not None:
         return _last_session_cache
@@ -75,20 +128,15 @@ def _last_session_str() -> str:
         return ""
 
 
+# ── LLM — NVIDIA only, no groq ───────────────────────────────────────────────
 def _get_llm(temperature: float = 0.7):
-    """deepseek-v3.2 → glm-4.7 → mistral-nemotron (all NVIDIA) → groq last resort."""
-    def _nv(model, timeout=5):
+    """NVIDIA-only chain: deepseek-v3.2 → mistral-nemotron. No groq."""
+    def _nv(model, timeout=8):
         return ChatOpenAI(model=model, api_key=NVIDIA_API_KEY, base_url=NVIDIA_BASE_URL,
                           temperature=temperature, timeout=timeout)
-    def _gq(model):
-        return ChatOpenAI(model=model, api_key=GROQ_API_KEY, base_url=GROQ_BASE_URL,
-                          temperature=temperature, timeout=25)
-
-    primary = _nv("glm-4.7",                    timeout=10)
-    f1      = _nv("deepseek-ai/deepseek-v3.2", timeout=8)
-    f2      = _nv("mistral-nemotron",           timeout=10)
-    f3      = _gq("llama-3.3-70b-versatile")   # last resort
-    return primary.with_fallbacks([f1, f2, f3])
+    primary = _nv("deepseek-ai/deepseek-v3.2", timeout=8)
+    f1      = _nv("nvidia/mistral-nemotron",   timeout=10)
+    return primary.with_fallbacks([f1])
 
 
 # ── Tool intent detection ─────────────────────────────────────────────────────
@@ -112,7 +160,6 @@ _TOOL_PATTERNS = [
 
 
 def _detect_tool(message: str):
-    """Returns (tool_name, None) or None if no tool needed."""
     for pattern, tool_name in _TOOL_PATTERNS:
         if pattern.search(message):
             return tool_name
@@ -120,10 +167,8 @@ def _detect_tool(message: str):
 
 
 def _extract_arg(message: str, tool_name: str) -> dict:
-    """Extract the most relevant argument from the message for the given tool."""
     msg = message.strip()
     if tool_name == "web_search":
-        # strip filler and use the meaningful part
         q = re.sub(r"^(search|look up|find|google|what.*?is|tell me about)\s+", "", msg, flags=re.I).strip()
         return {"query": q or msg}
     if tool_name == "get_weather":
@@ -209,11 +254,9 @@ chat_history: list = []
 
 
 def run(user_input: str, mood: str = "", pool: str | None = None) -> dict:
-    """
-    Keyword-based tool detection → direct execution → groq formats response.
-    No bind_tools — avoids API-level tool call format failures.
-    """
     global chat_history
+    t_start = time.time()
+    error_str = ""
 
     if not mood:
         from concurrent.futures import ThreadPoolExecutor
@@ -235,9 +278,8 @@ def run(user_input: str, mood: str = "", pool: str | None = None) -> dict:
     from truman.tools.all_tools import TOOLS
     tool_map = {t.name: t for t in TOOLS}
 
-    # detect if a tool is needed
-    tool_name   = _detect_tool(user_input)
-    tool_result = None
+    tool_name    = _detect_tool(user_input)
+    tool_result  = None
     tool_calls_made = []
 
     if tool_name and tool_name in tool_map:
@@ -248,7 +290,6 @@ def run(user_input: str, mood: str = "", pool: str | None = None) -> dict:
         except Exception as e:
             tool_result = f"tool error: {e}"
 
-    # build messages for groq
     messages = [SystemMessage(content=system_content)]
     for h in chat_history[-16:]:
         if h["role"] == "user":
@@ -257,16 +298,17 @@ def run(user_input: str, mood: str = "", pool: str | None = None) -> dict:
             messages.append(AIMessage(content=h["content"]))
 
     if tool_result is not None:
-        messages.append(HumanMessage(
-            content=f"{user_input}\n\n[Tool result from {tool_name}]:\n{tool_result}"
-        ))
+        messages.append(HumanMessage(content=f"{user_input}\n\n[Tool result from {tool_name}]:\n{tool_result}"))
     else:
         messages.append(HumanMessage(content=user_input))
 
-    # get response from groq (no tool binding — plain LLM call)
     llm = _get_llm()
-    response = llm.invoke(messages)
-    final_text = strip_markdown(response.content or "")
+    try:
+        response = llm.invoke(messages)
+        final_text = strip_markdown(response.content or "")
+    except Exception as e:
+        error_str = str(e)
+        final_text = ""
 
     chat_history.append({"role": "user", "content": user_input})
     chat_history.append({"role": "assistant", "content": final_text})
@@ -274,18 +316,19 @@ def run(user_input: str, mood: str = "", pool: str | None = None) -> dict:
         chat_history = chat_history[-32:]
 
     import threading
-    threading.Thread(target=lambda: memory.add([
-        {"role": "user",      "content": user_input},
-        {"role": "assistant", "content": final_text},
-    ], user_id=USER_ID), daemon=True).start()
+    threading.Thread(target=_mem_add_smart, args=(user_input, final_text), daemon=True).start()
 
     _sm = get_session_model()
     model_label = short_label(_sm) if _sm else "deepseek-v3.2"
+    chosen_pool = pool or detect_pool(user_input)
+    elapsed = time.time() - t_start
+
+    log_event(user_input, model_label, chosen_pool, elapsed, tool_calls_made, error_str)
 
     return {
         "response":   final_text,
         "model":      model_label,
-        "pool":       pool or detect_pool(user_input),
+        "pool":       chosen_pool,
         "tool_calls": tool_calls_made,
         "warnings":   [],
         "mood":       mood,

@@ -153,6 +153,12 @@ def api_chat():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/logs")
+def api_logs():
+    from truman.text.agent import get_error_log
+    return jsonify({"logs": get_error_log()})
+
+
 @app.route("/api/history")
 def api_history():
     """Return last 30 turns from SQLite for dashboard page-load restore."""
