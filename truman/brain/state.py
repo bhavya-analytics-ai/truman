@@ -1,0 +1,30 @@
+"""
+state.py — Truman's LangGraph state object.
+One TypedDict travels through every node. Each node reads what it needs,
+writes what it produces. Nothing shared globally.
+"""
+from typing import TypedDict, Optional
+
+
+class TrumanState(TypedDict):
+    # ── Input ────────────────────────────────────────────────────────────────
+    session_id:      str
+    user_input:      str
+    pool_hint:       Optional[str]   # explicit pool from caller (file upload etc)
+
+    # ── Produced by nodes ────────────────────────────────────────────────────
+    mood:            str             # classify_mood
+    memory_context:  str             # load_memory
+    chosen_pool:     str             # detect_pool
+    tool_name:       Optional[str]   # detect_tool
+    tool_result:     Optional[str]   # execute_tool
+    tool_calls_made: list            # execute_tool
+
+    # ── LLM output ───────────────────────────────────────────────────────────
+    messages:        list            # built before call_llm
+    response:        str             # call_llm
+    model_label:     str             # call_llm
+
+    # ── Error tracking ───────────────────────────────────────────────────────
+    node_errors:     dict            # {node_name: error_str} — soft failures
+    fatal_error:     str             # if whole graph failed

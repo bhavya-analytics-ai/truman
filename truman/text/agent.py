@@ -288,7 +288,7 @@ _session_pools:  dict[str, str]  = {}   # session_id → sticky pool
 _STICKY_POOLS = {"coding", "design", "creative", "docs", "vision", "reasoning", "agentic"}
 
 
-def run(user_input: str, mood: str = "", pool: str | None = None, session_id: str = "default") -> dict:
+def _run_legacy(user_input: str, mood: str = "", pool: str | None = None, session_id: str = "default") -> dict:
     global _chat_histories, _session_pools
     chat_history = _chat_histories.setdefault(session_id, [])
     t_start = time.time()
@@ -384,3 +384,38 @@ def run(user_input: str, mood: str = "", pool: str | None = None, session_id: st
         "warnings":   [],
         "mood":       mood,
     }
+
+
+import os as _os
+
+def run(user_input: str, mood: str = "", pool: str | None = None, session_id: str = "default") -> dict:
+    """
+    Primary entry point.
+    Tries LangGraph brain loop first (ENABLE_LANGGRAPH=1, default on).
+    Falls back to legacy sequential run() if anything goes wrong.
+    All failures surface in the events drawer.
+    """
+    use_lg = _os.environ.get("ENABLE_LANGGRAPH", "1") == "1"
+
+    if use_lg:
+        try:
+            from truman.brain.loop import run as lg_run
+            return lg_run(user_input, session_id=session_id, pool_hint=pool)
+        except Exception as e:
+            print(f"[LangGraph] failed, falling back to legacy: {e}")
+            # emit error event so it shows in drawer
+            try:
+                import threading
+                from truman.storage import db as _db
+                threading.Thread(
+                    target=_db.log_event_db,
+                    kwargs=dict(kind="chat", source="text", session_id=session_id,
+                                status="error", error=f"LangGraph failed: {e}",
+                                detail=f'{{"msg":"{user_input[:80]}"}}'),
+                    daemon=True,
+                ).start()
+            except Exception:
+                pass
+
+    # fallback: original sequential logic
+    return _run_legacy(user_input, mood=mood, pool=pool, session_id=session_id)
