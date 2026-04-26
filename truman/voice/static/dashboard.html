@@ -64,6 +64,16 @@
 
   svg { pointer-events: none; }
 
+  /* Power button */
+  .power-btn { width:34px; height:34px; border-radius:50%; border:2px solid #22c55e; background:none; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:all 0.2s; }
+  .power-btn:hover { border-color:#16a34a; box-shadow:0 0 8px rgba(34,197,94,0.4); }
+  .power-btn.off { border-color:#ef4444; }
+  .power-btn.off:hover { box-shadow:0 0 8px rgba(239,68,68,0.4); }
+  .power-icon { width:14px; height:14px; border-radius:50%; border:2px solid #22c55e; position:relative; }
+  .power-icon::after { content:''; position:absolute; top:-4px; left:50%; transform:translateX(-50%); width:2px; height:6px; background:#22c55e; border-radius:1px; }
+  .power-btn.off .power-icon { border-color:#ef4444; }
+  .power-btn.off .power-icon::after { background:#ef4444; }
+
   /* Status pill */
   .status-pill { display:flex; align-items:center; gap:5px; background:#16162a; border:1px solid #2a2a4a; border-radius:20px; padding:3px 10px 3px 7px; cursor:pointer; transition:border-color 0.2s; }
   .status-pill:hover { border-color:#4f46e5; }
@@ -128,6 +138,9 @@
     <button class="hdr-btn" onclick="clearChat()">clear</button>
     <span style="font-size:11px;color:#555570;" id="mac-status">mac offline</span>
     <div class="mac-dot" id="mac-dot"></div>
+    <button class="power-btn" id="power-btn" onclick="togglePower()" title="Kill switch — Om only">
+      <div class="power-icon"></div>
+    </button>
   </div>
 </div>
 
@@ -168,6 +181,47 @@ const voiceBtn   = document.getElementById('voice-btn');
 const macDot     = document.getElementById('mac-dot');
 const macStatus  = document.getElementById('mac-status');
 const sessionBar = document.getElementById('session-bar');
+
+// ── Power / kill switch ──────────────────────────────────────────────────────
+const powerBtn = document.getElementById('power-btn');
+let trumanOn = true;
+
+async function fetchPowerState() {
+  try {
+    const r = await fetch('/api/power');
+    const d = await r.json();
+    trumanOn = d.on;
+    updatePowerUI();
+  } catch(e) {}
+}
+
+function updatePowerUI() {
+  if (trumanOn) {
+    powerBtn.classList.remove('off');
+    powerBtn.title = 'Truman is ON — click to kill';
+    powerBtn.querySelector('.power-icon').style.borderColor = '#22c55e';
+    powerBtn.querySelector('.power-icon').style.setProperty('--after-bg', '#22c55e');
+  } else {
+    powerBtn.classList.add('off');
+    powerBtn.title = 'Truman is OFF — click to turn on';
+  }
+}
+
+async function togglePower() {
+  try {
+    const r = await fetch('/api/power', {method:'POST'});
+    const d = await r.json();
+    trumanOn = d.on;
+    updatePowerUI();
+    if (!trumanOn) {
+      appendMsg('truman', "i'm off. om turned me off.", {});
+    } else {
+      appendMsg('truman', "i'm back.", {});
+    }
+  } catch(e) {}
+}
+
+fetchPowerState();
 
 // ── Session management ──────────────────────────────────────────────────────
 function genId() { return 'sess-' + Date.now() + '-' + Math.random().toString(36).slice(2,7); }
@@ -624,7 +678,10 @@ async function refreshDrawer() {
       let detail = {};
       try { detail = JSON.parse(e.detail || '{}'); } catch(_) {}
       const msg   = detail.msg || e.kind || '';
-      const tools = (detail.tools || []).map(t => `<span class="badge tool">⚙ ${t}</span>`).join('');
+      const tools = (detail.tools || []).map(t => {
+        const isSkill = t.includes('.');
+        return `<span class="badge tool" style="${isSkill ? 'color:#a78bfa;border-color:#3a1e5f' : ''}">${isSkill ? '★' : '⚙'} ${t}</span>`;
+      }).join('');
       const secs  = e.elapsed_ms ? (e.elapsed_ms/1000).toFixed(1)+'s' : '';
       const tsShort = (e.ts||'').split('T').pop().split('.')[0] || e.ts || '';
       const errHtml = e.error ? `<div class="log-err">${e.error}</div>` : '';

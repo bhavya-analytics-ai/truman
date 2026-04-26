@@ -2,10 +2,9 @@
 model_router.py — Clean multi-provider model router for Truman.
 
 Providers (prefix in pool slug):
-  nvidia:   → NVIDIA NIM (primary, best models, free)
-  groq:     → Groq (fallback, fastest inference, free)
+  nvidia:     → NVIDIA NIM (primary, free)
   openrouter: → OpenRouter (last resort, free tier)
-  bare slug → assumes nvidia:
+  bare slug   → assumes nvidia:
 
 9 pools — one per agent type:
   coding, creative, design, docs, vision, general, reasoning, fast, agentic
@@ -15,7 +14,6 @@ Rules:
   - Complexity detection picks the RIGHT pool — never runs multiple models simultaneously.
   - Dead/paid model → router tries next, pushes warning into response so Om sees it in dashboard.
   - Session model override → forced model tried first, falls back to pool on failure.
-  - Swap any model: railway variables set POOL_CODING="nvidia:new-model,groq:fallback"
 """
 
 import re
@@ -40,10 +38,6 @@ MODEL_INFO: dict[str, str] = {
     "nvidia:llama-4-maverick-17b-128e-instruct": "multimodal, 128 MoE, vision capable",
     "nvidia:deepseek-v3.1-terminus":             "hybrid Think/Non-Think, strict function calling",
     "nvidia:mistral-nemotron":                   "agentic workflows, coding, function calling",
-    # Groq
-    "groq:llama-3.3-70b-versatile":             "fastest free inference, strong general",
-    "groq:qwen-2.5-coder-32b":                  "fast coding fallback",
-    "groq:deepseek-r1-distill-llama-70b":       "fast reasoning fallback",
     # OpenRouter
     "openrouter:deepseek/deepseek-r1:free":     "reasoning, last resort",
     "openrouter:openai/gpt-oss-120b:free":      "general, last resort",
@@ -90,7 +84,6 @@ _ALIASES = {
     "maverick":  "nvidia:llama-4-maverick-17b-128e-instruct",
     "terminus":  "nvidia:deepseek-v3.1-terminus",
     "nemotron":  "nvidia:mistral-nemotron",
-    "llama":     "groq:llama-3.3-70b-versatile",
 }
 
 def _resolve_slug(slug: str) -> str:
@@ -98,7 +91,7 @@ def _resolve_slug(slug: str) -> str:
     if s in _ALIASES:
         return _ALIASES[s]
     # bare slug with no prefix → assume nvidia
-    if not any(s.startswith(p) for p in ("nvidia:", "groq:", "openrouter:")):
+    if not any(s.startswith(p) for p in ("nvidia:", "openrouter:")):
         return f"nvidia:{s}"
     return s
 
@@ -171,8 +164,6 @@ def detect_pool(message: str) -> PoolName:
 
 # ── Short display label ───────────────────────────────────────────────────────
 def short_label(slug: str) -> str:
-    if slug.startswith("groq:"):
-        return "groq:" + slug[5:].split("-")[0] + "-" + slug[5:].split("-")[1] if "-" in slug[5:] else "groq:" + slug[5:]
     if slug.startswith("openrouter:"):
         return "or:" + slug.split("/")[-1].split(":")[0]
     model = slug.replace("nvidia:", "").split(":")[0]
@@ -205,12 +196,9 @@ def _build_llm(slug: str, temperature: float, tools: list | None = None):
     from langchain_openai import ChatOpenAI
     from truman.core.config import (
         NVIDIA_API_KEY, NVIDIA_BASE_URL,
-        GROQ_API_KEY, GROQ_BASE_URL,
         OPENROUTER_API_KEY, OPENROUTER_BASE_URL,
     )
-    if slug.startswith("groq:"):
-        llm = ChatOpenAI(model=slug[5:], api_key=GROQ_API_KEY, base_url=GROQ_BASE_URL, temperature=temperature)
-    elif slug.startswith("openrouter:"):
+    if slug.startswith("openrouter:"):
         llm = ChatOpenAI(model=slug[11:], api_key=OPENROUTER_API_KEY, base_url=OPENROUTER_BASE_URL, temperature=temperature)
     else:
         model = slug.replace("nvidia:", "")
@@ -242,12 +230,10 @@ def run_with_pool(
 
     for slug in model_list:
         # Skip if provider key missing
-        from truman.core.config import NVIDIA_API_KEY, GROQ_API_KEY, OPENROUTER_API_KEY
-        if slug.startswith("groq:") and not GROQ_API_KEY:
-            continue
+        from truman.core.config import NVIDIA_API_KEY, OPENROUTER_API_KEY
         if slug.startswith("openrouter:") and not OPENROUTER_API_KEY:
             continue
-        if not slug.startswith(("groq:", "openrouter:")) and not NVIDIA_API_KEY:
+        if not slug.startswith("openrouter:") and not NVIDIA_API_KEY:
             continue
 
         try:

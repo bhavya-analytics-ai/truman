@@ -17,8 +17,9 @@ class TrumanState(TypedDict):
     memory_context:  str             # load_memory
     chosen_pool:     str             # detect_pool
     tool_name:       Optional[str]   # detect_tool
-    tool_result:     Optional[str]   # execute_tool
-    tool_calls_made: list            # execute_tool
+    tool_result:     Optional[str]   # execute_tool / route_skill
+    tool_calls_made: list            # execute_tool / route_skill
+    skill_name:      Optional[str]   # route_skill — which skill ran
 
     # ── LLM output ───────────────────────────────────────────────────────────
     messages:        list            # built before call_llm

@@ -17,7 +17,7 @@ import subprocess
 import sys
 import threading
 import webbrowser
-from flask import Flask, jsonify, send_from_directory
+from flask import Flask, jsonify, send_from_directory, request
 from flask_sock import Sock
 
 STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
@@ -161,6 +161,18 @@ def api_chat():
 def api_logs():
     from truman.text.agent import get_error_log
     return jsonify({"logs": get_error_log()})
+
+
+@app.route("/api/power", methods=["GET", "POST"])
+def api_power():
+    """Om's master kill switch. GET=status, POST=toggle. Truman has no tool for this."""
+    from truman.storage.db import killswitch_active, killswitch_set
+    if request.method == "GET":
+        return jsonify({"on": not killswitch_active()})
+    # POST — toggle
+    currently_off = killswitch_active()
+    killswitch_set(off=currently_off)  # flip
+    return jsonify({"on": currently_off})  # was off → now on, and vice versa
 
 
 @app.route("/api/events")

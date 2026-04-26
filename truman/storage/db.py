@@ -515,6 +515,23 @@ def get_episodic(date: str = None, source: str = None, limit: int = 50) -> list[
     return [dict(r) for r in rows]
 
 
+# ── Kill switch (file-based — Truman cannot disable this) ────────────────────
+_KILL_FLAG = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "data", ".killswitch",
+)
+
+def killswitch_active() -> bool:
+    return os.path.exists(_KILL_FLAG)
+
+def killswitch_set(off: bool) -> None:
+    """off=True → create flag (Truman goes dark). off=False → remove flag."""
+    if off:
+        open(_KILL_FLAG, "w").close()
+    elif os.path.exists(_KILL_FLAG):
+        os.remove(_KILL_FLAG)
+
+
 def log_tool_call(
     session_id: Optional[int],
     name: str,

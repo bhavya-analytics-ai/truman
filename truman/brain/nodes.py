@@ -103,6 +103,34 @@ def detect_tool(state: TrumanState) -> dict:
         return {"tool_name": None, "node_errors": errs}
 
 
+# ── Node 4b: route_skill ─────────────────────────────────────────────────────
+def route_skill(state: TrumanState) -> dict:
+    """
+    Check if user input matches a skill (GitHub, files, web).
+    If yes, execute the skill and set tool_result + skill_name.
+    Falls through silently if ENABLE_MCP=0 or no skill matches.
+    Runs before execute_tool — skill result takes priority.
+    """
+    import os
+    if os.environ.get("ENABLE_MCP", "1") != "1":
+        return {"skill_name": None}
+    try:
+        from truman.skills.registry import detect_skill, route
+        skill_name, tool_name = detect_skill(state["user_input"])
+        if not skill_name:
+            return {"skill_name": None}
+        result = route(skill_name, tool_name, state["user_input"])
+        return {
+            "skill_name":      skill_name,
+            "tool_result":     result,
+            "tool_calls_made": [{"name": f"{skill_name}.{tool_name}"}],
+        }
+    except Exception as e:
+        errs = dict(state.get("node_errors") or {})
+        errs["route_skill"] = str(e)
+        return {"skill_name": None, "node_errors": errs}
+
+
 # ── Node 5: execute_tool ──────────────────────────────────────────────────────
 def execute_tool(state: TrumanState) -> dict:
     tool_name = state.get("tool_name")

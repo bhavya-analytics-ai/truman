@@ -17,6 +17,7 @@ def _build_graph():
     g.add_node("load_memory",    nodes.load_memory)
     g.add_node("detect_pool",    nodes.detect_pool)
     g.add_node("detect_tool",    nodes.detect_tool)
+    g.add_node("route_skill",    nodes.route_skill)
     g.add_node("execute_tool",   nodes.execute_tool)
     g.add_node("call_llm",       nodes.call_llm)
     g.add_node("save_memory",    nodes.save_memory)
@@ -26,7 +27,9 @@ def _build_graph():
     g.add_edge("concept_lookup", "load_memory")
     g.add_edge("load_memory",    "detect_pool")
     g.add_edge("detect_pool",    "detect_tool")
-    g.add_edge("detect_tool",    "execute_tool")
+    g.add_edge("detect_tool",    "route_skill")
+    # route_skill → execute_tool (if skill ran, execute_tool is a no-op because tool_name is None or skill already filled tool_result)
+    g.add_edge("route_skill",    "execute_tool")
     g.add_edge("execute_tool",   "call_llm")
     g.add_edge("call_llm",       "save_memory")
     g.add_edge("save_memory",    END)
@@ -49,6 +52,21 @@ def run(user_input: str, session_id: str = "default", pool_hint: str = None) -> 
     Run the LangGraph brain loop.
     Returns same shape as agent.run() — response, model, pool, tool_calls, mood.
     """
+    # ── Kill switch check (Om-only — Truman cannot bypass this) ──────────────
+    try:
+        from truman.storage.db import killswitch_active
+        if killswitch_active():
+            return {
+                "response":   "i'm off. om turned me off.",
+                "model":      "none",
+                "pool":       "none",
+                "tool_calls": [],
+                "mood":       "neutral",
+                "warnings":   [],
+            }
+    except Exception:
+        pass
+
     t_start = time.time()
 
     initial_state: TrumanState = {
@@ -61,6 +79,7 @@ def run(user_input: str, session_id: str = "default", pool_hint: str = None) -> 
         "tool_name":        None,
         "tool_result":      None,
         "tool_calls_made":  [],
+        "skill_name":       None,
         "messages":         [],
         "response":         "",
         "model_label":      "none",

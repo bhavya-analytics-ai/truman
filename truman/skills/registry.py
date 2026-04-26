@@ -1,0 +1,77 @@
+"""
+registry.py — Skill registry. Loads all skills, routes tool calls.
+Skills register themselves here. Brain's route_skill node calls route().
+"""
+import os
+from truman.skills.base import SkillBase
+
+_SKILLS: dict[str, SkillBase] = {}
+_TOOL_INDEX: dict[str, str] = {}   # tool_name → skill_name
+
+
+def _load_skills():
+    global _SKILLS, _TOOL_INDEX
+    if _SKILLS:
+        return
+    if os.environ.get("ENABLE_MCP", "1") != "1":
+        return
+
+    from truman.skills.files.server  import FilesSkill
+    from truman.skills.web.server    import WebSkill
+    from truman.skills.github.server import GitHubSkill
+
+    candidates = [FilesSkill(), WebSkill(), GitHubSkill()]
+    for skill in candidates:
+        if skill.is_available():
+            _SKILLS[skill.name] = skill
+            for tool in skill.list_tools():
+                _TOOL_INDEX[tool["name"]] = skill.name
+            print(f"[skills] loaded: {skill.name}")
+
+
+def detect_skill(user_input: str) -> tuple[str | None, str | None]:
+    """
+    Return (skill_name, tool_name) if user input matches a skill tool, else (None, None).
+    Simple keyword matching — fast, no LLM call.
+    """
+    _load_skills()
+    text = user_input.lower()
+
+    # GitHub skill keywords
+    if any(k in text for k in ("github.com/", "git clone", "ingest repo", "read repo", "clone repo")):
+        if "github" in _SKILLS:
+            return "github", "ingest_repo"
+
+    # Files skill keywords
+    if any(k in text for k in ("read file", "open file", "search my files", "find in my", "list files",
+                                 "what's in my", "look at my", "read my", "show me my")):
+        if "files" in _SKILLS:
+            return "files", "search_files"
+
+    # Web skill keywords (beyond existing ddg tool — richer: fetch url, summarize)
+    if any(k in text for k in ("fetch url", "read this page", "summarize this url", "open this link")):
+        if "web" in _SKILLS:
+            return "web", "fetch_url"
+
+    return None, None
+
+
+def route(skill_name: str, tool_name: str, user_input: str, **kwargs) -> str:
+    """Call a specific skill tool. Returns string result."""
+    _load_skills()
+    skill = _SKILLS.get(skill_name)
+    if not skill:
+        return f"[skill:{skill_name}] not available"
+    try:
+        return skill.call(tool_name, user_input=user_input, **kwargs)
+    except Exception as e:
+        return f"[skill:{skill_name}.{tool_name}] error: {e}"
+
+
+def list_all() -> dict:
+    """Return all loaded skills + their tools. Used by dashboard."""
+    _load_skills()
+    return {
+        name: skill.list_tools()
+        for name, skill in _SKILLS.items()
+    }

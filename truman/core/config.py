@@ -26,8 +26,6 @@ ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID")
 NVIDIA_API_KEY   = os.getenv("NVIDIA_API_KEY", "")
 NVIDIA_BASE_URL  = "https://integrate.api.nvidia.com/v1"
 
-GROQ_API_KEY     = os.getenv("GROQ_API_KEY", "")
-GROQ_BASE_URL    = "https://api.groq.com/openai/v1"
 
 OPENROUTER_API_KEY  = os.getenv("OPENROUTER_API_KEY", "")
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
@@ -61,6 +59,16 @@ def get_llm(temperature: float = 0.7, json_mode: bool = False):
     primary = _nv("deepseek-ai/deepseek-v3.2")
     f1      = _nv("nvidia/mistral-nemotron")
     return primary.with_fallbacks([f1])
+
+# ── Feature flags (Railway vars override) ────────────────────────────────────
+# Set these in Railway env panel — defaults safe for production
+import os as _os
+_os.environ.setdefault("ENABLE_LANGGRAPH",   "1")
+_os.environ.setdefault("ENABLE_COGNEE",      "1")
+_os.environ.setdefault("ENABLE_MCP",         "1")
+_os.environ.setdefault("ENABLE_MCP_FILES",   "1")
+_os.environ.setdefault("ENABLE_MCP_WEB",     "1")
+_os.environ.setdefault("ENABLE_MCP_GITHUB",  "1")
 
 # ── Misc ──────────────────────────────────────────────────────────────────────
 os.environ["COGNEE_SKIP_CONNECTION_TEST"] = "true"
