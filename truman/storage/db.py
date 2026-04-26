@@ -221,6 +221,16 @@ CREATE TABLE IF NOT EXISTS memory_feeds (
 CREATE INDEX IF NOT EXISTS idx_feeds_date   ON memory_feeds(date);
 CREATE INDEX IF NOT EXISTS idx_feeds_source ON memory_feeds(source);
 
+-- ── Repo index ────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS memory_repos (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    name        TEXT    NOT NULL UNIQUE,   -- repo short name
+    url         TEXT    NOT NULL,
+    file_count  INTEGER NOT NULL DEFAULT 0,
+    ingested_at TEXT    NOT NULL,
+    last_pulled TEXT
+);
+
 -- ── Unified timeline view (all memory types in one query) ─────────────────────
 CREATE VIEW IF NOT EXISTS memory_all AS
     SELECT id, ts, date, source, 'turn'       AS kind, content  AS body FROM turns
@@ -512,6 +522,24 @@ def get_episodic(date: str = None, source: str = None, limit: int = 50) -> list[
             f"SELECT * FROM memory_episodic {where} ORDER BY ts DESC LIMIT ?",
             params + [limit],
         ).fetchall()
+    return [dict(r) for r in rows]
+
+
+# ── Repo index ───────────────────────────────────────────────────────────────
+def upsert_repo(name: str, url: str, file_count: int) -> None:
+    now = _now()
+    with _conn() as c:
+        c.execute("""
+            INSERT INTO memory_repos(name, url, file_count, ingested_at, last_pulled)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(name) DO UPDATE SET
+                file_count  = excluded.file_count,
+                last_pulled = excluded.ingested_at
+        """, (name, url, file_count, now, now))
+
+def list_repos() -> list[dict]:
+    with _conn() as c:
+        rows = c.execute("SELECT name, url, file_count, ingested_at, last_pulled FROM memory_repos ORDER BY ingested_at DESC").fetchall()
     return [dict(r) for r in rows]
 
 

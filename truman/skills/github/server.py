@@ -1,15 +1,15 @@
 """
 github/server.py — GitHub skill.
-ingest_repo: clone a repo + ingest all text files into Cognee concept graph
-read_file:   read a single file from a cloned repo
-list_repo:   list files in a cloned repo
-Kill switch: ENABLE_MCP_GITHUB=1 (under ENABLE_MCP master)
-Repos cloned to truman/data/repos/ (gitignored).
+ingest_repo:   clone + ingest into Cognee, tagged by dataset so searches scope per-repo
+list_repos:    show all repos Truman has ingested (from memory_repos table)
+list_repo:     list files in a specific cloned repo
+read_file:     read a file from a cloned repo
+search_in_repo: search text across a cloned repo's files
 """
 import os
 import subprocess
-import tempfile
 import shutil
+import fnmatch
 from truman.skills.base import SkillBase
 from truman.skills._blacklist import is_blocked
 
@@ -22,39 +22,41 @@ _TEXT_EXTS = {
     ".toml", ".json", ".html", ".css", ".sh", ".go", ".rs", ".java", ".cpp",
     ".c", ".h", ".rb", ".php", ".swift", ".kt", ".sql", ".env.example",
 }
-_MAX_FILE = 50_000  # chars per file for ingest
+_MAX_FILE = 50_000
 _MAX_INGEST_FILES = 200
 
 
 class GitHubSkill(SkillBase):
     name        = "github"
-    description = "Clone GitHub repos and ingest them into Truman's concept graph"
+    description = "Clone GitHub repos, ingest into concept graph, search across repos"
     enabled_env = "ENABLE_MCP_GITHUB"
 
     def is_available(self) -> bool:
         master = os.environ.get("ENABLE_MCP", "1") == "1"
-        git_ok = shutil.which("git") is not None
-        return master and git_ok and super().is_available()
+        return master and shutil.which("git") is not None and super().is_available()
 
     def list_tools(self) -> list[dict]:
         return [
-            {"name": "ingest_repo", "description": "Clone a GitHub repo and ingest into concept graph", "args": ["url"]},
-            {"name": "list_repo",   "description": "List files in a cloned repo", "args": ["repo_name"]},
-            {"name": "read_file",   "description": "Read a file from a cloned repo", "args": ["repo_name", "path"]},
+            {"name": "ingest_repo",    "description": "Clone a GitHub repo and ingest into concept graph", "args": ["url"]},
+            {"name": "list_repos",     "description": "List all repos Truman has ingested", "args": []},
+            {"name": "list_repo",      "description": "List files in a specific cloned repo", "args": ["repo_name"]},
+            {"name": "read_file",      "description": "Read a file from a cloned repo", "args": ["repo_name", "path"]},
+            {"name": "search_in_repo", "description": "Search text across a cloned repo", "args": ["repo_name", "query"]},
         ]
 
     def call(self, tool_name: str, **kwargs) -> str:
         try:
             ui = kwargs.get("user_input", "")
-            if tool_name == "ingest_repo": return self._ingest(self._extract_url(ui, kwargs.get("url", "")))
-            if tool_name == "list_repo":   return self._list(kwargs.get("repo_name", ""))
-            if tool_name == "read_file":   return self._read(kwargs.get("repo_name", ""), kwargs.get("path", ""))
+            if tool_name == "ingest_repo":    return self._ingest(self._extract_url(ui, kwargs.get("url", "")))
+            if tool_name == "list_repos":     return self._list_repos()
+            if tool_name == "list_repo":      return self._list_repo(kwargs.get("repo_name", ""))
+            if tool_name == "read_file":      return self._read(kwargs.get("repo_name", ""), kwargs.get("path", ""))
+            if tool_name == "search_in_repo": return self._search_repo(self._guess_repo(ui), kwargs.get("query") or ui)
             return f"[github] unknown tool: {tool_name}"
         except Exception as e:
             return f"[github] error: {e}"
 
     def _extract_url(self, user_input: str, url: str) -> str:
-        """Pull github URL out of natural language if explicit url not given."""
         if url:
             return url
         import re
@@ -67,9 +69,22 @@ class GitHubSkill(SkillBase):
     def _clone_path(self, repo_name: str) -> str:
         return os.path.join(_REPOS_DIR, repo_name)
 
+    def _guess_repo(self, user_input: str) -> str:
+        """Try to find a repo name mentioned in the user message."""
+        try:
+            from truman.storage.db import list_repos
+            repos = list_repos()
+            text = user_input.lower()
+            for r in repos:
+                if r["name"].lower() in text:
+                    return r["name"]
+            return repos[0]["name"] if repos else ""
+        except Exception:
+            return ""
+
     def _ingest(self, url: str) -> str:
         if not url:
-            return "[github] no URL found in message"
+            return "[github] no URL found"
         if "github.com" not in url:
             return f"[github] not a GitHub URL: {url}"
 
@@ -77,22 +92,19 @@ class GitHubSkill(SkillBase):
         clone_path = self._clone_path(repo_name)
         os.makedirs(_REPOS_DIR, exist_ok=True)
 
-        # clone or pull
         if os.path.isdir(clone_path):
             subprocess.run(["git", "-C", clone_path, "pull", "--quiet"], timeout=60)
             status = "updated"
         else:
-            result = subprocess.run(
+            r = subprocess.run(
                 ["git", "clone", "--depth=1", "--quiet", url, clone_path],
                 timeout=120, capture_output=True, text=True
             )
-            if result.returncode != 0:
-                return f"[github] clone failed: {result.stderr[:300]}"
+            if r.returncode != 0:
+                return f"[github] clone failed: {r.stderr[:300]}"
             status = "cloned"
 
-        # collect text files
-        files_text = []
-        count = 0
+        files_text, count = [], 0
         for root, dirs, files in os.walk(clone_path):
             dirs[:] = [d for d in dirs if d not in (".git", "node_modules", "__pycache__", ".venv", "venv", "dist", "build")]
             for fname in files:
@@ -118,36 +130,81 @@ class GitHubSkill(SkillBase):
         if not files_text:
             return f"[github] {status} {repo_name} but no text files found"
 
-        # ingest into Cognee
+        # persist to repo index
+        try:
+            from truman.storage.db import upsert_repo
+            upsert_repo(repo_name, url, count)
+        except Exception:
+            pass
+
+        # ingest into Cognee — tagged by dataset so we can scope searches per-repo
         try:
             from truman.brain.concepts import ingest
             full_text = f"REPO: {url}\n\n" + "\n\n---\n\n".join(files_text)
             ingest(full_text, dataset=f"repo_{repo_name}")
-            return f"{status} + ingested {repo_name} ({count} files) into concept graph. Truman now knows this repo."
+            return f"{status} + ingested {repo_name} ({count} files). Truman knows this repo now. Ask me anything about it."
         except Exception as e:
             return f"{status} {repo_name} ({count} files) — Cognee ingest failed: {e}"
 
-    def _list(self, repo_name: str) -> str:
+    def _list_repos(self) -> str:
+        try:
+            from truman.storage.db import list_repos
+            repos = list_repos()
+        except Exception as e:
+            return f"[github] db error: {e}"
+        if not repos:
+            return "no repos ingested yet. give me a github url."
+        lines = [f"{'repo':<30} {'files':>5}  {'ingested':<20}  url"]
+        lines.append("-" * 80)
+        for r in repos:
+            ts = (r["ingested_at"] or "")[:16]
+            lines.append(f"{r['name']:<30} {r['file_count']:>5}  {ts:<20}  {r['url']}")
+        return "\n".join(lines)
+
+    def _list_repo(self, repo_name: str) -> str:
         clone_path = self._clone_path(repo_name)
         if not os.path.isdir(clone_path):
-            return f"[github] repo not cloned yet: {repo_name}"
+            return f"[github] not cloned: {repo_name}"
         items = []
         for root, dirs, files in os.walk(clone_path):
             dirs[:] = [d for d in dirs if d not in (".git", "node_modules", "__pycache__")]
             for f in files:
-                rel = os.path.relpath(os.path.join(root, f), clone_path)
-                items.append(rel)
+                items.append(os.path.relpath(os.path.join(root, f), clone_path))
             if len(items) > 300:
                 break
         return "\n".join(sorted(items)[:300])
 
     def _read(self, repo_name: str, path: str) -> str:
         clone_path = self._clone_path(repo_name)
-        fpath = os.path.join(clone_path, path)
-        abs_f = os.path.abspath(fpath)
-        if not abs_f.startswith(clone_path):
+        fpath = os.path.abspath(os.path.join(clone_path, path))
+        if not fpath.startswith(clone_path):
             return "[github] path outside repo"
-        if not os.path.isfile(abs_f):
-            return f"[github] file not found: {path}"
-        with open(abs_f, "r", errors="replace") as f:
+        if not os.path.isfile(fpath):
+            return f"[github] not found: {path}"
+        with open(fpath, "r", errors="replace") as f:
             return f.read(_MAX_FILE)
+
+    def _search_repo(self, repo_name: str, query: str) -> str:
+        if not repo_name:
+            return "[github] no repo name — tell me which repo to search"
+        clone_path = self._clone_path(repo_name)
+        if not os.path.isdir(clone_path):
+            return f"[github] not cloned: {repo_name}"
+        hits = []
+        for root, dirs, files in os.walk(clone_path):
+            dirs[:] = [d for d in dirs if d not in (".git", "node_modules", "__pycache__")]
+            for fname in files:
+                fpath = os.path.join(root, fname)
+                try:
+                    with open(fpath, "r", errors="replace") as f:
+                        for i, line in enumerate(f, 1):
+                            if query.lower() in line.lower():
+                                rel = os.path.relpath(fpath, clone_path)
+                                hits.append(f"{rel}:{i}: {line.rstrip()}")
+                                if len(hits) >= 50:
+                                    break
+                except Exception:
+                    continue
+                if len(hits) >= 50:
+                    break
+        return "\n".join(hits) or f"no matches for '{query}' in {repo_name}"

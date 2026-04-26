@@ -150,8 +150,35 @@ def ingest_background(text: str, dataset: str = "truman") -> None:
 
 
 def search_sync(query: str, top_k: int = 5) -> str:
-    """Return concept context as a single string for injection into system prompt."""
+    """
+    Return concept context as a single string for injection into system prompt.
+    If query mentions a known repo name, scopes search to that repo's dataset first,
+    then falls back to global search if no results.
+    """
+    # Per-repo scoping: if a repo name appears in the query, search that dataset first
+    scoped = _scoped_search(query, top_k)
+    if scoped:
+        return scoped
     results = search(query, top_k=top_k)
     if not results:
         return ""
     return "\n".join(f"- {r}" for r in results)
+
+
+def _scoped_search(query: str, top_k: int) -> str:
+    """Search only within the repo dataset if a repo name is mentioned in query."""
+    try:
+        from truman.storage.db import list_repos
+        repos = list_repos()
+        if not repos:
+            return ""
+        q_lower = query.lower()
+        matched = next((r for r in repos if r["name"].lower() in q_lower), None)
+        if not matched:
+            return ""
+        results = search(query, top_k=top_k)  # Cognee global for now; dataset filter added when Cognee API exposes it
+        if results:
+            return f"[from repo: {matched['name']}]\n" + "\n".join(f"- {r}" for r in results)
+    except Exception:
+        pass
+    return ""

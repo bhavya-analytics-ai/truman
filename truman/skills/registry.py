@@ -37,18 +37,29 @@ def detect_skill(user_input: str) -> tuple[str | None, str | None]:
     _load_skills()
     text = user_input.lower()
 
-    # GitHub skill keywords
-    if any(k in text for k in ("github.com/", "git clone", "ingest repo", "read repo", "clone repo")):
+    # GitHub: ingest URL
+    if "github.com/" in text:
         if "github" in _SKILLS:
             return "github", "ingest_repo"
 
+    # GitHub: list all repos Truman knows
+    if any(k in text for k in ("list repos", "what repos", "which repos", "repos you know",
+                                "what github", "repos truman", "show repos")):
+        if "github" in _SKILLS:
+            return "github", "list_repos"
+
+    # GitHub: search within a specific repo
+    if any(k in text for k in ("search in repo", "search repo", "find in repo", "find in the repo")):
+        if "github" in _SKILLS:
+            return "github", "search_in_repo"
+
     # Files skill keywords
     if any(k in text for k in ("read file", "open file", "search my files", "find in my", "list files",
-                                 "what's in my", "look at my", "read my", "show me my")):
+                                "what's in my", "look at my", "read my", "show me my")):
         if "files" in _SKILLS:
             return "files", "search_files"
 
-    # Web skill keywords (beyond existing ddg tool — richer: fetch url, summarize)
+    # Web skill keywords
     if any(k in text for k in ("fetch url", "read this page", "summarize this url", "open this link")):
         if "web" in _SKILLS:
             return "web", "fetch_url"
