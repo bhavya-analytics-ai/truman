@@ -163,6 +163,20 @@ def api_logs():
     return jsonify({"logs": get_error_log()})
 
 
+@app.route("/api/events")
+def api_events():
+    """Return last 100 events from DB events table (persisted ring buffer)."""
+    from flask import request as freq
+    try:
+        from truman.storage import db
+        kind = freq.args.get("kind")
+        date = freq.args.get("date")
+        events = db.get_events(limit=100, kind=kind, date=date)
+        return jsonify({"events": events})
+    except Exception as e:
+        return jsonify({"events": [], "error": str(e)})
+
+
 @app.route("/api/history")
 def api_history():
     """Return last 30 turns from SQLite for dashboard page-load restore."""

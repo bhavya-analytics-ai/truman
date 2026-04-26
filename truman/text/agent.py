@@ -12,6 +12,8 @@ import re
 import time
 import json
 from collections import deque
+from datetime import datetime
+from zoneinfo import ZoneInfo
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 from langchain_openai import ChatOpenAI
 from mem0 import MemoryClient
@@ -41,17 +43,33 @@ MEM_FILTER = {"AND": [{"user_id": USER_ID}]}
 _error_log: deque = deque(maxlen=50)
 
 def log_event(user_msg: str, model: str, pool: str, elapsed: float,
-              tool_calls: list, error: str = ""):
-    _error_log.appendleft({
-        "ts":         time.strftime("%H:%M:%S"),
-        "msg":        user_msg[:60],
-        "model":      model,
-        "pool":       pool,
-        "secs":       round(elapsed, 1),
-        "tools":      [t["name"] for t in tool_calls],
-        "error":      error,
-        "status":     "error" if error else ("slow" if elapsed > 8 else "ok"),
-    })
+              tool_calls: list, error: str = "", session_id: str = "default"):
+    status = "error" if error else ("slow" if elapsed > 8 else "ok")
+    entry = {
+        "ts":     time.strftime("%H:%M:%S"),
+        "msg":    user_msg[:60],
+        "model":  model,
+        "pool":   pool,
+        "secs":   round(elapsed, 1),
+        "tools":  [t["name"] for t in tool_calls],
+        "error":  error,
+        "status": status,
+    }
+    _error_log.appendleft(entry)
+    # also persist to DB (non-blocking, fire-and-forget)
+    try:
+        from truman.storage import db as _db
+        import threading, json as _j
+        detail = _j.dumps({"msg": user_msg[:120], "tools": [t["name"] for t in tool_calls]})
+        threading.Thread(
+            target=_db.log_event_db,
+            kwargs=dict(kind="chat", source="text", session_id=session_id,
+                        pool=pool, model=model, elapsed_ms=int(elapsed * 1000),
+                        status=status, detail=detail, error=error or None),
+            daemon=True,
+        ).start()
+    except Exception:
+        pass
 
 def get_error_log():
     return list(_error_log)
@@ -284,8 +302,10 @@ def run(user_input: str, mood: str = "", pool: str | None = None, session_id: st
     mood_line = f"\n\nMOOD CONTEXT: {mood}" if mood and mood != "neutral" else ""
     persona_reminder = "\n\nCRITICAL: You are texting Om on his dashboard. Be direct, casual, lowercase. No bullet points. No asking permission. Commit to your answer. Match Om's energy."
 
+    now_et = datetime.now(ZoneInfo("America/New_York"))
+    clock_line = f"\n\nCURRENT TIME: {now_et.strftime('%A, %b %d %Y, %I:%M %p ET')}"
     last_session_ctx = _last_session_str()
-    system_content = SYSTEM + (f"\n\nRelevant memory:\n{mem_context}" if mem_context else "") + last_session_ctx + mood_line + persona_reminder
+    system_content = SYSTEM + clock_line + (f"\n\nRelevant memory:\n{mem_context}" if mem_context else "") + last_session_ctx + mood_line + persona_reminder
 
     from truman.tools.all_tools import TOOLS
     tool_map = {t.name: t for t in TOOLS}
@@ -354,7 +374,7 @@ def run(user_input: str, mood: str = "", pool: str | None = None, session_id: st
 
     elapsed = time.time() - t_start
 
-    log_event(user_input, model_label, chosen_pool, elapsed, tool_calls_made, error_str)
+    log_event(user_input, model_label, chosen_pool, elapsed, tool_calls_made, error_str, session_id)
 
     return {
         "response":   final_text,

@@ -64,50 +64,68 @@
 
   svg { pointer-events: none; }
 
-  /* Logs modal */
-  .modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:100; align-items:center; justify-content:center; }
-  .modal-overlay.open { display:flex; }
-  .modal { background:#0d0d1a; border:1px solid #2a2a4a; border-radius:16px; width:min(680px,94vw); max-height:80vh; display:flex; flex-direction:column; overflow:hidden; }
-  .modal-hdr { padding:14px 18px; border-bottom:1px solid #1a1a2e; display:flex; justify-content:space-between; align-items:center; }
-  .modal-hdr h2 { font-size:14px; color:#a78bfa; font-weight:600; }
-  .modal-close { background:none; border:none; color:#555570; font-size:18px; cursor:pointer; padding:2px 6px; }
-  .modal-close:hover { color:#e8e8f0; }
-  .modal-body { overflow-y:auto; padding:12px; display:flex; flex-direction:column; gap:8px; }
-  .log-row { background:#16162a; border:1px solid #1e1e3a; border-radius:10px; padding:10px 14px; display:grid; grid-template-columns:52px 1fr auto; gap:8px; align-items:start; }
-  .log-dot { width:10px; height:10px; border-radius:50%; margin-top:3px; flex-shrink:0; }
+  /* Status pill */
+  .status-pill { display:flex; align-items:center; gap:5px; background:#16162a; border:1px solid #2a2a4a; border-radius:20px; padding:3px 10px 3px 7px; cursor:pointer; transition:border-color 0.2s; }
+  .status-pill:hover { border-color:#4f46e5; }
+  .status-dot { width:7px; height:7px; border-radius:50%; flex-shrink:0; }
+  .status-dot.idle    { background:#22c55e; }
+  .status-dot.think   { background:#3b82f6; animation:pillPulse 1s infinite; }
+  .status-dot.listen  { background:#f59e0b; animation:pillPulse 1s infinite; }
+  .status-dot.act     { background:#a78bfa; animation:pillPulse 1s infinite; }
+  .status-dot.error   { background:#ef4444; }
+  .status-pill-label { font-size:10px; color:#7c7caa; }
+  @keyframes pillPulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+  /* Events drawer */
+  .drawer { position:fixed; top:0; right:-360px; width:340px; height:100dvh; background:#0d0d1a; border-left:1px solid #1a1a2e; z-index:200; display:flex; flex-direction:column; transition:right 0.25s ease; }
+  .drawer.open { right:0; }
+  .drawer-hdr { padding:14px 16px; border-bottom:1px solid #1a1a2e; display:flex; justify-content:space-between; align-items:center; flex-shrink:0; }
+  .drawer-hdr h2 { font-size:13px; color:#a78bfa; font-weight:600; letter-spacing:0.05em; }
+  .drawer-close { background:none; border:none; color:#555570; font-size:16px; cursor:pointer; padding:2px 6px; }
+  .drawer-close:hover { color:#e8e8f0; }
+  .drawer-body { overflow-y:auto; padding:10px; display:flex; flex-direction:column; gap:6px; flex:1; }
+  .drawer-body::-webkit-scrollbar { width:0; }
+
+  /* Log rows */
+  .log-row { background:#16162a; border:1px solid #1e1e3a; border-radius:8px; padding:8px 12px; display:grid; grid-template-columns:42px 1fr auto; gap:6px; align-items:start; }
+  .log-dot { width:8px; height:8px; border-radius:50%; margin-top:3px; flex-shrink:0; }
   .log-dot.ok   { background:#22c55e; }
   .log-dot.slow { background:#f59e0b; }
   .log-dot.error{ background:#ef4444; }
+  .log-dot.warn { background:#f59e0b; }
   .log-time { font-size:10px; color:#555570; margin-top:1px; }
-  .log-msg  { font-size:13px; color:#e8e8f0; margin-bottom:4px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .log-meta { font-size:11px; color:#7c7caa; display:flex; gap:6px; flex-wrap:wrap; }
-  .log-secs { font-size:12px; font-weight:600; text-align:right; }
+  .log-msg  { font-size:12px; color:#e8e8f0; margin-bottom:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .log-meta { font-size:10px; color:#7c7caa; display:flex; gap:4px; flex-wrap:wrap; }
+  .log-secs { font-size:11px; font-weight:600; text-align:right; white-space:nowrap; }
   .log-secs.ok   { color:#22c55e; }
   .log-secs.slow { color:#f59e0b; }
   .log-secs.error{ color:#ef4444; }
-  .log-err  { font-size:11px; color:#ef4444; margin-top:4px; word-break:break-all; }
+  .log-err  { font-size:10px; color:#ef4444; margin-top:3px; word-break:break-all; }
 </style>
 </head>
 <body>
 
-<!-- Logs modal -->
-<div class="modal-overlay" id="logs-modal" onclick="if(event.target===this)closeLogs()">
-  <div class="modal">
-    <div class="modal-hdr">
-      <h2>request log</h2>
-      <button class="modal-close" onclick="closeLogs()">✕</button>
-    </div>
-    <div class="modal-body" id="logs-body"></div>
+<!-- Events drawer -->
+<div class="drawer" id="events-drawer">
+  <div class="drawer-hdr">
+    <h2>EVENTS</h2>
+    <button class="drawer-close" onclick="closeDrawer()">✕</button>
+  </div>
+  <div class="drawer-body" id="drawer-body">
+    <div style="color:#555570;padding:20px;text-align:center;font-size:12px">no events yet</div>
   </div>
 </div>
 
 <div class="header">
   <h1>TRUMAN</h1>
   <div style="display:flex;align-items:center;gap:8px;">
-    <button class="hdr-btn" onclick="openLogs()">logs</button>
+    <div class="status-pill" id="status-pill" onclick="toggleDrawer()" title="click to see events">
+      <div class="status-dot idle" id="status-dot"></div>
+      <span class="status-pill-label" id="status-label">idle</span>
+    </div>
+    <span id="pool-badge" style="font-size:10px;color:#7c7caa;background:#16162a;border:1px solid #2a2a4a;border-radius:6px;padding:2px 8px;display:none;"></span>
     <button class="hdr-btn" onclick="newSession()">+ new</button>
     <button class="hdr-btn" onclick="clearChat()">clear</button>
-    <span id="pool-badge" style="font-size:10px;color:#7c7caa;background:#16162a;border:1px solid #2a2a4a;border-radius:6px;padding:2px 8px;display:none;"></span>
     <span style="font-size:11px;color:#555570;" id="mac-status">mac offline</span>
     <div class="mac-dot" id="mac-dot"></div>
   </div>
@@ -331,6 +349,7 @@ async function send() {
   }
 
   if (displayText) addMsg('user', displayText, null);
+  setStatus('think', 'thinking...');
   const status = addStatus();
 
   // animate tool names while waiting
@@ -347,18 +366,27 @@ async function send() {
     const d = await r.json();
     clearInterval(toolInterval);
     status.remove();
-    if (d.error) { addMsg('truman', 'error: ' + d.error, null); return; }
+    if (d.error) {
+      setStatus('error', 'error');
+      addMsg('truman', 'error: ' + d.error, null);
+      setTimeout(() => setStatus('idle','idle'), 4000);
+      return;
+    }
     const respText = (d.response || '').trim();
-    if (!respText) { addMsg('truman', '(no response — try again)', null); return; }
+    if (!respText) { setStatus('idle','idle'); addMsg('truman', '(no response — try again)', null); return; }
     addMsg('truman', respText, {model: d.model || 'deepseek-v3.2', pool: d.pool || 'general', tool_calls: d.tool_calls});
+    setStatus('idle', 'idle');
     // update mac dot + pool badge
     macDot.className = 'mac-dot' + (d.mac === 'connected' ? ' on' : '');
     macStatus.textContent = d.mac === 'connected' ? 'mac online' : 'mac offline';
     const pb = document.getElementById('pool-badge');
     if (d.pool) { pb.textContent = d.pool; pb.style.display = 'inline'; }
+    if (drawerOpen) refreshDrawer();
   } catch(e) {
     clearInterval(toolInterval);
     status.remove();
+    setStatus('error', 'error');
+    setTimeout(() => setStatus('idle','idle'), 4000);
     addMsg('truman', 'connection error — check railway is up', null);
   }
 }
@@ -455,6 +483,7 @@ async function startVoice() {
       isVoiceActive = true;
       voiceBtn.classList.add('listening');
       voiceBtn.title = 'tap to disconnect';
+      setStatus('listen', 'listening');
       const src = audioCtx.createMediaStreamSource(micStream);
       // 4096 frames @ native rate → chunk every ~85ms — good balance of latency vs CPU
       processor = audioCtx.createScriptProcessor(4096, 1, 1);
@@ -529,6 +558,7 @@ function stopVoice() {
   isVoiceActive = false;
   reconnecting = false;
   voiceBtn.classList.remove('listening');
+  setStatus('idle', 'idle');
   voiceBtn.title = 'tap to talk';
   if (processor) { try { processor.disconnect(); } catch(e) {} processor = null; }
   if (micStream) { micStream.getTracks().forEach(t => t.stop()); micStream = null; }
@@ -539,47 +569,87 @@ function stopVoice() {
 
 voiceBtn.addEventListener('click', () => { isVoiceActive ? stopVoice() : startVoice(); });
 
-// ── Logs modal ───────────────────────────────────────────────────────────────
-async function openLogs() {
-  document.getElementById('logs-modal').classList.add('open');
-  const body = document.getElementById('logs-body');
-  body.innerHTML = '<div style="color:#555570;padding:20px;text-align:center">loading...</div>';
+// ── Status pill ──────────────────────────────────────────────────────────────
+const statusDot   = document.getElementById('status-dot');
+const statusLabel = document.getElementById('status-label');
+
+function setStatus(state, label) {
+  statusDot.className = 'status-dot ' + state;
+  statusLabel.textContent = label;
+}
+
+// ── Events drawer ────────────────────────────────────────────────────────────
+let drawerOpen = false;
+let drawerPoll = null;
+
+function toggleDrawer() { drawerOpen ? closeDrawer() : openDrawer(); }
+
+function openDrawer() {
+  drawerOpen = true;
+  document.getElementById('events-drawer').classList.add('open');
+  refreshDrawer();
+  drawerPoll = setInterval(refreshDrawer, 3000);
+}
+
+function closeDrawer() {
+  drawerOpen = false;
+  document.getElementById('events-drawer').classList.remove('open');
+  clearInterval(drawerPoll);
+}
+
+async function refreshDrawer() {
+  const body = document.getElementById('drawer-body');
   try {
-    const r = await fetch('/api/logs');
-    const d = await r.json();
-    const logs = d.logs || [];
-    if (!logs.length) { body.innerHTML = '<div style="color:#555570;padding:20px;text-align:center">no requests yet</div>'; return; }
+    // try DB events first, fall back to in-memory log
+    let events = [];
+    try {
+      const r = await fetch('/api/events');
+      const d = await r.json();
+      events = d.events || [];
+    } catch(_) {
+      const r = await fetch('/api/logs');
+      const d = await r.json();
+      events = (d.logs || []).map(l => ({
+        ts: l.ts, kind:'chat', status:l.status, pool:l.pool,
+        model:l.model, elapsed_ms: Math.round(l.secs*1000),
+        detail: JSON.stringify({msg:l.msg, tools:l.tools}), error:l.error
+      }));
+    }
+    if (!events.length) {
+      body.innerHTML = '<div style="color:#555570;padding:20px;text-align:center;font-size:12px">no events yet</div>';
+      return;
+    }
     body.innerHTML = '';
-    logs.forEach(l => {
+    events.forEach(e => {
+      let detail = {};
+      try { detail = JSON.parse(e.detail || '{}'); } catch(_) {}
+      const msg   = detail.msg || e.kind || '';
+      const tools = (detail.tools || []).map(t => `<span class="badge tool">⚙ ${t}</span>`).join('');
+      const secs  = e.elapsed_ms ? (e.elapsed_ms/1000).toFixed(1)+'s' : '';
+      const tsShort = (e.ts||'').split('T').pop().split('.')[0] || e.ts || '';
+      const errHtml = e.error ? `<div class="log-err">${e.error}</div>` : '';
+      const modelBadge = e.model ? `<span class="badge">${e.model}</span>` : '';
+      const poolBadge  = e.pool  ? `<span class="badge pool-${e.pool}">${e.pool}</span>` : '';
+      const kindBadge  = `<span class="badge">${e.kind||''}</span>`;
       const row = document.createElement('div');
       row.className = 'log-row';
-      const tools = l.tools && l.tools.length ? l.tools.map(t => '<span class="badge tool">⚙ '+t+'</span>').join('') : '';
-      const errHtml = l.error ? '<div class="log-err">'+l.error+'</div>' : '';
       row.innerHTML = `
-        <div style="display:flex;flex-direction:column;align-items:center;gap:4px">
-          <div class="log-dot ${l.status}"></div>
-          <div class="log-time">${l.ts}</div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:3px">
+          <div class="log-dot ${e.status||'ok'}"></div>
+          <div class="log-time">${tsShort}</div>
         </div>
         <div>
-          <div class="log-msg">${l.msg}</div>
-          <div class="log-meta">
-            <span class="badge">${l.model}</span>
-            <span class="badge pool-${l.pool}">${l.pool}</span>
-            ${tools}
-          </div>
+          <div class="log-msg">${msg}</div>
+          <div class="log-meta">${kindBadge}${modelBadge}${poolBadge}${tools}</div>
           ${errHtml}
         </div>
-        <div class="log-secs ${l.status}">${l.secs}s</div>
+        <div class="log-secs ${e.status||'ok'}">${secs}</div>
       `;
       body.appendChild(row);
     });
-  } catch(e) {
-    body.innerHTML = '<div style="color:#ef4444;padding:20px">failed to load logs</div>';
+  } catch(err) {
+    body.innerHTML = '<div style="color:#ef4444;padding:20px;font-size:12px">failed to load events</div>';
   }
-}
-
-function closeLogs() {
-  document.getElementById('logs-modal').classList.remove('open');
 }
 </script>
 </body>

@@ -108,9 +108,131 @@ CREATE TABLE IF NOT EXISTS tool_calls (
     name       TEXT    NOT NULL,
     args       TEXT    NOT NULL,
     result     TEXT,
-    ts         TEXT    NOT NULL
+    ts         TEXT    NOT NULL,
+    date       TEXT    GENERATED ALWAYS AS (substr(ts, 1, 10)) VIRTUAL
 );
 CREATE INDEX IF NOT EXISTS idx_tool_calls_session ON tool_calls(session_id);
+CREATE INDEX IF NOT EXISTS idx_tool_calls_ts      ON tool_calls(ts);
+
+-- ── Events log (ring buffer, persisted, last 1000) ────────────────────────────
+CREATE TABLE IF NOT EXISTS events (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts         TEXT    NOT NULL,
+    date       TEXT    GENERATED ALWAYS AS (substr(ts, 1, 10)) VIRTUAL,
+    kind       TEXT    NOT NULL,  -- 'chat' | 'tool' | 'loop' | 'memory' | 'sensor' | 'error' | 'risk'
+    source     TEXT    NOT NULL DEFAULT 'text',  -- 'text' | 'voice' | 'mic' | 'screen' | 'feed' | 'loop'
+    session_id TEXT,
+    pool       TEXT,
+    model      TEXT,
+    elapsed_ms INTEGER,
+    status     TEXT    NOT NULL DEFAULT 'ok',    -- 'ok' | 'slow' | 'error' | 'warn'
+    detail     TEXT,   -- JSON blob or short string
+    error      TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_events_ts     ON events(ts);
+CREATE INDEX IF NOT EXISTS idx_events_date   ON events(date);
+CREATE INDEX IF NOT EXISTS idx_events_kind   ON events(kind);
+CREATE INDEX IF NOT EXISTS idx_events_status ON events(status);
+
+-- ── Episodic memory (daily events from mic/screen/feeds) ──────────────────────
+CREATE TABLE IF NOT EXISTS memory_episodic (
+    id         TEXT    PRIMARY KEY,
+    ts         TEXT    NOT NULL,
+    date       TEXT    GENERATED ALWAYS AS (substr(ts, 1, 10)) VIRTUAL,
+    source     TEXT    NOT NULL,  -- 'mic' | 'screen' | 'feed' | 'session' | 'reflection'
+    session_id TEXT,
+    summary    TEXT    NOT NULL,
+    raw        TEXT,   -- original chunk before summarization
+    tags       TEXT    -- JSON array of topic tags
+);
+CREATE INDEX IF NOT EXISTS idx_episodic_date    ON memory_episodic(date);
+CREATE INDEX IF NOT EXISTS idx_episodic_source  ON memory_episodic(source);
+CREATE INDEX IF NOT EXISTS idx_episodic_session ON memory_episodic(session_id);
+
+-- ── Concept graph mirror (Cognee snapshots) ───────────────────────────────────
+CREATE TABLE IF NOT EXISTS memory_concepts (
+    id         TEXT    PRIMARY KEY,
+    ts         TEXT    NOT NULL,
+    date       TEXT    GENERATED ALWAYS AS (substr(ts, 1, 10)) VIRTUAL,
+    source     TEXT    NOT NULL DEFAULT 'cognee',
+    name       TEXT    NOT NULL,
+    kind       TEXT    NOT NULL DEFAULT 'concept',  -- 'concept' | 'entity' | 'relation'
+    domain     TEXT,   -- 'forex' | 'seacap' | 'general' | etc
+    body       TEXT,   -- JSON: description, related, edges
+    updated_at TEXT    NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_concepts_name   ON memory_concepts(name);
+CREATE INDEX IF NOT EXISTS idx_concepts_domain ON memory_concepts(domain);
+
+-- ── Skill library ─────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS memory_skills (
+    id          TEXT    PRIMARY KEY,
+    ts          TEXT    NOT NULL,
+    date        TEXT    GENERATED ALWAYS AS (substr(ts, 1, 10)) VIRTUAL,
+    source      TEXT    NOT NULL DEFAULT 'mcp',
+    name        TEXT    NOT NULL UNIQUE,
+    description TEXT    NOT NULL,
+    schema      TEXT,   -- JSON: args + return type
+    last_used   TEXT,
+    use_count   INTEGER NOT NULL DEFAULT 0,
+    success_rate REAL   NOT NULL DEFAULT 1.0
+);
+
+-- ── Goals ─────────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS memory_goals (
+    id          TEXT    PRIMARY KEY,
+    ts          TEXT    NOT NULL,
+    date        TEXT    GENERATED ALWAYS AS (substr(ts, 1, 10)) VIRTUAL,
+    source      TEXT    NOT NULL DEFAULT 'om',  -- 'om' | 'truman'
+    session_id  TEXT,
+    title       TEXT    NOT NULL,
+    description TEXT,
+    status      TEXT    NOT NULL DEFAULT 'active',  -- 'active' | 'done' | 'paused' | 'dropped'
+    progress    TEXT,   -- JSON: milestones, last_check, notes
+    updated_at  TEXT    NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_goals_status ON memory_goals(status);
+
+-- ── Reflections (nightly) ─────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS memory_reflections (
+    id         TEXT    PRIMARY KEY,
+    ts         TEXT    NOT NULL,
+    date       TEXT    GENERATED ALWAYS AS (substr(ts, 1, 10)) VIRTUAL,
+    source     TEXT    NOT NULL DEFAULT 'nightly',
+    scope      TEXT    NOT NULL DEFAULT 'day',   -- 'day' | 'week'
+    summary    TEXT    NOT NULL,
+    insights   TEXT,   -- JSON array
+    promoted   INTEGER NOT NULL DEFAULT 0        -- 1 = facts sent to Mem0
+);
+CREATE INDEX IF NOT EXISTS idx_reflections_date ON memory_reflections(date);
+
+-- ── Feeds (market/news/calendar ingested items) ───────────────────────────────
+CREATE TABLE IF NOT EXISTS memory_feeds (
+    id         TEXT    PRIMARY KEY,
+    ts         TEXT    NOT NULL,
+    date       TEXT    GENERATED ALWAYS AS (substr(ts, 1, 10)) VIRTUAL,
+    source     TEXT    NOT NULL,  -- 'oanda' | 'rss' | 'calendar' | 'email'
+    title      TEXT,
+    body       TEXT    NOT NULL,
+    url        TEXT,
+    relevance  REAL    NOT NULL DEFAULT 0.5,
+    surfaced   INTEGER NOT NULL DEFAULT 0  -- 1 = Truman told Om about this
+);
+CREATE INDEX IF NOT EXISTS idx_feeds_date   ON memory_feeds(date);
+CREATE INDEX IF NOT EXISTS idx_feeds_source ON memory_feeds(source);
+
+-- ── Unified timeline view (all memory types in one query) ─────────────────────
+CREATE VIEW IF NOT EXISTS memory_all AS
+    SELECT id, ts, date, source, 'turn'       AS kind, content  AS body FROM turns
+    UNION ALL
+    SELECT id, ts, date, source, 'episodic'   AS kind, summary  AS body FROM memory_episodic
+    UNION ALL
+    SELECT id, ts, date, source, 'concept'    AS kind, body              FROM memory_concepts
+    UNION ALL
+    SELECT id, ts, date, source, 'reflection' AS kind, summary  AS body FROM memory_reflections
+    UNION ALL
+    SELECT id, ts, date, source, 'feed'       AS kind, body              FROM memory_feeds
+;
 """
 
 
@@ -124,11 +246,42 @@ def init():
             c.execute("PRAGMA journal_mode = WAL")
             c.execute("PRAGMA synchronous = NORMAL")
             c.executescript(_SCHEMA)
-            # Migration: add apple_reminder_id if the table existed before this column.
+            # ── Migrations (safe to re-run, all catch duplicate-column errors) ──
+            for ddl in [
+                "ALTER TABLE reminders ADD COLUMN apple_reminder_id TEXT",
+                # turns: add source + date for unified timeline
+                "ALTER TABLE turns ADD COLUMN source TEXT NOT NULL DEFAULT 'text'",
+                # tool_calls: drop old virtual col if schema changed (ignore error)
+            ]:
+                try:
+                    c.execute(ddl)
+                except Exception:
+                    pass
+
+            # backfill turns.date virtual col doesn't need migration (GENERATED)
+            # trim events table to last 1000 rows on boot
             try:
-                c.execute("ALTER TABLE reminders ADD COLUMN apple_reminder_id TEXT")
+                c.execute("""
+                    DELETE FROM events WHERE id NOT IN (
+                        SELECT id FROM events ORDER BY id DESC LIMIT 1000
+                    )
+                """)
             except Exception:
-                pass  # column already present — normal after first migration
+                pass
+            # Self-heal: any session left with ended_at=NULL from a hard kill /
+            # SIGKILL gets closed now using its last turn's ts (or started_at).
+            # Without this, reflect.py skips them forever (it only processes
+            # ended sessions) and summaries never get written.
+            fixed = c.execute("""
+                UPDATE sessions
+                SET ended_at = COALESCE(
+                    (SELECT MAX(ts) FROM turns WHERE turns.session_id = sessions.id),
+                    started_at
+                )
+                WHERE ended_at IS NULL
+            """).rowcount
+            if fixed:
+                print(f"[DB] Self-heal: closed {fixed} dangling session(s)")
         _initialized = True
         print(f"[DB] Ready at {DB_PATH}")
 
@@ -290,6 +443,78 @@ def list_reminders(include_fired: bool = False) -> list[dict]:
 
 
 # ── Tool calls ────────────────────────────────────────────────────────────────
+def log_event_db(
+    kind: str,
+    source: str = "text",
+    session_id: str = None,
+    pool: str = None,
+    model: str = None,
+    elapsed_ms: int = None,
+    status: str = "ok",
+    detail: str = None,
+    error: str = None,
+) -> None:
+    """Persist one event to the events table. Non-blocking — fails silently."""
+    try:
+        with _conn() as c:
+            c.execute(
+                """INSERT INTO events(ts, kind, source, session_id, pool, model,
+                   elapsed_ms, status, detail, error)
+                   VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                (_now(), kind, source, session_id, pool, model,
+                 elapsed_ms, status, detail, error),
+            )
+    except Exception:
+        pass
+
+
+def get_events(limit: int = 100, kind: str = None, date: str = None) -> list[dict]:
+    with _conn() as c:
+        clauses, params = [], []
+        if kind:
+            clauses.append("kind = ?"); params.append(kind)
+        if date:
+            clauses.append("date = ?"); params.append(date)
+        where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+        rows = c.execute(
+            f"SELECT * FROM events {where} ORDER BY id DESC LIMIT ?",
+            params + [limit],
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def add_episodic(
+    source: str,
+    summary: str,
+    session_id: str = None,
+    raw: str = None,
+    tags: list = None,
+) -> None:
+    import uuid, json as _j
+    with _conn() as c:
+        c.execute(
+            """INSERT INTO memory_episodic(id, ts, source, session_id, summary, raw, tags)
+               VALUES (?,?,?,?,?,?,?)""",
+            (str(uuid.uuid4()), _now(), source, session_id,
+             summary, raw, _j.dumps(tags or [])),
+        )
+
+
+def get_episodic(date: str = None, source: str = None, limit: int = 50) -> list[dict]:
+    with _conn() as c:
+        clauses, params = [], []
+        if date:
+            clauses.append("date = ?"); params.append(date)
+        if source:
+            clauses.append("source = ?"); params.append(source)
+        where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+        rows = c.execute(
+            f"SELECT * FROM memory_episodic {where} ORDER BY ts DESC LIMIT ?",
+            params + [limit],
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
 def log_tool_call(
     session_id: Optional[int],
     name: str,
