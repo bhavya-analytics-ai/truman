@@ -163,6 +163,31 @@ def api_logs():
     return jsonify({"logs": get_error_log()})
 
 
+@app.route("/api/tasks")
+def api_tasks():
+    """Live status of background tasks (currently: repo ingests).
+    Dashboard polls this every 2s while tasks are active."""
+    try:
+        from truman.storage import db
+        tasks = db.active_repo_tasks()
+        return jsonify({"tasks": [
+            {
+                "kind":     "repo",
+                "name":     t["name"],
+                "url":      t["url"],
+                "status":   t["status"],
+                "stage":    t.get("stage") or "",
+                "progress": t.get("progress") or 0,
+                "total":    t.get("total") or 0,
+                "files":    t.get("file_count") or 0,
+                "error":    t.get("error") or "",
+            }
+            for t in tasks
+        ]})
+    except Exception as e:
+        return jsonify({"tasks": [], "error": str(e)})
+
+
 @app.route("/api/power", methods=["GET", "POST"])
 def api_power():
     """Om's master kill switch. GET=status, POST=toggle. Truman has no tool for this."""

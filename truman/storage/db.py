@@ -228,7 +228,12 @@ CREATE TABLE IF NOT EXISTS memory_repos (
     url         TEXT    NOT NULL,
     file_count  INTEGER NOT NULL DEFAULT 0,
     ingested_at TEXT    NOT NULL,
-    last_pulled TEXT
+    last_pulled TEXT,
+    status      TEXT    NOT NULL DEFAULT 'done',   -- cloning | ingesting | done | failed
+    progress    INTEGER NOT NULL DEFAULT 0,        -- files processed so far
+    total       INTEGER NOT NULL DEFAULT 0,        -- expected total files
+    stage       TEXT,                              -- short label: 'cloning', 'reading files', 'building graph'
+    error       TEXT
 );
 
 -- ── Unified timeline view (all memory types in one query) ─────────────────────
@@ -261,7 +266,12 @@ def init():
                 "ALTER TABLE reminders ADD COLUMN apple_reminder_id TEXT",
                 # turns: add source + date for unified timeline
                 "ALTER TABLE turns ADD COLUMN source TEXT NOT NULL DEFAULT 'text'",
-                # tool_calls: drop old virtual col if schema changed (ignore error)
+                # memory_repos: progress tracking columns
+                "ALTER TABLE memory_repos ADD COLUMN status   TEXT    NOT NULL DEFAULT 'done'",
+                "ALTER TABLE memory_repos ADD COLUMN progress INTEGER NOT NULL DEFAULT 0",
+                "ALTER TABLE memory_repos ADD COLUMN total    INTEGER NOT NULL DEFAULT 0",
+                "ALTER TABLE memory_repos ADD COLUMN stage    TEXT",
+                "ALTER TABLE memory_repos ADD COLUMN error    TEXT",
             ]:
                 try:
                     c.execute(ddl)
@@ -526,20 +536,78 @@ def get_episodic(date: str = None, source: str = None, limit: int = 50) -> list[
 
 
 # ── Repo index ───────────────────────────────────────────────────────────────
-def upsert_repo(name: str, url: str, file_count: int) -> None:
+def repo_start(name: str, url: str, total: int = 0, stage: str = "cloning") -> None:
+    """Create or reset a repo row at the START of an ingest run."""
     now = _now()
     with _conn() as c:
         c.execute("""
-            INSERT INTO memory_repos(name, url, file_count, ingested_at, last_pulled)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO memory_repos(name, url, file_count, ingested_at, last_pulled,
+                                       status, progress, total, stage, error)
+            VALUES (?, ?, 0, ?, ?, 'cloning', 0, ?, ?, NULL)
             ON CONFLICT(name) DO UPDATE SET
-                file_count  = excluded.file_count,
-                last_pulled = excluded.ingested_at
-        """, (name, url, file_count, now, now))
+                url        = excluded.url,
+                last_pulled= excluded.ingested_at,
+                status     = 'cloning',
+                progress   = 0,
+                total      = excluded.total,
+                stage      = excluded.stage,
+                error      = NULL
+        """, (name, url, now, now, total, stage))
+
+def repo_progress(name: str, progress: int, total: int = None, stage: str = None) -> None:
+    """Update mid-run progress. Cheap, called frequently."""
+    sets = ["progress = ?"]
+    args = [progress]
+    if total is not None:
+        sets.append("total = ?"); args.append(total)
+    if stage is not None:
+        sets.append("stage = ?"); args.append(stage)
+    args.append(name)
+    with _conn() as c:
+        c.execute(f"UPDATE memory_repos SET {', '.join(sets)} WHERE name = ?", args)
+
+def repo_done(name: str, file_count: int) -> None:
+    with _conn() as c:
+        c.execute("""
+            UPDATE memory_repos
+               SET status = 'done', progress = ?, total = ?, file_count = ?, stage = NULL, error = NULL
+             WHERE name = ?
+        """, (file_count, file_count, file_count, name))
+
+def repo_failed(name: str, error: str) -> None:
+    with _conn() as c:
+        c.execute("UPDATE memory_repos SET status = 'failed', error = ?, stage = NULL WHERE name = ?",
+                   (error[:500], name))
+
+# Back-compat: code that calls upsert_repo still works
+def upsert_repo(name: str, url: str, file_count: int) -> None:
+    repo_done(name, file_count)
+    with _conn() as c:
+        c.execute("UPDATE memory_repos SET url = ?, last_pulled = ? WHERE name = ?",
+                   (url, _now(), name))
 
 def list_repos() -> list[dict]:
     with _conn() as c:
-        rows = c.execute("SELECT name, url, file_count, ingested_at, last_pulled FROM memory_repos ORDER BY ingested_at DESC").fetchall()
+        rows = c.execute("""
+            SELECT name, url, file_count, ingested_at, last_pulled,
+                   status, progress, total, stage, error
+              FROM memory_repos
+          ORDER BY ingested_at DESC
+        """).fetchall()
+    return [dict(r) for r in rows]
+
+def active_repo_tasks() -> list[dict]:
+    """Return only repos that are currently cloning/ingesting OR finished in last 30s.
+    The recently-finished window lets the dashboard show a 'done' confirmation briefly."""
+    with _conn() as c:
+        rows = c.execute("""
+            SELECT name, url, file_count, status, progress, total, stage, error,
+                   last_pulled
+              FROM memory_repos
+             WHERE status IN ('cloning', 'ingesting', 'failed')
+                OR (status = 'done' AND datetime(last_pulled) > datetime('now', 'localtime', '-30 seconds'))
+          ORDER BY last_pulled DESC
+        """).fetchall()
     return [dict(r) for r in rows]
 
 

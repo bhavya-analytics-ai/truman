@@ -99,77 +99,89 @@ class GitHubSkill(SkillBase):
         return f"started cloning {repo_name} in background. ask me 'list repos' in a couple minutes — when it shows up there, i've fully ingested it."
 
     def _ingest_worker(self, url: str, repo_name: str) -> None:
-        """Runs in a background thread. Logs result to events table."""
+        """Runs in a background thread. Writes live progress to memory_repos."""
         from truman.storage import db as _db
         import time as _time
         t0 = _time.time()
         clone_path = self._clone_path(repo_name)
         os.makedirs(_REPOS_DIR, exist_ok=True)
 
+        # mark started
+        _db.repo_start(repo_name, url, total=0, stage="cloning")
+
         try:
             if os.path.isdir(clone_path):
                 subprocess.run(["git", "-C", clone_path, "pull", "--quiet"], timeout=60)
-                status = "updated"
+                git_status = "updated"
             else:
                 r = subprocess.run(
                     ["git", "clone", "--depth=1", "--quiet", url, clone_path],
                     timeout=180, capture_output=True, text=True
                 )
                 if r.returncode != 0:
+                    _db.repo_failed(repo_name, f"clone failed: {r.stderr[:200]}")
                     self._log_event(repo_name, status="error", error=f"clone failed: {r.stderr[:200]}", elapsed_ms=int((_time.time()-t0)*1000))
                     return
-                status = "cloned"
+                git_status = "cloned"
         except Exception as e:
+            _db.repo_failed(repo_name, f"git: {e}")
             self._log_event(repo_name, status="error", error=f"git: {e}", elapsed_ms=int((_time.time()-t0)*1000))
             return
 
-        files_text, count = [], 0
+        # First pass — count target files for accurate progress %
+        target_files = []
         for root, dirs, files in os.walk(clone_path):
             dirs[:] = [d for d in dirs if d not in (".git", "node_modules", "__pycache__", ".venv", "venv", "dist", "build")]
             for fname in files:
                 ext = os.path.splitext(fname)[1].lower()
-                if ext not in _TEXT_EXTS:
-                    continue
-                fpath = os.path.join(root, fname)
-                if is_blocked(fpath):
-                    continue
-                try:
-                    with open(fpath, "r", errors="replace") as f:
-                        content = f.read(_MAX_FILE)
-                    rel = os.path.relpath(fpath, clone_path)
-                    files_text.append(f"# {rel}\n{content}")
-                    count += 1
-                except Exception:
-                    continue
-                if count >= _MAX_INGEST_FILES:
-                    break
-            if count >= _MAX_INGEST_FILES:
+                if ext in _TEXT_EXTS:
+                    fpath = os.path.join(root, fname)
+                    if not is_blocked(fpath):
+                        target_files.append(fpath)
+                        if len(target_files) >= _MAX_INGEST_FILES:
+                            break
+            if len(target_files) >= _MAX_INGEST_FILES:
                 break
 
+        total = len(target_files)
+        _db.repo_progress(repo_name, progress=0, total=total, stage="reading files")
+
+        # Second pass — read + accumulate, update progress every 5 files
+        files_text, count = [], 0
+        for fpath in target_files:
+            try:
+                with open(fpath, "r", errors="replace") as f:
+                    content = f.read(_MAX_FILE)
+                rel = os.path.relpath(fpath, clone_path)
+                files_text.append(f"# {rel}\n{content}")
+                count += 1
+            except Exception:
+                continue
+            if count % 5 == 0 or count == total:
+                _db.repo_progress(repo_name, progress=count, total=total, stage="reading files")
+
         if not files_text:
-            self._log_event(repo_name, status="warn", error=f"{status} but no text files", elapsed_ms=int((_time.time()-t0)*1000))
+            _db.repo_failed(repo_name, f"{git_status} but no text files found")
+            self._log_event(repo_name, status="warn", error=f"{git_status} but no text files", elapsed_ms=int((_time.time()-t0)*1000))
             return
 
-        # persist to repo index NOW (so list_repos sees it even if Cognee is slow)
-        try:
-            from truman.storage.db import upsert_repo
-            upsert_repo(repo_name, url, count)
-        except Exception:
-            pass
+        # mark ingesting (Cognee step doesn't expose granular progress)
+        _db.repo_progress(repo_name, progress=count, total=total, stage="building concept graph")
 
-        # ingest into Cognee — tagged by dataset so we can scope searches per-repo
         try:
             from truman.brain.concepts import ingest
             full_text = f"REPO: {url}\n\n" + "\n\n---\n\n".join(files_text)
             ingest(full_text, dataset=f"repo_{repo_name}")
+            _db.repo_done(repo_name, file_count=count)
             self._log_event(repo_name, status="ok",
                             error=None,
-                            detail=f"{status} + ingested ({count} files)",
+                            detail=f"{git_status} + ingested ({count} files)",
                             elapsed_ms=int((_time.time()-t0)*1000))
         except Exception as e:
+            _db.repo_failed(repo_name, f"Cognee ingest failed: {e}")
             self._log_event(repo_name, status="warn",
                             error=f"Cognee ingest failed: {e}",
-                            detail=f"{status} ({count} files), graph not updated",
+                            detail=f"{git_status} ({count} files), graph not updated",
                             elapsed_ms=int((_time.time()-t0)*1000))
 
     def _log_event(self, repo_name: str, status: str, error: str | None = None,
