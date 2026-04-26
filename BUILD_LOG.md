@@ -111,7 +111,43 @@
 - reflect.py: removed json_mode=True (NIM doesn't support), added markdown fence stripping, 1 retry on bad JSON
 - Commit: `972ccf4`
 
-### Verified on Railway
+## 2026-04-26 (cont.) — Phase 3: Skills, Kill Switch, Live Progress
+
+**Phase 3 — Skills + Safety**
+- Master kill switch: file flag `truman/data/.killswitch`. Power button in dashboard. Truman has zero tools that touch this file. Brain loop guards on entry.
+- Removed Groq entirely (requirements, config, model_router). NIM-only with NIM secondary fallback.
+- New `truman/skills/` module with stdio-style architecture:
+  - `_blacklist.py`: blocks `.env`, `.ssh`, `.killswitch`, `*.key`, `credentials`, `secret`
+  - `base.py`, `registry.py` (auto-loads, keyword routing)
+  - `files/` — read/write/list/search ~/Desktop (only when on Mac)
+  - `web/` — search + fetch_url
+  - `github/` — clone + ingest into Cognee, per-repo dataset
+- `route_skill` node added between `detect_tool` and `execute_tool`
+- `ENABLE_MCP`, `ENABLE_MCP_FILES`, `ENABLE_MCP_WEB`, `ENABLE_MCP_GITHUB` — all default 1
+- Commits: `030aa9a`, `c24a92b`
+
+**Phase 3.x — Critical Fixes (after Om caught hallucinations)**
+- BUG: `execute_tool` was clobbering `route_skill`'s `tool_result`. Fixed: skip if `skill_name` set.
+- BUG: github clone was synchronous, killing 45s chat timeout. Fixed: fire-and-forget background thread.
+- BUG: persona had no real skill inventory → Truman hallucinated cloning. Fixed: persona now lists exact skills + hard rule "no [Tool result] → didn't run, don't lie".
+- Every skill route now logs to events drawer.
+- Commit: `45e01c2`
+
+**Phase 3.2 — Live Progress UI**
+- New `memory_repos` columns: status, progress, total, stage, error
+- New helpers: `repo_start`, `repo_progress`, `repo_done`, `repo_failed`, `active_repo_tasks`
+- New `/api/tasks` endpoint
+- Dashboard: tasks strip below session bar, polls every 2s, shows progress bar with %
+- Auto-toast: when ingest finishes, Truman sends a chat message "done — ingested N files"
+- Failure toast: red bar + chat message with error
+- Commit: `c62c335`
+
+### Known Deploy Issue
+- Local repo has NO git remote and Railway CLI is logged out
+- Om must run `railway login` then `railway up` to deploy these commits
+- All 4 commits (030aa9a → c62c335) are local only
+
+### Verified on Railway (Phase 0-2 baseline)
 - Time shows correctly: "Sunday, Apr 26 2026, 12:17 PM ET"
 - /health endpoint clean
 - LangGraph path active (ENABLE_LANGGRAPH=1)

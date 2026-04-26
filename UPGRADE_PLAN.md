@@ -49,8 +49,11 @@ Memory Stack (5 tiers):
 | 1 | LangGraph brain loop | ✅ Shipped | de5b7a0 |
 | 2 | Cognee concept graph | ✅ Shipped | 85e5ace |
 | 2.1 | NIM embeddings + timezone fix + reflect.py fix | ✅ Shipped | 972ccf4 |
-| 3 | MCP skill library | 🔜 Next | — |
-| 4 | Goals + curiosity layer | ⬜ Planned | — |
+| 3   | Skills (files/web/github), kill switch, Groq removed | ✅ Shipped | 030aa9a |
+| 3.1 | Repo index, list_repos, per-repo Cognee scoping | ✅ Shipped | c24a92b |
+| 3.x | Skill priority fix, github async, persona inventory | ✅ Shipped | 45e01c2 |
+| 3.2 | Live progress tracking + completion toast + /api/tasks | ✅ Shipped | c62c335 |
+| 4 | Goals + curiosity layer | 🔜 Next | — |
 | 5 | Risk gate node | ⬜ Planned | — |
 | 6 | E2B code sandbox | ⬜ Planned | — |
 | 7 | Screenpipe screen context | ⬜ Planned | — |

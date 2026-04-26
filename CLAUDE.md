@@ -19,8 +19,15 @@
 
 ## Current state (as of 2026-04-26)
 
-Phases 0-2 shipped. Railway is live. LangGraph active. Cognee active.
-Next: Phase 3 — MCP skill library.
+Phases 0-3.2 committed locally. Railway has Phases 0-2 only — deploy pending.
+LangGraph + Cognee active. Skills (files/web/github), kill switch, live progress UI all built.
+
+**DEPLOY:** No git remote on this repo. Railway CLI is logged out. Om must run
+`railway login` then `railway up` from project root to ship pending commits.
+
+Pending commits to deploy: 030aa9a, c24a92b, 45e01c2, c62c335.
+
+Next: Phase 4 — Goals + Curiosity (proactivity).
 
 ## Quick file map
 
