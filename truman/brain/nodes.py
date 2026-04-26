@@ -129,7 +129,7 @@ def execute_tool(state: TrumanState) -> dict:
 # ── Node 6: call_llm ──────────────────────────────────────────────────────────
 def call_llm(state: TrumanState) -> dict:
     try:
-        from datetime import datetime
+        from datetime import datetime, timezone, timedelta
         from zoneinfo import ZoneInfo
         from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
         from truman.core.persona import SYSTEM
@@ -138,7 +138,10 @@ def call_llm(state: TrumanState) -> dict:
         session_id = state["session_id"]
         chat_history = _chat_histories.setdefault(session_id, [])
 
-        now_et = datetime.now(ZoneInfo("America/New_York"))
+        try:
+            now_et = datetime.now(ZoneInfo("America/New_York"))
+        except Exception:
+            now_et = datetime.now(timezone(timedelta(hours=-4)))  # EDT fallback
         clock_line = f"\n\nCURRENT TIME: {now_et.strftime('%A, %b %d %Y, %I:%M %p ET')}"
         mem_ctx = state.get("memory_context", "")
         mood = state.get("mood", "neutral")

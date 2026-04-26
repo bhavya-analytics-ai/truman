@@ -309,7 +309,11 @@ def _run_legacy(user_input: str, mood: str = "", pool: str | None = None, sessio
     mood_line = f"\n\nMOOD CONTEXT: {mood}" if mood and mood != "neutral" else ""
     persona_reminder = "\n\nCRITICAL: You are texting Om on his dashboard. Be direct, casual, lowercase. No bullet points. No asking permission. Commit to your answer. Match Om's energy."
 
-    now_et = datetime.now(ZoneInfo("America/New_York"))
+    try:
+        now_et = datetime.now(ZoneInfo("America/New_York"))
+    except Exception:
+        from datetime import timezone, timedelta
+        now_et = datetime.now(timezone(timedelta(hours=-4)))  # EDT fallback
     clock_line = f"\n\nCURRENT TIME: {now_et.strftime('%A, %b %d %Y, %I:%M %p ET')}"
     last_session_ctx = _last_session_str()
     system_content = SYSTEM + clock_line + (f"\n\nRelevant memory:\n{mem_context}" if mem_context else "") + last_session_ctx + mood_line + persona_reminder

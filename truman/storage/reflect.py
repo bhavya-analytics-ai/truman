@@ -21,17 +21,32 @@ from truman.storage import db
 from truman.core.config import get_llm
 
 
-REFLECT_PROMPT = """You are a reflection agent. Read this voice conversation between Om and his AI assistant Truman.
+REFLECT_PROMPT = """You are a reflection agent for Om's personal AI system. Read this conversation between Om and Truman.
 
-Produce:
-1. A 2-3 sentence SUMMARY of what they talked about, decisions made, and anything unresolved.
-2. A list of durable FACTS about Om worth remembering long-term — projects, preferences, locations, plans, state changes, opinions. Skip small talk, greetings, filler.
+Extract structured intelligence — not a story, not a summary. Logic that can be acted on.
 
-Return STRICT JSON (no markdown, no commentary):
-{"summary": "...", "facts": ["fact 1", "fact 2", ...]}
+Return STRICT JSON only (no markdown, no commentary):
+{
+  "summary": "2-3 sentence overview of what happened",
+  "tasks_completed": ["task 1", "task 2"],
+  "key_decisions": ["decision 1", "decision 2"],
+  "errors": ["what broke or failed"],
+  "fixes": ["what was done to fix it"],
+  "next_day_priorities": ["what Om should focus on next"],
+  "facts": ["durable fact about Om worth remembering long-term"]
+}
 
-If the conversation is too short or trivial to extract anything, return:
-{"summary": "Brief check-in, nothing notable.", "facts": []}
+Rules:
+- tasks_completed: things Om actually finished or shipped this session
+- key_decisions: architectural, strategic, or personal choices made (e.g. "moved to Railway", "changed model pool", "adjusted forex risk rule")
+- errors: failures, bugs, broken things — not code errors, actual problems encountered
+- fixes: what resolved each error
+- next_day_priorities: 2-3 most important things to pick up next session
+- facts: durable info about Om (projects, preferences, locations, plans, opinions) — skip small talk
+- If a field has nothing relevant, return an empty list []
+
+If the conversation is too short or trivial:
+{"summary": "Brief check-in, nothing notable.", "tasks_completed": [], "key_decisions": [], "errors": [], "fixes": [], "next_day_priorities": [], "facts": []}
 
 Conversation:
 ---
@@ -74,16 +89,25 @@ def _call_llm(convo: str) -> dict | None:
         # lazy import so the script doesn't pay the LangChain load cost unless needed
         from langchain_core.messages import SystemMessage, HumanMessage
 
-        llm = get_llm(temperature=0.2, json_mode=True)
+        # json_mode=False — NIM doesn't support response_format:json_object
+        # prompt already demands strict JSON, we parse + strip markdown fences
+        llm = get_llm(temperature=0.2, json_mode=False)
         messages = [
-            SystemMessage(content="You are a precise reflection agent. You only return JSON."),
+            SystemMessage(content="You are a precise reflection agent. Return only raw JSON, no markdown, no code fences."),
             HumanMessage(content=REFLECT_PROMPT % convo),
         ]
 
         for attempt in range(2):  # primary call + 1 retry on bad JSON
             resp = llm.invoke(messages)
+            raw = resp.content.strip()
+            # strip markdown code fences if model wraps in ```json ... ```
+            if raw.startswith("```"):
+                raw = raw.split("```")[1]
+                if raw.startswith("json"):
+                    raw = raw[4:]
+                raw = raw.strip()
             try:
-                return json.loads(resp.content)
+                return json.loads(raw)
             except json.JSONDecodeError:
                 if attempt == 0:
                     print("[reflect] malformed JSON, retrying once", file=sys.stderr)
@@ -121,9 +145,12 @@ def reflect_on(session_id: int) -> bool:
         return False
 
     convo = _format_turns(turns)
-    # skip trivially short sessions (< 2 turns means it never actually exchanged)
     if len(turns) < 2:
-        db.set_session_summary(session_id, "Session opened but no exchange.")
+        db.set_session_summary(session_id, json.dumps({
+            "summary": "Session opened but no exchange.",
+            "tasks_completed": [], "key_decisions": [], "errors": [],
+            "fixes": [], "next_day_priorities": [], "facts": []
+        }))
         return True
 
     print(f"[reflect] session {session_id}: {len(turns)} turns")
@@ -131,17 +158,23 @@ def reflect_on(session_id: int) -> bool:
     if not result:
         return False
 
-    summary = (result.get("summary") or "").strip()
-    facts   = result.get("facts") or []
-    if not summary:
-        summary = "No summary produced."
+    r = result
+    structured = {
+        "summary":             (r.get("summary") or "No summary.").strip(),
+        "tasks_completed":     r.get("tasks_completed") or [],
+        "key_decisions":       r.get("key_decisions") or [],
+        "errors":              r.get("errors") or [],
+        "fixes":               r.get("fixes") or [],
+        "next_day_priorities": r.get("next_day_priorities") or [],
+        "facts":               r.get("facts") or [],
+    }
+    db.set_session_summary(session_id, json.dumps(structured))
+    print(f"[reflect]   summary: {structured['summary']}")
 
-    db.set_session_summary(session_id, summary)
-    print(f"[reflect]   summary: {summary}")
-
-    if isinstance(facts, list):
-        _push_facts([str(f) for f in facts])
-
+    mem_facts = structured["facts"] + \
+                [f"Decision: {d}" for d in structured["key_decisions"]] + \
+                [f"Error: {e}" for e in structured["errors"]]
+    _push_facts(mem_facts)
     return True
 
 
