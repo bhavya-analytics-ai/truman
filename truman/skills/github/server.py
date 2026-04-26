@@ -83,26 +83,45 @@ class GitHubSkill(SkillBase):
             return ""
 
     def _ingest(self, url: str) -> str:
+        """
+        Fire-and-forget: spawn a background thread to clone + ingest.
+        Returns immediately so chat doesn't hang on slow clones.
+        Status visible via list_repos and events drawer.
+        """
         if not url:
             return "[github] no URL found"
         if "github.com" not in url:
             return f"[github] not a GitHub URL: {url}"
 
-        repo_name  = self._repo_name(url)
+        repo_name = self._repo_name(url)
+        import threading
+        threading.Thread(target=self._ingest_worker, args=(url, repo_name), daemon=True).start()
+        return f"started cloning {repo_name} in background. ask me 'list repos' in a couple minutes — when it shows up there, i've fully ingested it."
+
+    def _ingest_worker(self, url: str, repo_name: str) -> None:
+        """Runs in a background thread. Logs result to events table."""
+        from truman.storage import db as _db
+        import time as _time
+        t0 = _time.time()
         clone_path = self._clone_path(repo_name)
         os.makedirs(_REPOS_DIR, exist_ok=True)
 
-        if os.path.isdir(clone_path):
-            subprocess.run(["git", "-C", clone_path, "pull", "--quiet"], timeout=60)
-            status = "updated"
-        else:
-            r = subprocess.run(
-                ["git", "clone", "--depth=1", "--quiet", url, clone_path],
-                timeout=120, capture_output=True, text=True
-            )
-            if r.returncode != 0:
-                return f"[github] clone failed: {r.stderr[:300]}"
-            status = "cloned"
+        try:
+            if os.path.isdir(clone_path):
+                subprocess.run(["git", "-C", clone_path, "pull", "--quiet"], timeout=60)
+                status = "updated"
+            else:
+                r = subprocess.run(
+                    ["git", "clone", "--depth=1", "--quiet", url, clone_path],
+                    timeout=180, capture_output=True, text=True
+                )
+                if r.returncode != 0:
+                    self._log_event(repo_name, status="error", error=f"clone failed: {r.stderr[:200]}", elapsed_ms=int((_time.time()-t0)*1000))
+                    return
+                status = "cloned"
+        except Exception as e:
+            self._log_event(repo_name, status="error", error=f"git: {e}", elapsed_ms=int((_time.time()-t0)*1000))
+            return
 
         files_text, count = [], 0
         for root, dirs, files in os.walk(clone_path):
@@ -128,9 +147,10 @@ class GitHubSkill(SkillBase):
                 break
 
         if not files_text:
-            return f"[github] {status} {repo_name} but no text files found"
+            self._log_event(repo_name, status="warn", error=f"{status} but no text files", elapsed_ms=int((_time.time()-t0)*1000))
+            return
 
-        # persist to repo index
+        # persist to repo index NOW (so list_repos sees it even if Cognee is slow)
         try:
             from truman.storage.db import upsert_repo
             upsert_repo(repo_name, url, count)
@@ -142,9 +162,32 @@ class GitHubSkill(SkillBase):
             from truman.brain.concepts import ingest
             full_text = f"REPO: {url}\n\n" + "\n\n---\n\n".join(files_text)
             ingest(full_text, dataset=f"repo_{repo_name}")
-            return f"{status} + ingested {repo_name} ({count} files). Truman knows this repo now. Ask me anything about it."
+            self._log_event(repo_name, status="ok",
+                            error=None,
+                            detail=f"{status} + ingested ({count} files)",
+                            elapsed_ms=int((_time.time()-t0)*1000))
         except Exception as e:
-            return f"{status} {repo_name} ({count} files) — Cognee ingest failed: {e}"
+            self._log_event(repo_name, status="warn",
+                            error=f"Cognee ingest failed: {e}",
+                            detail=f"{status} ({count} files), graph not updated",
+                            elapsed_ms=int((_time.time()-t0)*1000))
+
+    def _log_event(self, repo_name: str, status: str, error: str | None = None,
+                   detail: str | None = None, elapsed_ms: int = 0) -> None:
+        try:
+            from truman.storage import db as _db
+            import json as _j
+            _db.log_event_db(
+                kind="skill", source="github",
+                session_id=None, pool="", model="",
+                elapsed_ms=elapsed_ms, status=status,
+                detail=_j.dumps({"msg": f"github.ingest_repo {repo_name}",
+                                  "tools": [f"github.ingest_repo:{repo_name}"],
+                                  "info": detail or ""}),
+                error=error,
+            )
+        except Exception:
+            pass
 
     def _list_repos(self) -> str:
         try:

@@ -120,6 +120,27 @@ def route_skill(state: TrumanState) -> dict:
         if not skill_name:
             return {"skill_name": None}
         result = route(skill_name, tool_name, state["user_input"])
+        # log skill invocation to events drawer (sync skill calls only;
+        # github fire-and-forget logs its own background completion)
+        try:
+            import threading, json as _j
+            from truman.storage import db as _db
+            failed = isinstance(result, str) and result.startswith("[skill") and "error" in result
+            threading.Thread(
+                target=_db.log_event_db,
+                kwargs=dict(
+                    kind="skill", source=skill_name,
+                    session_id=None, pool="", model="",
+                    elapsed_ms=0,
+                    status="error" if failed else "ok",
+                    detail=_j.dumps({"msg": state["user_input"][:120],
+                                      "tools": [f"{skill_name}.{tool_name}"]}),
+                    error=result if failed else None,
+                ),
+                daemon=True,
+            ).start()
+        except Exception:
+            pass
         return {
             "skill_name":      skill_name,
             "tool_result":     result,
@@ -133,6 +154,10 @@ def route_skill(state: TrumanState) -> dict:
 
 # ── Node 5: execute_tool ──────────────────────────────────────────────────────
 def execute_tool(state: TrumanState) -> dict:
+    # If a skill already handled the request, don't run a legacy tool on top
+    # (would clobber tool_result and tool_calls_made set by route_skill)
+    if state.get("skill_name"):
+        return {}
     tool_name = state.get("tool_name")
     if not tool_name:
         return {"tool_result": None, "tool_calls_made": []}
