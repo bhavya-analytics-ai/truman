@@ -74,8 +74,50 @@
 
 ---
 
+## 2026-04-26 — Session: Phases 0-2 + Architecture Overhaul
 
+### Shipped
 
+**Phase 0 — Foundation**
+- Clock injection: ZoneInfo("America/New_York") + EDT fallback + tzdata==2025.2 in requirements
+- Memory schema: events (ring buffer 1000), memory_episodic, memory_concepts, memory_skills, memory_goals, memory_reflections, memory_feeds, memory_all VIEW — all with ts + date + source
+- Status pill in dashboard header: idle/thinking/listening/error dot, always visible, clickable
+- Events drawer: slides in from right, polls /api/events every 3s when open, shows kind/model/pool/timing/error
+- /api/events endpoint in orb.py
+- Commit: `6b62d6f`
+
+**Phase 1 — LangGraph Brain Loop**
+- `truman/brain/` module: `__init__.py`, `state.py`, `nodes.py`, `loop.py`
+- TrumanState TypedDict with all fields
+- 8 nodes, each fails soft into node_errors
+- loop.py wires StateGraph, run() returns same shape as old agent.run()
+- agent.py: _run_legacy() (old), new run() tries LangGraph (ENABLE_LANGGRAPH=1) then falls back
+- Commit: `de5b7a0`
+
+**Phase 2 — Cognee Concept Graph**
+- `truman/brain/concepts.py`: init(), ingest(), search(), ingest_background(), search_sync()
+- NIM for both LLM (stepfun-ai/step-3.5-flash) and embeddings (text-embedding-ada-002 name on NIM endpoint)
+- concept_lookup node in nodes.py: searches graph, ingest_background fires async
+- concept_search + concept_ingest tools added to all_tools.py
+- COGNEE_SKIP_CONNECTION_TEST=true to skip 30s boot delay
+- Commit: `85e5ace`
+
+**Phase 2.1 — Fixes**
+- Cognee SearchType.GRAPH_COMPLETION (INSIGHTS doesn't exist)
+- Cognee search() positional args (no query= kwarg)
+- NIM embedding model name → "text-embedding-ada-002" for tiktoken compatibility
+- OpenAI → NIM for all Cognee inference (cost policy: OpenAI = voice only)
+- tzdata added to requirements.txt, EDT fallback in nodes.py call_llm
+- reflect.py: removed json_mode=True (NIM doesn't support), added markdown fence stripping, 1 retry on bad JSON
+- Commit: `972ccf4`
+
+### Verified on Railway
+- Time shows correctly: "Sunday, Apr 26 2026, 12:17 PM ET"
+- /health endpoint clean
+- LangGraph path active (ENABLE_LANGGRAPH=1)
+- Cognee active (ENABLE_COGNEE=1)
+
+---
 
 1. PWA (30 min work, easiest)
 Add a manifest file → Chrome shows "Install Truman" button → becomes its own app icon in your dock. Runs in its own window, no browser tab needed. Can launch on Mac startup. Still uses WebRTC AEC underneath. Same code we're about to write.
