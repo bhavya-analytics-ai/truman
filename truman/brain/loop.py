@@ -12,22 +12,24 @@ from truman.brain import nodes
 def _build_graph():
     g = StateGraph(TrumanState)
 
-    g.add_node("classify_mood", nodes.classify_mood)
-    g.add_node("load_memory",   nodes.load_memory)
-    g.add_node("detect_pool",   nodes.detect_pool)
-    g.add_node("detect_tool",   nodes.detect_tool)
-    g.add_node("execute_tool",  nodes.execute_tool)
-    g.add_node("call_llm",      nodes.call_llm)
-    g.add_node("save_memory",   nodes.save_memory)
+    g.add_node("classify_mood",  nodes.classify_mood)
+    g.add_node("concept_lookup", nodes.concept_lookup)
+    g.add_node("load_memory",    nodes.load_memory)
+    g.add_node("detect_pool",    nodes.detect_pool)
+    g.add_node("detect_tool",    nodes.detect_tool)
+    g.add_node("execute_tool",   nodes.execute_tool)
+    g.add_node("call_llm",       nodes.call_llm)
+    g.add_node("save_memory",    nodes.save_memory)
 
     g.set_entry_point("classify_mood")
-    g.add_edge("classify_mood", "load_memory")
-    g.add_edge("load_memory",   "detect_pool")
-    g.add_edge("detect_pool",   "detect_tool")
-    g.add_edge("detect_tool",   "execute_tool")
-    g.add_edge("execute_tool",  "call_llm")
-    g.add_edge("call_llm",      "save_memory")
-    g.add_edge("save_memory",   END)
+    g.add_edge("classify_mood",  "concept_lookup")
+    g.add_edge("concept_lookup", "load_memory")
+    g.add_edge("load_memory",    "detect_pool")
+    g.add_edge("detect_pool",    "detect_tool")
+    g.add_edge("detect_tool",    "execute_tool")
+    g.add_edge("execute_tool",   "call_llm")
+    g.add_edge("call_llm",       "save_memory")
+    g.add_edge("save_memory",    END)
 
     return g.compile()
 
@@ -50,20 +52,20 @@ def run(user_input: str, session_id: str = "default", pool_hint: str = None) -> 
     t_start = time.time()
 
     initial_state: TrumanState = {
-        "session_id":      session_id,
-        "user_input":      user_input,
-        "pool_hint":       pool_hint,
-        "mood":            "neutral",
-        "memory_context":  "",
-        "chosen_pool":     "general",
-        "tool_name":       None,
-        "tool_result":     None,
-        "tool_calls_made": [],
-        "messages":        [],
-        "response":        "",
-        "model_label":     "none",
-        "node_errors":     {},
-        "fatal_error":     "",
+        "session_id":       session_id,
+        "user_input":       user_input,
+        "pool_hint":        pool_hint,
+        "mood":             "neutral",
+        "memory_context":   "",
+        "chosen_pool":      "general",
+        "tool_name":        None,
+        "tool_result":      None,
+        "tool_calls_made":  [],
+        "messages":         [],
+        "response":         "",
+        "model_label":      "none",
+        "node_errors":      {},
+        "fatal_error":      "",
     }
 
     final_state = get_graph().invoke(initial_state)

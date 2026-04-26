@@ -63,6 +63,7 @@ def get_llm(temperature: float = 0.7, json_mode: bool = False):
     return primary.with_fallbacks([f1])
 
 # ── Misc ──────────────────────────────────────────────────────────────────────
+os.environ["COGNEE_SKIP_CONNECTION_TEST"] = "true"
 os.environ["HUGGINGFACE_TOKEN"]      = HUGGINGFACE_TOKEN or ""
 os.environ["LANGCHAIN_TRACING_V2"]   = "true"
 os.environ["LANGCHAIN_PROJECT"]      = "truman"

@@ -118,6 +118,7 @@ CAPABILITIES = """YOUR CAPABILITIES — honest, never fake what you can't do:
 - Reminders — internal voice-alert reminders via set_reminder / list_reminders.
 - Cross-session context — last session summary + recent turns auto-loaded each session.
 - Model routing — 9 pools (coding, design, creative, general, docs, vision, reasoning, fast, agentic).
+- Concept graph — understands relationships between domains, strategies, patterns. Grows every turn. Search it with concept_search, add to it with concept_ingest.
 
 BUILT FEATURES — these exist right now, don't deny them:
 - Pool badge in dashboard header — shows which pool handled the last message. It's there.

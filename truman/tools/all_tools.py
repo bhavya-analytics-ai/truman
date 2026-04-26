@@ -289,6 +289,28 @@ def pipeline_mode(request: str, pool: str = "coding") -> str:
     return output
 
 
+@tool
+def concept_search(query: str) -> str:
+    """Search Truman's concept graph for domain knowledge — relationships between ideas, strategies, patterns. Use when Om asks about how something works conceptually, wants to understand connections, or asks about a domain like forex, seacap, trading. Different from recall which finds facts — this finds relationships."""
+    try:
+        from truman.brain.concepts import search_sync
+        result = search_sync(query, top_k=5)
+        return result if result else "nothing in concept graph yet for that — it grows over time as we talk."
+    except Exception as e:
+        return f"concept graph unavailable: {e}"
+
+
+@tool
+def concept_ingest(text: str) -> str:
+    """Add important knowledge to Truman's concept graph — domain knowledge, strategies, how something works. Use when Om shares expertise, explains a strategy, or teaches Truman about a domain. This builds the world model."""
+    try:
+        from truman.brain.concepts import ingest
+        ok = ingest(text)
+        return "added to concept graph." if ok else "couldn't add to concept graph right now."
+    except Exception as e:
+        return f"concept graph write failed: {e}"
+
+
 TOOLS = [web_search, get_weather, remember, recall, set_reminder, list_reminders,
          search_history, recent_conversations, read_mac_file, list_mac_dir, search_mac_files,
-         write_mac_file, list_models, set_model, pipeline_mode]
+         write_mac_file, list_models, set_model, pipeline_mode, concept_search, concept_ingest]

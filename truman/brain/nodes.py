@@ -19,7 +19,35 @@ def classify_mood(state: TrumanState) -> dict:
         return {"mood": "neutral", "node_errors": errs}
 
 
-# ── Node 2: load_memory ───────────────────────────────────────────────────────
+# ── Node 2: concept_lookup ────────────────────────────────────────────────────
+def concept_lookup(state: TrumanState) -> dict:
+    """
+    Search the Cognee concept graph for domain knowledge related to user input.
+    Runs only if ENABLE_COGNEE=1. Fails soft — graph continues without it.
+    Also fires a background ingest of the current input to grow the graph.
+    """
+    import os
+    if os.environ.get("ENABLE_COGNEE", "1") != "1":
+        return {}
+    try:
+        from truman.brain.concepts import search_sync, ingest_background
+        # search existing graph
+        concept_ctx = search_sync(state["user_input"], top_k=4)
+        # grow graph in background (non-blocking)
+        ingest_background(state["user_input"])
+        if concept_ctx:
+            # append to memory context
+            existing = state.get("memory_context", "")
+            combined = f"{existing}\n\nCONCEPT GRAPH:\n{concept_ctx}" if existing else f"CONCEPT GRAPH:\n{concept_ctx}"
+            return {"memory_context": combined}
+        return {}
+    except Exception as e:
+        errs = dict(state.get("node_errors") or {})
+        errs["concept_lookup"] = str(e)
+        return {"node_errors": errs}
+
+
+# ── Node 3: load_memory (Mem0 facts) ─────────────────────────────────────────
 def load_memory(state: TrumanState) -> dict:
     try:
         from truman.text.agent import mem_search
