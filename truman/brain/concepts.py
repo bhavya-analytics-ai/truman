@@ -58,7 +58,7 @@ def init():
             cognee.config.data_root_directory(_DATA_DIR)
 
             # LLM: NIM (free) — use openai-compatible provider
-            from truman.core.config import NVIDIA_API_KEY, NVIDIA_BASE_URL
+            from truman.core.config import NVIDIA_API_KEY, NVIDIA_BASE_URL  # both LLM + embeddings on NIM
             # skip 30s LLM connection test on boot
             os.environ["COGNEE_SKIP_CONNECTION_TEST"] = "true"
 
@@ -67,11 +67,13 @@ def init():
             cognee.config.set_llm_api_key(NVIDIA_API_KEY)
             cognee.config.set_llm_model("stepfun-ai/step-3.5-flash")  # cheap + fast
 
-            # Embeddings: OpenAI (near-zero cost at this scale)
-            from truman.core.config import OPENAI_API_KEY
+            # Embeddings: NIM (free, same key + endpoint as LLM)
+            # model name = text-embedding-ada-002 so tiktoken can resolve tokenizer
+            # NIM endpoint accepts this and serves nvidia/nv-embedqa-e5-v5 under the hood
             cognee.config.set_embedding_provider("openai")
-            cognee.config.set_embedding_model("text-embedding-3-small")
-            cognee.config.set_embedding_api_key(OPENAI_API_KEY)
+            cognee.config.set_embedding_endpoint(NVIDIA_BASE_URL)
+            cognee.config.set_embedding_model("text-embedding-ada-002")
+            cognee.config.set_embedding_api_key(NVIDIA_API_KEY)
 
             _initialized = True
             print("[Cognee] initialized — concept graph ready")
@@ -117,7 +119,7 @@ def search(query: str, top_k: int = 5) -> list[str]:
         from cognee import SearchType
 
         async def _search():
-            results = await cognee.search(SearchType.GRAPH_COMPLETION, query=query)
+            results = await cognee.search(query, SearchType.GRAPH_COMPLETION, top_k=top_k)
             return results
 
         raw = _run_async(_search())
@@ -126,9 +128,11 @@ def search(query: str, top_k: int = 5) -> list[str]:
 
         out = []
         for r in raw[:top_k]:
-            # Cognee returns dicts or strings depending on version
-            if isinstance(r, dict):
-                chunk = r.get("text") or r.get("content") or r.get("answer") or str(r)
+            # SearchResult has .search_result field (the actual text)
+            if hasattr(r, "search_result"):
+                chunk = str(r.search_result)
+            elif isinstance(r, dict):
+                chunk = r.get("search_result") or r.get("text") or r.get("content") or str(r)
             else:
                 chunk = str(r)
             if chunk and chunk not in out:
