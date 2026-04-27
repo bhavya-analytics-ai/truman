@@ -174,8 +174,20 @@ def short_label(slug: str) -> str:
         "llama-4-maverick-17b-128e-instruct": "llama4-maverick",
         "deepseek-v3.1-terminus":             "deepseek-v3.1",
         "mistral-medium-3-instruct":          "mistral-medium-3",
+        "moonshotai/kimi-k2-instruct":        "kimi-k2",
+        "moonshotai/kimi-k2-thinking":        "kimi-k2-thinking",
+        "stepfun-ai/step-3.5-flash":          "step-flash",
+        "deepseek-ai/deepseek-v3.2":          "deepseek-v3.2",
+        "zai-org/glm-4.7":                    "glm-4.7",
+        "meta/llama-4-maverick-17b-128e-instruct": "llama4-maverick",
+        "mistralai/mistral-large-3-675b-instruct-2512": "mistral-large",
+        "mistralai/mistral-medium-3-instruct": "mistral-medium",
+        "qwen/qwen3-coder-480b-a35b-instruct": "qwen3-coder",
+        "minimaxai/minimax-m2.7":              "minimax-m2.7",
+        "nvidia/mistral-nemotron":             "nemotron",
+        "mistralai/devstral-2-123b-instruct-2512": "devstral",
     }
-    return short.get(model, model)
+    return short.get(model, model.split("/")[-1])
 
 # ── Error classifier ──────────────────────────────────────────────────────────
 def _classify_error(e: Exception, slug: str) -> tuple[bool, str]:
@@ -266,7 +278,7 @@ def run_with_pool(
             continue
 
     # Ultimate fallback — hardcoded reliable models in case pool config is stale
-    _FALLBACK = ["moonshotai/kimi-k2-instruct", "stepfun-ai/step-3.5-flash"]
+    _FALLBACK = ["deepseek-ai/deepseek-v3.2", "stepfun-ai/step-3.5-flash", "moonshotai/kimi-k2-instruct"]
     for slug in _FALLBACK:
         full_slug = f"nvidia:{slug}"
         if full_slug in model_list:

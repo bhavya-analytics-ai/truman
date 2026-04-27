@@ -855,41 +855,46 @@ async function refreshDrawer() {
 }
 
 // ── Activity panel ────────────────────────────────────────────────────────────
-const apPanel = document.getElementById('activity-panel');
-const apHandle = document.getElementById('ap-drag-handle');
+let apPanel, apHandle;
 let apDragging = false, apDX = 0, apDY = 0;
 
-apHandle.addEventListener('mousedown', e => {
-  apDragging = true;
-  apDX = e.clientX - apPanel.getBoundingClientRect().left;
-  apDY = e.clientY - apPanel.getBoundingClientRect().top;
-  e.preventDefault();
-});
-document.addEventListener('mousemove', e => {
-  if (!apDragging) return;
-  apPanel.style.left  = (e.clientX - apDX) + 'px';
-  apPanel.style.top   = (e.clientY - apDY) + 'px';
-  apPanel.style.right = 'auto';
-});
-document.addEventListener('mouseup', () => { apDragging = false; });
+document.addEventListener('DOMContentLoaded', () => {
+  apPanel  = document.getElementById('activity-panel');
+  apHandle = document.getElementById('ap-drag-handle');
+  if (!apPanel || !apHandle) return;
 
-// Touch drag support
-apHandle.addEventListener('touchstart', e => {
-  const t = e.touches[0];
-  apDragging = true;
-  apDX = t.clientX - apPanel.getBoundingClientRect().left;
-  apDY = t.clientY - apPanel.getBoundingClientRect().top;
+  apHandle.addEventListener('mousedown', e => {
+    apDragging = true;
+    apDX = e.clientX - apPanel.getBoundingClientRect().left;
+    apDY = e.clientY - apPanel.getBoundingClientRect().top;
+    e.preventDefault();
+  });
+  document.addEventListener('mousemove', e => {
+    if (!apDragging) return;
+    apPanel.style.left  = (e.clientX - apDX) + 'px';
+    apPanel.style.top   = (e.clientY - apDY) + 'px';
+    apPanel.style.right = 'auto';
+  });
+  document.addEventListener('mouseup', () => { apDragging = false; });
+
+  apHandle.addEventListener('touchstart', e => {
+    const t = e.touches[0];
+    apDragging = true;
+    apDX = t.clientX - apPanel.getBoundingClientRect().left;
+    apDY = t.clientY - apPanel.getBoundingClientRect().top;
+  });
+  document.addEventListener('touchmove', e => {
+    if (!apDragging) return;
+    const t = e.touches[0];
+    apPanel.style.left  = (t.clientX - apDX) + 'px';
+    apPanel.style.top   = (t.clientY - apDY) + 'px';
+    apPanel.style.right = 'auto';
+  });
+  document.addEventListener('touchend', () => { apDragging = false; });
 });
-document.addEventListener('touchmove', e => {
-  if (!apDragging) return;
-  const t = e.touches[0];
-  apPanel.style.left  = (t.clientX - apDX) + 'px';
-  apPanel.style.top   = (t.clientY - apDY) + 'px';
-  apPanel.style.right = 'auto';
-});
-document.addEventListener('touchend', () => { apDragging = false; });
 
 function toggleActivityPanel() {
+  if (!apPanel) apPanel = document.getElementById('activity-panel');
   apPanel.classList.toggle('ap-minimized');
   document.getElementById('ap-min-btn').textContent = apPanel.classList.contains('ap-minimized') ? '□' : '−';
 }
@@ -901,10 +906,11 @@ function updateActivityPanel({ model, pool, inputChars, outputChars, error, task
   }
   if (pool) {
     const pe = document.getElementById('ap-pool');
-    pe.textContent  = pool;
-    pe.className    = 'ap-val pool-' + pool;
-    const dot = document.getElementById('ap-status-dot');
-    dot.className   = 'ap-dot';
+    pe.textContent = pool;
+    const knownPools = ['coding','creative','design','docs','vision','general','reasoning','fast','agentic'];
+    const poolKey = knownPools.find(p => pool.includes(p));
+    pe.className = 'ap-val ' + (poolKey ? 'pool-' + poolKey : 'model');
+    document.getElementById('ap-status-dot').className = 'ap-dot';
   }
   if (inputChars !== undefined || outputChars !== undefined) {
     const inTok  = Math.round((inputChars  || 0) / 4);
@@ -941,10 +947,11 @@ function updateActivityPanel({ model, pool, inputChars, outputChars, error, task
 const _origAddMsg = addMsg;
 // update from API response metadata captured in sendMsg
 function updatePanelFromResponse(d, userMsg, respText) {
+  const poolDisplay = d.skill ? ('★ ' + d.skill) : (d.pool || null);
   updateActivityPanel({
     model:       d.model || null,
-    pool:        d.pool  || null,
-    inputChars:  (userMsg || '').length + 6000,  // rough: msg + context
+    pool:        poolDisplay,
+    inputChars:  (userMsg || '').length + 6000,
     outputChars: (respText || '').length,
     error:       d.error || null,
   });

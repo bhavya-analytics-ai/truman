@@ -32,7 +32,7 @@ OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
 # ── Pool defaults — Railway vars override these ───────────────────────────────
 # Format: nvidia:provider/model-name  (no groq anywhere)
-POOL_GENERAL  = os.getenv("POOL_GENERAL",  "nvidia:moonshotai/kimi-k2-instruct,nvidia:stepfun-ai/step-3.5-flash")
+POOL_GENERAL  = os.getenv("POOL_GENERAL",  "nvidia:deepseek-ai/deepseek-v3.2,nvidia:stepfun-ai/step-3.5-flash,nvidia:moonshotai/kimi-k2-instruct")
 POOL_CODING   = os.getenv("POOL_CODING",   "nvidia:deepseek-ai/deepseek-v3.2,nvidia:zai-org/glm-4.7,nvidia:qwen/qwen3-coder-480b-a35b-instruct")
 POOL_REASONING= os.getenv("POOL_REASONING","nvidia:moonshotai/kimi-k2-thinking,nvidia:deepseek-ai/deepseek-v3.2")
 POOL_CREATIVE = os.getenv("POOL_CREATIVE", "nvidia:moonshotai/kimi-k2-thinking,nvidia:mistralai/mistral-large-3-675b-instruct-2512,nvidia:meta/llama-4-maverick-17b-128e-instruct")

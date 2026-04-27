@@ -214,12 +214,15 @@ def call_llm(state: TrumanState) -> dict:
         else:
             messages.append(HumanMessage(content=user_input))
 
+        import re as _re
         from truman.text.agent import strip_markdown
         from truman.core.model_router import run_with_pool
         result = run_with_pool(messages, pool=state.get("chosen_pool", "general"), user_message=user_input)
         raw = result["content"]
         model_label = result["model"]
         response = strip_markdown(raw)
+        # strip any fake [Tool result ...] blocks the LLM hallucinated
+        response = _re.sub(r'\[Tool result[^\]]*\][:\s]*[^\n]*\n?', '', response).strip()
 
         # update chat history
         chat_history.append({"role": "user",      "content": user_input})

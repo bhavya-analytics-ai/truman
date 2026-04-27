@@ -150,6 +150,7 @@ def api_chat():
             "tool_calls": result["tool_calls"],
             "mood":       result["mood"],
             "warnings":   result.get("warnings", []),
+            "skill":      result.get("skill", ""),
             "mac":        mac_status,
         })
     except Exception as e:

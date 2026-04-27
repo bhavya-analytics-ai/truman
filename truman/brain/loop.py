@@ -100,4 +100,5 @@ def run(user_input: str, session_id: str = "default", pool_hint: str = None) -> 
         "tool_calls": final_state.get("tool_calls_made", []),
         "mood":       final_state.get("mood", "neutral"),
         "warnings":   list((final_state.get("node_errors") or {}).values()),
+        "skill":      final_state.get("skill_name") or "",
     }
