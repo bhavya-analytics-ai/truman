@@ -142,16 +142,60 @@
 - Failure toast: red bar + chat message with error
 - Commit: `c62c335`
 
-### Known Deploy Issue
-- Local repo has NO git remote and Railway CLI is logged out
-- Om must run `railway login` then `railway up` to deploy these commits
-- All 4 commits (030aa9a → c62c335) are local only
+### Known Deploy Issue (RESOLVED 2026-04-27)
+- Git remote added → GitHub repo connected → Railway auto-deploy wired via GitHub Actions
+- All pending commits deployed. Railway is now live on Phases 0-3.2+
 
 ### Verified on Railway (Phase 0-2 baseline)
 - Time shows correctly: "Sunday, Apr 26 2026, 12:17 PM ET"
 - /health endpoint clean
 - LangGraph path active (ENABLE_LANGGRAPH=1)
 - Cognee active (ENABLE_COGNEE=1)
+
+---
+
+## 2026-04-27 — Session: Auto-Deploy + 9 Live Bug Fixes + Subfolder Routing
+
+### Shipped
+
+**CI/CD Pipeline**
+- `.github/workflows/deploy.yml` — on push to main → `railway up --detach --service "Truman"` via `RAILWAY_TOKEN` secret
+- Railway connected to GitHub repo. Every `git push` now auto-deploys. No more manual `railway up`.
+- Commit: `8fdfe34`
+
+**Bug fixes from live Railway testing (commits f3ce817, 1d06e04, cd89c8c):**
+
+| Bug | Root Cause | Fix |
+|---|---|---|
+| Pool stuck on "coding" forever | `_STICKY_POOLS` in nodes.py locked session after first detection | Removed all sticky logic — fresh `detect_pool` every message |
+| Model ignoring pool (always kimi-k2) | `call_llm` node used hardcoded `_call_llm()` instead of `run_with_pool` | Wired `run_with_pool(chosen_pool)` in call_llm node |
+| All pools 404ing on Railway | Railway env vars had dead model slugs | Hardcoded fallback chain in `run_with_pool`: deepseek-v3.2 → step-flash → kimi-k2 |
+| `appendMsg` undefined (toast never showed) | Old function name in JS | Replaced all `appendMsg` with `addMsg` in dashboard.html |
+| Drag panel broken on load | `getElementById` ran before element existed | Wrapped drag init in `DOMContentLoaded` |
+| LLM hallucinating `[Tool result]` blocks | Model invented fake tool output | Strip with `re.sub(r'\[Tool result[^\]]*\]...')` after every LLM response |
+| `_CODING_KW` too broad | "api", "run", "error" were triggering coding pool | Tightened keyword list in model_router.py |
+| SSE not pushing events | No SSE endpoint existed | Added `notifications.py` + `/api/stream` SSE endpoint in orb.py |
+| Activity panel not showing skill | `skill` field missing from `/api/chat` response | Added `skill` to loop.py return dict + `updatePanelFromResponse()` in UI |
+
+**main_cloud.py + mac_bridge.py untracked** — Railway couldn't find entry point. Both committed. Commit: `85aca6b`
+
+**Subfolder listing fix (commit 8a079ee):**
+- `registry.py`: added "what's inside X", "inside the folder", "in the directory" keywords → route to `list_repo` (was falling through to LLM → hallucination)
+- `github/server.py`: `_guess_subdir(user_input)` extracts folder name via regex patterns
+- `github/server.py`: `_list_repo(repo_name, subdir="")` filters file walk to only `subdir/*` paths
+- Result: "what's inside the agents folder" → fires github skill → returns real files → no hallucination
+
+**kimi-k2 reverted as POOL_GENERAL primary (commit 8a079ee):**
+- deepseek-v3.2 was bumped to primary without approval → 24s response times
+- Reverted: `POOL_GENERAL = "nvidia:moonshotai/kimi-k2-instruct,nvidia:stepfun-ai/step-3.5-flash,nvidia:deepseek-ai/deepseek-v3.2"`
+
+### Current state (Railway live)
+- All commits up to `8a079ee` deployed
+- Auto-deploy active via GitHub Actions
+- Pool routing correct, subfolder listing works, no fake tool blocks, skill badge shows in panel
+
+### Next
+- Phase 4 — Goals + Curiosity (proactivity): proactive repo recommendation after ingest, push via SSE
 
 ---
 
