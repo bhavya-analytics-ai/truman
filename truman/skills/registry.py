@@ -54,9 +54,14 @@ def detect_skill(user_input: str) -> tuple[str | None, str | None]:
         if "github" in _SKILLS:
             return "github", "read_file"
 
-    # GitHub: list files in a cloned repo
+    # GitHub: list files in a cloned repo (general or specific subfolder)
     if any(k in text for k in ("list files in", "show files in", "what files are in",
-                                "files in the repo", "files in that repo")):
+                                "files in the repo", "files in that repo",
+                                "what's inside", "whats inside", "what is inside",
+                                "inside the folder", "inside the dir",
+                                "in the folder", "in the directory",
+                                "folder contents", "list the folder", "show the folder",
+                                "show me the folder", "what files in the")):
         if "github" in _SKILLS:
             return "github", "list_repo"
 

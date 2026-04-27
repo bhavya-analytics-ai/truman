@@ -49,7 +49,7 @@ class GitHubSkill(SkillBase):
             ui = kwargs.get("user_input", "")
             if tool_name == "ingest_repo":    return self._ingest(self._extract_url(ui, kwargs.get("url", "")))
             if tool_name == "list_repos":     return self._list_repos()
-            if tool_name == "list_repo":      return self._list_repo(kwargs.get("repo_name") or self._guess_repo(ui))
+            if tool_name == "list_repo":      return self._list_repo(kwargs.get("repo_name") or self._guess_repo(ui), subdir=self._guess_subdir(ui))
             if tool_name == "read_file":      return self._read(kwargs.get("repo_name") or self._guess_repo(ui), kwargs.get("path") or self._guess_path(ui))
             if tool_name == "search_in_repo": return self._search_repo(self._guess_repo(ui), kwargs.get("query") or ui)
             return f"[github] unknown tool: {tool_name}"
@@ -81,6 +81,28 @@ class GitHubSkill(SkillBase):
             return repos[0]["name"] if repos else ""
         except Exception:
             return ""
+
+    def _guess_subdir(self, user_input: str) -> str:
+        """Extract a subfolder path from user input, e.g. 'agents' from 'what's inside agents folder'."""
+        import re
+        text = user_input.lower()
+        for pattern in [
+            r"inside the (\w[\w/.-]*) (?:folder|dir|directory)",
+            r"inside (\w[\w/.-]*) (?:folder|dir|directory)",
+            r"in the (\w[\w/.-]*) (?:folder|dir|directory)",
+            r"in (\w[\w/.-]*) (?:folder|dir|directory)",
+            r"what'?s inside (?:the )?(\w[\w/.-]*)",
+            r"whats inside (?:the )?(\w[\w/.-]*)",
+            r"what is inside (?:the )?(\w[\w/.-]*)",
+            r"(?:list|show)(?: me)? (?:the )?(\w[\w/.-]*) (?:folder|dir)",
+        ]:
+            m = re.search(pattern, text)
+            if m:
+                candidate = m.group(1)
+                # skip generic words that aren't folder names
+                if candidate not in ("the", "a", "an", "repo", "repository", "file", "files"):
+                    return candidate
+        return ""
 
     def _guess_path(self, user_input: str) -> str:
         """Extract a file path from user input, default to README.md."""
@@ -237,7 +259,7 @@ class GitHubSkill(SkillBase):
             lines.append(f"{r['name']:<30} {r['file_count']:>5}  {ts:<20}  {r['url']}")
         return "\n".join(lines)
 
-    def _list_repo(self, repo_name: str) -> str:
+    def _list_repo(self, repo_name: str, subdir: str = "") -> str:
         clone_path = self._clone_path(repo_name)
         if not os.path.isdir(clone_path):
             return f"[github] not cloned: {repo_name}"
@@ -245,10 +267,21 @@ class GitHubSkill(SkillBase):
         for root, dirs, files in os.walk(clone_path):
             dirs[:] = [d for d in dirs if d not in (".git", "node_modules", "__pycache__")]
             for f in files:
-                items.append(os.path.relpath(os.path.join(root, f), clone_path))
+                rel = os.path.relpath(os.path.join(root, f), clone_path)
+                # if subdir filter active, only include files under that folder
+                if subdir:
+                    norm = rel.replace(os.sep, "/")
+                    if not (norm.startswith(subdir + "/") or norm == subdir):
+                        continue
+                items.append(rel)
             if len(items) > 300:
                 break
-        return "\n".join(sorted(items)[:300])
+        if not items:
+            if subdir:
+                return f"no files found in '{subdir}/' within {repo_name} — check the folder name"
+            return f"[github] repo '{repo_name}' appears empty"
+        header = f"files in {repo_name}/{subdir}:" if subdir else f"files in {repo_name}:"
+        return header + "\n" + "\n".join(sorted(items)[:300])
 
     def _read(self, repo_name: str, path: str) -> str:
         clone_path = self._clone_path(repo_name)
