@@ -63,27 +63,13 @@ def load_memory(state: TrumanState) -> dict:
 # ── Node 3: detect_pool ───────────────────────────────────────────────────────
 def detect_pool(state: TrumanState) -> dict:
     try:
-        from truman.core.model_router import detect_pool as _detect_pool, get_session_model
-        from truman.text.agent import _session_pools, _STICKY_POOLS
+        from truman.core.model_router import detect_pool as _detect_pool
 
         pool_hint = state.get("pool_hint")
-        session_id = state["session_id"]
-
         if pool_hint:
-            _session_pools[session_id] = pool_hint
             return {"chosen_pool": pool_hint}
 
-        detected = _detect_pool(state["user_input"])
-        sticky   = _session_pools.get(session_id)
-
-        if detected in _STICKY_POOLS:
-            _session_pools[session_id] = detected
-            chosen = detected
-        elif sticky:
-            chosen = sticky
-        else:
-            chosen = detected
-
+        chosen = _detect_pool(state["user_input"])
         return {"chosen_pool": chosen}
     except Exception as e:
         errs = dict(state.get("node_errors") or {})
@@ -186,7 +172,7 @@ def call_llm(state: TrumanState) -> dict:
         from zoneinfo import ZoneInfo
         from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
         from truman.core.persona import SYSTEM
-        from truman.text.agent import _call_llm, _is_complex, _last_session_str, _chat_histories
+        from truman.text.agent import _last_session_str, _chat_histories
 
         session_id = state["session_id"]
         chat_history = _chat_histories.setdefault(session_id, [])
@@ -229,7 +215,10 @@ def call_llm(state: TrumanState) -> dict:
             messages.append(HumanMessage(content=user_input))
 
         from truman.text.agent import strip_markdown
-        raw, model_label = _call_llm(messages, complex_msg=_is_complex(user_input))
+        from truman.core.model_router import run_with_pool
+        result = run_with_pool(messages, pool=state.get("chosen_pool", "general"), user_message=user_input)
+        raw = result["content"]
+        model_label = result["model"]
         response = strip_markdown(raw)
 
         # update chat history

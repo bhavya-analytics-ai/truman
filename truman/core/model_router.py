@@ -133,7 +133,7 @@ def list_pool_models(pool: str | None = None) -> dict[str, list[dict]]:
     }
 
 # ── Intent detection → pool ───────────────────────────────────────────────────
-_CODING_KW    = re.compile(r"\b(build|write|code|debug|fix|function|script|class|implement|refactor|error|bug|test|deploy|api|endpoint|import|module|syntax|compile|run|loop|variable|return|method|library|package|repo|git|commit|pr|lint|type|async|await|query|sql|json|parse|output|print)\b", re.I)
+_CODING_KW    = re.compile(r"\b(code|debug|function|script|class|implement|refactor|bug|syntax|compile|endpoint|import|module|variable|method|library|package|git\s+clone|git\s+push|git\s+pull|pull\s+request|lint|async|await|sql\s+query|json\s+parse|write\s+a\s+function|write\s+a\s+script|write\s+code|fix\s+this\s+code|fix\s+the\s+bug|run\s+this\s+script)\b", re.I)
 _CREATIVE_KW  = re.compile(r"\b(idea|creative|brainstorm|polish|improve|suggest|what if|innovate|vision|concept|pitch|story|name|brand|spin|angle|rethink)\b", re.I)
 _DESIGN_KW    = re.compile(r"\b(structure|architect|best way|organize|schema|database|approach|strategy|stack|framework|scalable|workflow)\b", re.I)
 _DOCS_KW      = re.compile(r"\b(document|doc|word|excel|spreadsheet|pptx|powerpoint|slide|table|report|template|pdf|xlsx|docx|sheet|presentation|write.?up)\b", re.I)

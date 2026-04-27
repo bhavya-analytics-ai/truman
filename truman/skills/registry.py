@@ -48,8 +48,23 @@ def detect_skill(user_input: str) -> tuple[str | None, str | None]:
         if "github" in _SKILLS:
             return "github", "list_repos"
 
+    # GitHub: read a specific file from a cloned repo (readme, filenames)
+    if any(k in text for k in ("readme", "read the file", "open the file", "show me the file",
+                                "read file from", "open file from")):
+        if "github" in _SKILLS:
+            return "github", "read_file"
+
+    # GitHub: list files in a cloned repo
+    if any(k in text for k in ("list files in", "show files in", "what files are in",
+                                "files in the repo", "files in that repo")):
+        if "github" in _SKILLS:
+            return "github", "list_repo"
+
     # GitHub: search within a specific repo
-    if any(k in text for k in ("search in repo", "search repo", "find in repo", "find in the repo")):
+    if any(k in text for k in ("search in repo", "search repo", "find in repo", "find in the repo",
+                                "from the repo", "from that repo", "in the repo", "about the repo",
+                                "what did you learn", "what do you know about the", "tell me about the",
+                                "what's in the", "summarize the repo", "what does the repo")):
         if "github" in _SKILLS:
             return "github", "search_in_repo"
 

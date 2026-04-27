@@ -188,7 +188,7 @@ _TOOL_PATTERNS = [
     (re.compile(r"\b(remind me|set.*reminder|remind.*at|reminder)\b", re.I), "set_reminder"),
     (re.compile(r"\b(list.*reminder|my reminder|upcoming reminder|show.*reminder)\b", re.I), "list_reminders"),
     (re.compile(r"\b(remember|save.*memory|store.*memory|note.*down)\b", re.I), "remember"),
-    (re.compile(r"\b(recall|what.*remember|what.*know about|memory|do you know about)\b", re.I), "recall"),
+    (re.compile(r"\b(recall|what.*remember|what do you know about me|memory|do you know about me|what's in.*memory)\b", re.I), "recall"),
     (re.compile(r"\b(search.*history|past conversation|what.*talk|history)\b", re.I), "search_history"),
     (re.compile(r"\b(recent conversation|last.*said|what.*said last|recent.*talk)\b", re.I), "recent_conversations"),
     (re.compile(r"\b(read.*file|show.*file|open.*file|read.*mac)\b", re.I), "read_mac_file"),

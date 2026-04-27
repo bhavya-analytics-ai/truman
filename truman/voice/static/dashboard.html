@@ -236,9 +236,9 @@ async function togglePower() {
     trumanOn = d.on;
     updatePowerUI();
     if (!trumanOn) {
-      appendMsg('truman', "i'm off. om turned me off.", {});
+      addMsg('truman', "i'm off. om turned me off.", {});
     } else {
-      appendMsg('truman', "i'm back.", {});
+      addMsg('truman', "i'm back.", {});
     }
   } catch(e) {}
 }
@@ -261,10 +261,10 @@ async function pollTasks() {
     tasks.forEach(t => {
       const prev = lastTaskState[t.name];
       if (prev && prev !== 'done' && t.status === 'done') {
-        appendMsg('truman', `done — ingested ${t.files} files from ${t.name}. ask me anything about it.`, {});
+        addMsg('truman', `done — ingested ${t.files} files from ${t.name}. ask me anything about it.`, {});
       }
       if (prev && prev !== 'failed' && t.status === 'failed') {
-        appendMsg('truman', `couldn't ingest ${t.name}: ${t.error || 'unknown error'}`, {});
+        addMsg('truman', `couldn't ingest ${t.name}: ${t.error || 'unknown error'}`, {});
       }
       lastTaskState[t.name] = t.status;
     });
@@ -309,6 +309,22 @@ function startTasksPoll() {
   tasksPollTimer = setInterval(pollTasks, 2000);
 }
 startTasksPoll();
+
+// ── Server-sent push notifications ─────────────────────────────────────────
+(function connectSSE() {
+  const es = new EventSource('/api/stream');
+  es.onmessage = (e) => {
+    try {
+      const d = JSON.parse(e.data);
+      if (d.type === 'connected') return;
+      if (d.message) addMsg('truman', d.message, {});
+    } catch(_) {}
+  };
+  es.onerror = () => {
+    es.close();
+    setTimeout(connectSSE, 5000);   // reconnect after 5s on error
+  };
+})();
 
 // ── Session management ──────────────────────────────────────────────────────
 function genId() { return 'sess-' + Date.now() + '-' + Math.random().toString(36).slice(2,7); }

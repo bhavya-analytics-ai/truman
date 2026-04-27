@@ -200,6 +200,33 @@ def api_power():
     return jsonify({"on": currently_off})  # was off → now on, and vice versa
 
 
+@app.route("/api/stream")
+def api_stream():
+    """SSE endpoint — browser subscribes once, server pushes notifications (task done, errors, etc.)."""
+    from flask import Response, stream_with_context
+    from truman.storage import notifications as _notif
+    import json as _json
+
+    def generate():
+        q = _notif.subscribe()
+        try:
+            yield "data: {\"type\":\"connected\"}\n\n"
+            while True:
+                try:
+                    payload = q.get(timeout=25)
+                    yield f"data: {_json.dumps(payload)}\n\n"
+                except Exception:
+                    yield ": keep-alive\n\n"
+        finally:
+            _notif.unsubscribe(q)
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
 @app.route("/api/events")
 def api_events():
     """Return last 100 events from DB events table (persisted ring buffer)."""

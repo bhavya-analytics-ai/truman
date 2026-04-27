@@ -49,8 +49,8 @@ class GitHubSkill(SkillBase):
             ui = kwargs.get("user_input", "")
             if tool_name == "ingest_repo":    return self._ingest(self._extract_url(ui, kwargs.get("url", "")))
             if tool_name == "list_repos":     return self._list_repos()
-            if tool_name == "list_repo":      return self._list_repo(kwargs.get("repo_name", ""))
-            if tool_name == "read_file":      return self._read(kwargs.get("repo_name", ""), kwargs.get("path", ""))
+            if tool_name == "list_repo":      return self._list_repo(kwargs.get("repo_name") or self._guess_repo(ui))
+            if tool_name == "read_file":      return self._read(kwargs.get("repo_name") or self._guess_repo(ui), kwargs.get("path") or self._guess_path(ui))
             if tool_name == "search_in_repo": return self._search_repo(self._guess_repo(ui), kwargs.get("query") or ui)
             return f"[github] unknown tool: {tool_name}"
         except Exception as e:
@@ -81,6 +81,17 @@ class GitHubSkill(SkillBase):
             return repos[0]["name"] if repos else ""
         except Exception:
             return ""
+
+    def _guess_path(self, user_input: str) -> str:
+        """Extract a file path from user input, default to README.md."""
+        import re
+        # explicit file with extension
+        m = re.search(r'\b([\w./-]+\.\w{1,6})\b', user_input)
+        if m:
+            return m.group(1)
+        if "readme" in user_input.lower():
+            return "README.md"
+        return "README.md"
 
     def _ingest(self, url: str) -> str:
         """
@@ -177,12 +188,22 @@ class GitHubSkill(SkillBase):
                             error=None,
                             detail=f"{git_status} + ingested ({count} files)",
                             elapsed_ms=int((_time.time()-t0)*1000))
+            try:
+                from truman.storage.notifications import push
+                push(f"✅ done — ingested {count} files from **{repo_name}**. ask me anything about it.", kind="repo_done")
+            except Exception:
+                pass
         except Exception as e:
             _db.repo_failed(repo_name, f"Cognee ingest failed: {e}")
             self._log_event(repo_name, status="warn",
                             error=f"Cognee ingest failed: {e}",
                             detail=f"{git_status} ({count} files), graph not updated",
                             elapsed_ms=int((_time.time()-t0)*1000))
+            try:
+                from truman.storage.notifications import push
+                push(f"❌ ingest failed for **{repo_name}**: {str(e)[:120]}", kind="repo_failed")
+            except Exception:
+                pass
 
     def _log_event(self, repo_name: str, status: str, error: str | None = None,
                    detail: str | None = None, elapsed_ms: int = 0) -> None:
