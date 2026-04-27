@@ -265,6 +265,25 @@ def run_with_pool(
             last_error = str(e)
             continue
 
+    # Ultimate fallback — hardcoded reliable models in case pool config is stale
+    _FALLBACK = ["moonshotai/kimi-k2-instruct", "stepfun-ai/step-3.5-flash"]
+    for slug in _FALLBACK:
+        full_slug = f"nvidia:{slug}"
+        if full_slug in model_list:
+            continue   # already tried
+        try:
+            llm  = _build_llm(full_slug, temperature)
+            resp = llm.invoke(messages)
+            return {
+                "content":    resp.content or "",
+                "model":      short_label(full_slug),
+                "pool":       chosen_pool,
+                "tool_calls": [],
+                "warnings":   warnings_out + [f"⚠️ pool '{chosen_pool}' models all failed — used fallback {short_label(full_slug)}"],
+            }
+        except Exception:
+            continue
+
     return {
         "content":    f"all models in the {chosen_pool} pool failed. last error: {last_error}",
         "model":      "none",

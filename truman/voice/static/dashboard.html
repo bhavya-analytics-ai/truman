@@ -85,6 +85,39 @@
   .task-pct.done { color:#22c55e; }
   .task-pct.fail { color:#ef4444; }
 
+  /* Activity panel */
+  .activity-panel { position:fixed; top:120px; right:16px; width:210px; background:#0d0d1a; border:1px solid #2a2a4a; border-radius:12px; z-index:150; font-size:11px; box-shadow:0 4px 24px rgba(0,0,0,0.5); user-select:none; }
+  .ap-hdr { padding:8px 12px; display:flex; justify-content:space-between; align-items:center; cursor:grab; border-bottom:1px solid #1a1a2e; border-radius:12px 12px 0 0; background:#16162a; }
+  .ap-hdr:active { cursor:grabbing; }
+  .ap-hdr-left { display:flex; align-items:center; gap:6px; }
+  .ap-dot { width:6px; height:6px; border-radius:50%; background:#22c55e; animation:apPulse 2s infinite; }
+  .ap-dot.busy { background:#a78bfa; }
+  .ap-dot.err { background:#ef4444; animation:none; }
+  @keyframes apPulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+  .ap-title { font-size:10px; font-weight:600; letter-spacing:0.08em; color:#7c7caa; }
+  .ap-min { background:none; border:none; color:#555570; font-size:13px; cursor:pointer; padding:0 2px; line-height:1; }
+  .ap-min:hover { color:#a78bfa; }
+  .ap-body { padding:10px 12px; display:flex; flex-direction:column; gap:7px; }
+  .ap-row { display:grid; grid-template-columns:52px 1fr; gap:4px; align-items:start; }
+  .ap-label { color:#555570; font-size:10px; padding-top:1px; text-transform:uppercase; letter-spacing:0.05em; }
+  .ap-val { color:#e8e8f0; font-size:11px; word-break:break-word; }
+  .ap-val.model { color:#a78bfa; font-weight:600; }
+  .ap-val.pool-coding { color:#34d399; }
+  .ap-val.pool-creative { color:#f472b6; }
+  .ap-val.pool-reasoning { color:#60a5fa; }
+  .ap-val.pool-general { color:#a78bfa; }
+  .ap-val.pool-design { color:#60a5fa; }
+  .ap-val.pool-docs { color:#fbbf24; }
+  .ap-val.pool-fast { color:#34d399; }
+  .ap-val.pool-agentic { color:#f472b6; }
+  .ap-val.err { color:#ef4444; font-size:10px; }
+  .ap-divider { height:1px; background:#1a1a2e; }
+  .ap-task-bar { height:3px; background:#1a1a2e; border-radius:2px; overflow:hidden; margin-top:3px; }
+  .ap-task-fill { height:100%; background:linear-gradient(90deg,#7c3aed,#a78bfa); transition:width 0.4s; }
+  .ap-minimized .ap-body { display:none; }
+  .ap-minimized { border-radius:12px; }
+  .ap-minimized .ap-hdr { border-radius:12px; border-bottom:none; }
+
   /* Power button */
   .power-btn { width:34px; height:34px; border-radius:50%; border:2px solid #22c55e; background:none; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:all 0.2s; }
   .power-btn:hover { border-color:#16a34a; box-shadow:0 0 8px rgba(34,197,94,0.4); }
@@ -267,6 +300,14 @@ async function pollTasks() {
         addMsg('truman', `couldn't ingest ${t.name}: ${t.error || 'unknown error'}`, {});
       }
       lastTaskState[t.name] = t.status;
+      // update activity panel with active task
+      if (typeof updateActivityPanel !== 'undefined') {
+        if (t.status === 'cloning' || t.status === 'ingesting') {
+          updateActivityPanel({ task: t });
+        } else if (t.status === 'done' || t.status === 'failed') {
+          updateActivityPanel({ task: t });
+        }
+      }
     });
     // clean up state for tasks that fell out of the active window
     const live = new Set(tasks.map(t => t.name));
@@ -532,6 +573,7 @@ async function send() {
     const respText = (d.response || '').trim();
     if (!respText) { setStatus('idle','idle'); addMsg('truman', '(no response — try again)', null); return; }
     addMsg('truman', respText, {model: d.model || 'deepseek-v3.2', pool: d.pool || 'general', tool_calls: d.tool_calls});
+    updatePanelFromResponse(d, sendText || text, respText);
     setStatus('idle', 'idle');
     // update mac dot + pool badge
     macDot.className = 'mac-dot' + (d.mac === 'connected' ? ' on' : '');
@@ -811,6 +853,143 @@ async function refreshDrawer() {
     body.innerHTML = '<div style="color:#ef4444;padding:20px;font-size:12px">failed to load events</div>';
   }
 }
+
+// ── Activity panel ────────────────────────────────────────────────────────────
+const apPanel = document.getElementById('activity-panel');
+const apHandle = document.getElementById('ap-drag-handle');
+let apDragging = false, apDX = 0, apDY = 0;
+
+apHandle.addEventListener('mousedown', e => {
+  apDragging = true;
+  apDX = e.clientX - apPanel.getBoundingClientRect().left;
+  apDY = e.clientY - apPanel.getBoundingClientRect().top;
+  e.preventDefault();
+});
+document.addEventListener('mousemove', e => {
+  if (!apDragging) return;
+  apPanel.style.left  = (e.clientX - apDX) + 'px';
+  apPanel.style.top   = (e.clientY - apDY) + 'px';
+  apPanel.style.right = 'auto';
+});
+document.addEventListener('mouseup', () => { apDragging = false; });
+
+// Touch drag support
+apHandle.addEventListener('touchstart', e => {
+  const t = e.touches[0];
+  apDragging = true;
+  apDX = t.clientX - apPanel.getBoundingClientRect().left;
+  apDY = t.clientY - apPanel.getBoundingClientRect().top;
+});
+document.addEventListener('touchmove', e => {
+  if (!apDragging) return;
+  const t = e.touches[0];
+  apPanel.style.left  = (t.clientX - apDX) + 'px';
+  apPanel.style.top   = (t.clientY - apDY) + 'px';
+  apPanel.style.right = 'auto';
+});
+document.addEventListener('touchend', () => { apDragging = false; });
+
+function toggleActivityPanel() {
+  apPanel.classList.toggle('ap-minimized');
+  document.getElementById('ap-min-btn').textContent = apPanel.classList.contains('ap-minimized') ? '□' : '−';
+}
+
+function updateActivityPanel({ model, pool, inputChars, outputChars, error, task }) {
+  if (model) {
+    document.getElementById('ap-model').textContent = model;
+    document.getElementById('ap-model').className   = 'ap-val model';
+  }
+  if (pool) {
+    const pe = document.getElementById('ap-pool');
+    pe.textContent  = pool;
+    pe.className    = 'ap-val pool-' + pool;
+    const dot = document.getElementById('ap-status-dot');
+    dot.className   = 'ap-dot';
+  }
+  if (inputChars !== undefined || outputChars !== undefined) {
+    const inTok  = Math.round((inputChars  || 0) / 4);
+    const outTok = Math.round((outputChars || 0) / 4);
+    document.getElementById('ap-tokens').textContent = `~${(inTok/1000).toFixed(1)}k in / ${outTok} out`;
+  }
+  if (error) {
+    const row = document.getElementById('ap-error-row');
+    row.style.display = 'grid';
+    document.getElementById('ap-error').textContent = error.slice(0,80);
+    document.getElementById('ap-status-dot').className = 'ap-dot err';
+  } else if (error === null) {
+    document.getElementById('ap-error-row').style.display = 'none';
+    document.getElementById('ap-status-dot').className = 'ap-dot';
+  }
+  if (task) {
+    const row = document.getElementById('ap-task-row');
+    row.style.display = 'grid';
+    document.getElementById('ap-task-name').textContent = task.name;
+    document.getElementById('ap-task-stage').textContent = task.stage || task.status;
+    const pct = task.total > 0 ? Math.round(task.progress / task.total * 100) : 0;
+    document.getElementById('ap-task-fill').style.width = pct + '%';
+    document.getElementById('ap-status-dot').className = 'ap-dot busy';
+    if (task.status === 'done' || task.status === 'failed') {
+      setTimeout(() => {
+        row.style.display = 'none';
+        document.getElementById('ap-status-dot').className = 'ap-dot';
+      }, 5000);
+    }
+  }
+}
+
+// Hook into addMsg to update panel on truman responses
+const _origAddMsg = addMsg;
+// update from API response metadata captured in sendMsg
+function updatePanelFromResponse(d, userMsg, respText) {
+  updateActivityPanel({
+    model:       d.model || null,
+    pool:        d.pool  || null,
+    inputChars:  (userMsg || '').length + 6000,  // rough: msg + context
+    outputChars: (respText || '').length,
+    error:       d.error || null,
+  });
+}
+
+
 </script>
+
+<!-- Activity panel -->
+<div class="activity-panel" id="activity-panel">
+  <div class="ap-hdr" id="ap-drag-handle">
+    <div class="ap-hdr-left">
+      <div class="ap-dot" id="ap-status-dot"></div>
+      <span class="ap-title">LIVE</span>
+    </div>
+    <button class="ap-min" id="ap-min-btn" onclick="toggleActivityPanel()">−</button>
+  </div>
+  <div class="ap-body">
+    <div class="ap-row">
+      <span class="ap-label">MODEL</span>
+      <span class="ap-val model" id="ap-model">—</span>
+    </div>
+    <div class="ap-row">
+      <span class="ap-label">POOL</span>
+      <span class="ap-val" id="ap-pool">—</span>
+    </div>
+    <div class="ap-row">
+      <span class="ap-label">TOKENS</span>
+      <span class="ap-val" id="ap-tokens">—</span>
+    </div>
+    <div class="ap-divider"></div>
+    <div class="ap-row" id="ap-task-row" style="display:none">
+      <span class="ap-label">TASK</span>
+      <div style="display:flex;flex-direction:column;gap:2px;">
+        <span class="ap-val" id="ap-task-name">—</span>
+        <span style="font-size:9px;color:#7c7caa;" id="ap-task-stage"></span>
+        <div class="ap-task-bar"><div class="ap-task-fill" id="ap-task-fill" style="width:0%"></div></div>
+      </div>
+    </div>
+    <div class="ap-row" id="ap-error-row" style="display:none">
+      <span class="ap-label">ERR</span>
+      <span class="ap-val err" id="ap-error">—</span>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>
