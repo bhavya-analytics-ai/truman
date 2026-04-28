@@ -16,6 +16,7 @@ def _build_graph():
     g.add_node("concept_lookup", nodes.concept_lookup)
     g.add_node("load_memory",    nodes.load_memory)
     g.add_node("load_goals",     nodes.load_goals)
+    g.add_node("curiosity",      nodes.curiosity)
     g.add_node("detect_pool",    nodes.detect_pool)
     g.add_node("detect_tool",    nodes.detect_tool)
     g.add_node("route_skill",    nodes.route_skill)
@@ -27,7 +28,8 @@ def _build_graph():
     g.add_edge("classify_mood",  "concept_lookup")
     g.add_edge("concept_lookup", "load_memory")
     g.add_edge("load_memory",    "load_goals")
-    g.add_edge("load_goals",     "detect_pool")
+    g.add_edge("load_goals",     "curiosity")
+    g.add_edge("curiosity",      "detect_pool")
     g.add_edge("detect_pool",    "detect_tool")
     g.add_edge("detect_tool",    "route_skill")
     # route_skill → execute_tool (if skill ran, execute_tool is a no-op because tool_name is None or skill already filled tool_result)
@@ -78,6 +80,7 @@ def run(user_input: str, session_id: str = "default", pool_hint: str = None) -> 
         "mood":             "neutral",
         "memory_context":   "",
         "goals_context":    "",
+        "curiosity_context": "",
         "chosen_pool":      "general",
         "tool_name":        None,
         "tool_result":      None,

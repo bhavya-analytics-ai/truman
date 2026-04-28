@@ -87,6 +87,38 @@ def load_goals(state: TrumanState) -> dict:
         return {"goals_context": "", "node_errors": errs}
 
 
+# ── Node 3c: curiosity ───────────────────────────────────────────────────────
+def curiosity(state: TrumanState) -> dict:
+    """
+    Background curiosity layer — searches Cognee concept graph for context
+    related to active goals. Runs only if ENABLE_CURIOSITY=1 and goals exist.
+    Injects a short 'CURIOSITY:' block into curiosity_context.
+    Fails soft — graph continues without it.
+    """
+    import os
+    if os.environ.get("ENABLE_CURIOSITY", "1") != "1":
+        return {"curiosity_context": ""}
+    goals_ctx = state.get("goals_context", "")
+    if not goals_ctx:
+        return {"curiosity_context": ""}
+    try:
+        from truman.brain.concepts import search_sync
+        # extract goal titles from "ACTIVE GOALS:\n- title: desc\n..." format
+        lines = [l.lstrip("- ").split(":")[0].strip()
+                 for l in goals_ctx.splitlines() if l.startswith("-")]
+        if not lines:
+            return {"curiosity_context": ""}
+        query = " ".join(lines[:2])   # top 2 goals as search query
+        result = search_sync(query, top_k=3)
+        if not result:
+            return {"curiosity_context": ""}
+        return {"curiosity_context": f"CURIOSITY (concept graph on your goals):\n{result}"}
+    except Exception as e:
+        errs = dict(state.get("node_errors") or {})
+        errs["curiosity"] = str(e)
+        return {"curiosity_context": "", "node_errors": errs}
+
+
 # ── Node 3: detect_pool ───────────────────────────────────────────────────────
 def detect_pool(state: TrumanState) -> dict:
     try:
@@ -215,11 +247,13 @@ def call_llm(state: TrumanState) -> dict:
         persona_reminder = "\n\nCRITICAL: You are texting Om on his dashboard. Be direct, casual, lowercase. No bullet points. No asking permission. Commit to your answer. Match Om's energy."
         last_session_ctx = _last_session_str()
 
-        goals_ctx = state.get("goals_context", "")
+        goals_ctx     = state.get("goals_context", "")
+        curiosity_ctx = state.get("curiosity_context", "")
         system_content = (
             SYSTEM + clock_line
             + (f"\n\nRelevant memory:\n{mem_ctx}" if mem_ctx else "")
             + (f"\n\n{goals_ctx}" if goals_ctx else "")
+            + (f"\n\n{curiosity_ctx}" if curiosity_ctx else "")
             + last_session_ctx + mood_line + persona_reminder
         )
 

@@ -22,6 +22,7 @@ class TrumanState(TypedDict):
     skill_name:      Optional[str]   # route_skill — which skill ran
 
     goals_context:   str             # load_goals — top active goals
+    curiosity_context: str           # curiosity — Cognee search on active goals
 
     # ── LLM output ───────────────────────────────────────────────────────────
     messages:        list            # built before call_llm

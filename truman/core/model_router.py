@@ -25,22 +25,18 @@ PoolName = Literal["coding", "creative", "design", "docs", "vision",
 
 # ── Model metadata ────────────────────────────────────────────────────────────
 MODEL_INFO: dict[str, str] = {
-    # NVIDIA NIM
-    "nvidia:qwen3-coder-480b-a35b-instruct":    "480B/35B active, agentic coding, 256K ctx",
-    "nvidia:devstral-2-123b-instruct-2512":      "Mistral code model, deep reasoning, 256K ctx",
-    "nvidia:glm-4.7":                            "tool calling, agentic coding, multilingual",
-    "nvidia:kimi-k2-thinking":                   "reasoning + creative, 256K ctx, tool use",
-    "nvidia:mistral-large-3-675b-instruct-2512": "675B MoE VLM, creative, multimodal",
-    "nvidia:deepseek-v3.2":                      "685B reasoning, long context, agentic tools",
-    "nvidia:step-3.5-flash":                     "200B sparse MoE, frontier agentic AI",
-    "nvidia:minimax-m2.7":                       "230B, trained on Word/Excel/PPT workflows",
-    "nvidia:mistral-medium-3-instruct":          "multimodal, software dev, data analysis",
-    "nvidia:llama-4-maverick-17b-128e-instruct": "multimodal, 128 MoE, vision capable",
-    "nvidia:deepseek-v3.1-terminus":             "hybrid Think/Non-Think, strict function calling",
-    "nvidia:mistral-nemotron":                   "agentic workflows, coding, function calling",
+    # NVIDIA NIM — alive models only
+    "nvidia:nvidia/llama-3.3-nemotron-super-49b-v1":   "49B, fast, agentic, strong instruction follow",
+    "nvidia:moonshotai/kimi-k2-instruct":               "MoE, general + coding, 128K ctx",
+    "nvidia:moonshotai/kimi-k2-thinking":               "reasoning + creative, 256K ctx, deep think",
+    "nvidia:stepfun-ai/step-3.5-flash":                 "200B sparse MoE, fast agentic AI",
+    "nvidia:qwen/qwen3-coder-480b-a35b-instruct":       "480B/35B active, agentic coding, 256K ctx",
+    "nvidia:meta/llama-3.3-70b-instruct":               "70B, strong general + coding, fast",
+    "nvidia:meta/llama-4-maverick-17b-128e-instruct":   "multimodal, 128 MoE, vision capable",
+    "nvidia:mistralai/devstral-2-123b-instruct-2512":   "Mistral code model, deep reasoning, 256K ctx",
     # OpenRouter
-    "openrouter:deepseek/deepseek-r1:free":     "reasoning, last resort",
-    "openrouter:openai/gpt-oss-120b:free":      "general, last resort",
+    "openrouter:deepseek/deepseek-r1:free":             "reasoning, last resort",
+    "openrouter:openai/gpt-oss-120b:free":              "general, last resort",
 }
 
 # ── Agent system prompts — injected per pool ──────────────────────────────────
@@ -73,17 +69,15 @@ def get_session_model() -> str | None:
 
 # ── Slug resolver ─────────────────────────────────────────────────────────────
 _ALIASES = {
-    "glm":       "nvidia:glm-4.7",
-    "qwen":      "nvidia:qwen3-coder-480b-a35b-instruct",
-    "devstral":  "nvidia:devstral-2-123b-instruct-2512",
-    "kimi":      "nvidia:kimi-k2-thinking",
-    "mistral":   "nvidia:mistral-large-3-675b-instruct-2512",
-    "deepseek":  "nvidia:deepseek-v3.2",
-    "step":      "nvidia:step-3.5-flash",
-    "minimax":   "nvidia:minimax-m2.7",
-    "maverick":  "nvidia:llama-4-maverick-17b-128e-instruct",
-    "terminus":  "nvidia:deepseek-v3.1-terminus",
-    "nemotron":  "nvidia:mistral-nemotron",
+    "nemotron":  "nvidia:nvidia/llama-3.3-nemotron-super-49b-v1",
+    "kimi":      "nvidia:moonshotai/kimi-k2-instruct",
+    "kimi-think":"nvidia:moonshotai/kimi-k2-thinking",
+    "step":      "nvidia:stepfun-ai/step-3.5-flash",
+    "qwen":      "nvidia:qwen/qwen3-coder-480b-a35b-instruct",
+    "llama":     "nvidia:meta/llama-3.3-70b-instruct",
+    "llama70":   "nvidia:meta/llama-3.3-70b-instruct",
+    "maverick":  "nvidia:meta/llama-4-maverick-17b-128e-instruct",
+    "devstral":  "nvidia:mistralai/devstral-2-123b-instruct-2512",
 }
 
 def _resolve_slug(slug: str) -> str:
@@ -168,24 +162,14 @@ def short_label(slug: str) -> str:
         return "or:" + slug.split("/")[-1].split(":")[0]
     model = slug.replace("nvidia:", "").split(":")[0]
     short = {
-        "qwen3-coder-480b-a35b-instruct":    "qwen3-coder-480b",
-        "devstral-2-123b-instruct-2512":      "devstral-2-123b",
-        "mistral-large-3-675b-instruct-2512": "mistral-large-675b",
-        "llama-4-maverick-17b-128e-instruct": "llama4-maverick",
-        "deepseek-v3.1-terminus":             "deepseek-v3.1",
-        "mistral-medium-3-instruct":          "mistral-medium-3",
-        "moonshotai/kimi-k2-instruct":        "kimi-k2",
-        "moonshotai/kimi-k2-thinking":        "kimi-k2-thinking",
-        "stepfun-ai/step-3.5-flash":          "step-flash",
-        "deepseek-ai/deepseek-v3.2":          "deepseek-v3.2",
-        "zai-org/glm-4.7":                    "glm-4.7",
-        "meta/llama-4-maverick-17b-128e-instruct": "llama4-maverick",
-        "mistralai/mistral-large-3-675b-instruct-2512": "mistral-large",
-        "mistralai/mistral-medium-3-instruct": "mistral-medium",
-        "qwen/qwen3-coder-480b-a35b-instruct": "qwen3-coder",
-        "minimaxai/minimax-m2.7":              "minimax-m2.7",
-        "nvidia/mistral-nemotron":             "nemotron",
-        "mistralai/devstral-2-123b-instruct-2512": "devstral",
+        "nvidia/llama-3.3-nemotron-super-49b-v1":    "nemotron-49b",
+        "moonshotai/kimi-k2-instruct":               "kimi-k2",
+        "moonshotai/kimi-k2-thinking":               "kimi-k2-think",
+        "stepfun-ai/step-3.5-flash":                 "step-flash",
+        "qwen/qwen3-coder-480b-a35b-instruct":       "qwen3-coder",
+        "meta/llama-3.3-70b-instruct":               "llama3.3-70b",
+        "meta/llama-4-maverick-17b-128e-instruct":   "llama4-maverick",
+        "mistralai/devstral-2-123b-instruct-2512":   "devstral-123b",
     }
     return short.get(model, model.split("/")[-1])
 
@@ -211,10 +195,12 @@ def _build_llm(slug: str, temperature: float, tools: list | None = None):
         OPENROUTER_API_KEY, OPENROUTER_BASE_URL,
     )
     if slug.startswith("openrouter:"):
-        llm = ChatOpenAI(model=slug[11:], api_key=OPENROUTER_API_KEY, base_url=OPENROUTER_BASE_URL, temperature=temperature)
+        llm = ChatOpenAI(model=slug[11:], api_key=OPENROUTER_API_KEY, base_url=OPENROUTER_BASE_URL,
+                         temperature=temperature, timeout=8, max_retries=0)
     else:
         model = slug.replace("nvidia:", "")
-        llm = ChatOpenAI(model=model, api_key=NVIDIA_API_KEY, base_url=NVIDIA_BASE_URL, temperature=temperature)
+        llm = ChatOpenAI(model=model, api_key=NVIDIA_API_KEY, base_url=NVIDIA_BASE_URL,
+                         temperature=temperature, timeout=8, max_retries=0)
     return llm.bind_tools(tools) if tools else llm
 
 # ── Core executor ─────────────────────────────────────────────────────────────
@@ -278,7 +264,7 @@ def run_with_pool(
             continue
 
     # Ultimate fallback — hardcoded reliable models in case pool config is stale
-    _FALLBACK = ["deepseek-ai/deepseek-v3.2", "stepfun-ai/step-3.5-flash", "moonshotai/kimi-k2-instruct"]
+    _FALLBACK = ["nvidia/llama-3.3-nemotron-super-49b-v1", "stepfun-ai/step-3.5-flash", "moonshotai/kimi-k2-instruct"]
     for slug in _FALLBACK:
         full_slug = f"nvidia:{slug}"
         if full_slug in model_list:
@@ -314,8 +300,8 @@ def run_pipeline(user_message: str, pool: PoolName = "coding") -> dict:
     """
     from langchain_core.messages import SystemMessage, HumanMessage
 
-    REASONER  = "nvidia:deepseek-v3.2"
-    REVIEWER  = "nvidia:glm-4.7"
+    REASONER  = "nvidia:moonshotai/kimi-k2-thinking"
+    REVIEWER  = "nvidia:meta/llama-3.3-70b-instruct"
     pools     = _get_pools()
     generator = pools.get(pool, pools["coding"])[0]
 
