@@ -200,10 +200,10 @@ _TOOL_PATTERNS = [
     (re.compile(r"\b(pipeline|pipeline mode|double check|3.?stage)\b", re.I), "pipeline_mode"),
     (re.compile(r"\b(concept|how does.*work|explain.*concept|what.*strategy|concept graph|domain knowledge)\b", re.I), "concept_search"),
     (re.compile(r"\b(teach you|learn this|add.*concept|store.*knowledge|concept.*ingest)\b", re.I), "concept_ingest"),
-    (re.compile(r"\b(add.*goal|set.*goal|new goal|want to achieve|want to ship|goal is)\b", re.I), "add_goal"),
-    (re.compile(r"\b(list.*goal|show.*goal|my goals|what.*goal|all.*goal)\b", re.I), "list_goals"),
-    (re.compile(r"\b(complete.*goal|done.*goal|finished.*goal|mark.*done|shipped.*goal)\b", re.I), "complete_goal"),
-    (re.compile(r"\b(drop.*goal|cancel.*goal|remove.*goal|not doing)\b", re.I), "drop_goal"),
+    (re.compile(r"\b(add.*goals?|set.*goals?|new goal|want to achieve|want to ship|goal is)\b", re.I), "add_goal"),
+    (re.compile(r"\b(list.*goals?|show.*goals?|my goals?|what.*goals?|all.*goals?)\b", re.I), "list_goals"),
+    (re.compile(r"\b(complete.*goals?|done.*goals?|finished.*goals?|mark.*done|shipped.*goals?)\b", re.I), "complete_goal"),
+    (re.compile(r"\b(drop.*goals?|cancel.*goals?|remove.*goals?|not doing)\b", re.I), "drop_goal"),
 ]
 
 
