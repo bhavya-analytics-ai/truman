@@ -207,3 +207,79 @@ Wrap the orb in a native Mac app. Looks like a regular Mac app, lives in dock or
 
 3. Menu bar app (advanced)
 Tiny icon in your Mac menu bar (top-right). Click it → starts session. Hidden Chromium does the audio. Cleanest UX possible — Truman lives in your menu bar always, no window at all.
+
+---
+
+## 2026-04-28 — Session: Phase 4 — Goals + Curiosity Layer
+
+### Shipped (commits `ff36be1`, `20afd74`)
+
+**Premise:** persistent goals injected into every prompt so Truman knows what Om is working towards without being re-told. Foundation for future proactive nudges (Phase 15).
+
+**db.py (5 helpers added):**
+- `memory_goals` table already in schema (status: active/done/paused/dropped)
+- `add_goal(title, description, priority)` → uuid
+- `get_active_goals(limit=3)` → for prompt injection
+- `get_all_goals()` → for list_goals tool
+- `complete_goal(query)` → LIKE-match on title, sets status=done
+- `drop_goal(query)` → LIKE-match on title, sets status=dropped
+
+**state.py:** added `goals_context: str` field to TrumanState
+
+**nodes.py:**
+- New `load_goals` node — runs only if `ENABLE_GOALS=1`, fails soft, formats "ACTIVE GOALS:\n- title: description" block
+- `call_llm` node updated — appends `goals_context` to system prompt after memory_context
+
+**loop.py:** wired `load_memory → load_goals → detect_pool` and added `goals_context` to initial state
+
+**all_tools.py (4 new tools, TOOLS list now 21):**
+- `add_goal(title, description="")` — adds active goal
+- `list_goals()` — shows all goals with status icons (→ ✓ ✗ ⏸)
+- `complete_goal(query)` — marks done by partial title match
+- `drop_goal(query)` — marks dropped by partial title match
+
+**agent.py:**
+- 4 new keyword patterns in `_TOOL_PATTERNS` (uses `goals?` regex to handle plural)
+- `_extract_arg` cases for add_goal (strip imperative prefix), list_goals (no args), complete_goal/drop_goal (extract query text)
+
+**persona.py:** added one-line goals capability under CAPABILITIES — explains injection + tool names + natural reference rule
+
+**Bug caught + fixed before Om saw:** patterns like `\b(list.*goal)\b` didn't match plural "goals" because the trailing `\b` requires "goal" to be at a word boundary, but "goals" has "s" after. Fixed with `goals?` quantifier.
+
+### Verified end-to-end
+- plain chat → kimi-k2, no tool, 0 warnings
+- weather → `get_weather` tool fires, real result
+- "list goals" → `list_goals` tool fires, returns DB data
+- "add goal X" → `add_goal` fires, persists to SQLite
+- Graph node order confirmed: classify_mood → concept_lookup → load_memory → load_goals → detect_pool → detect_tool → route_skill → execute_tool → call_llm → save_memory
+
+### Token impact
+- System prompt baseline: ~3,500 tokens
+- Goals injection: +50–150 tokens (3 goals × ~30-50 tokens each)
+- ~3-4% increase per chat input. NIM is free → zero cost.
+
+### Files touched (7 total, all behind `ENABLE_GOALS` kill switch)
+```
+truman/storage/db.py       +5 helpers
+truman/brain/state.py      +1 field
+truman/brain/nodes.py      +1 node, edit call_llm
+truman/brain/loop.py       +1 node wired, +1 state init
+truman/tools/all_tools.py  +4 tools
+truman/text/agent.py       +4 patterns, +4 extract cases
+truman/core/persona.py     +1 line
+```
+
+### Next — Phase 5 — Risk Gate (scoped, not built)
+
+**What:** safety layer between tool detection and execution. Risky tools (write_mac_file, github ingest, set_model, future deploy/email/code-run) require explicit "do it" confirm before firing. Pending action stored in DB with 5min TTL.
+
+**New:** `pending_actions` table, 4 db helpers, `risk_gate` brain node, 3 state fields, `truman/core/risk.py` (single source of truth for risk tiers), persona update, `ENABLE_RISK_GATE=1` kill switch.
+
+**Risk tiers:**
+- safe (95% of chats, zero overhead): all reads, search, list_*, recall, web_search, weather, concept_search
+- caution (auto + log prefix): remember, set_reminder, add_goal, complete_goal, drop_goal, concept_ingest
+- risky (confirm gate): write_mac_file, github ingest_repo, pipeline_mode, set_model
+
+**Token impact:** zero on safe path. Risky path: ~50 templated tokens for confirm prompt instead of normal LLM output.
+
+**Smartness gain:** defensive (auditable, won't clobber files), not offensive. Foundation for Phase 6 (E2B sandbox) and Phase 11 (deploy commands).
