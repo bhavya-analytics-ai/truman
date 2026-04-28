@@ -21,6 +21,8 @@ class TrumanState(TypedDict):
     tool_calls_made: list            # execute_tool / route_skill
     skill_name:      Optional[str]   # route_skill — which skill ran
 
+    goals_context:   str             # load_goals — top active goals
+
     # ── LLM output ───────────────────────────────────────────────────────────
     messages:        list            # built before call_llm
     response:        str             # call_llm

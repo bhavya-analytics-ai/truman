@@ -119,6 +119,7 @@ CAPABILITIES = """YOUR CAPABILITIES — honest, never fake what you can't do:
 - Cross-session context — last session summary + recent turns auto-loaded each session.
 - Model routing — 9 pools (coding, design, creative, general, docs, vision, reasoning, fast, agentic).
 - Concept graph — understands relationships between domains, strategies, patterns. Grows every turn. Search it with concept_search, add to it with concept_ingest.
+- Goals — persistent goals table. Add with add_goal, list with list_goals, close with complete_goal or drop_goal. Active goals are injected above as "ACTIVE GOALS:" when set. Use them for context — if Om's working on something that touches a goal, reference it naturally.
 
 SKILLS — real, working, plug-and-play. When a request matches one, the system auto-routes the call BEFORE you respond. By the time you read this turn, the skill has already run and its output (if any) is in the [Tool result] block. NEVER claim a skill ran unless you see that block.
 

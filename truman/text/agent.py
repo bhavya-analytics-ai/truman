@@ -200,6 +200,10 @@ _TOOL_PATTERNS = [
     (re.compile(r"\b(pipeline|pipeline mode|double check|3.?stage)\b", re.I), "pipeline_mode"),
     (re.compile(r"\b(concept|how does.*work|explain.*concept|what.*strategy|concept graph|domain knowledge)\b", re.I), "concept_search"),
     (re.compile(r"\b(teach you|learn this|add.*concept|store.*knowledge|concept.*ingest)\b", re.I), "concept_ingest"),
+    (re.compile(r"\b(add.*goal|set.*goal|new goal|want to achieve|want to ship|goal is)\b", re.I), "add_goal"),
+    (re.compile(r"\b(list.*goal|show.*goal|my goals|what.*goal|all.*goal)\b", re.I), "list_goals"),
+    (re.compile(r"\b(complete.*goal|done.*goal|finished.*goal|mark.*done|shipped.*goal)\b", re.I), "complete_goal"),
+    (re.compile(r"\b(drop.*goal|cancel.*goal|remove.*goal|not doing)\b", re.I), "drop_goal"),
 ]
 
 
@@ -250,6 +254,17 @@ def _extract_arg(message: str, tool_name: str) -> dict:
         return {"query": q or msg}
     if tool_name == "concept_ingest":
         return {"text": msg}
+    if tool_name == "add_goal":
+        title = re.sub(r"^(add.*goal|set.*goal|new goal|my goal is|i want to|goal is)\s*[:\-]?\s*", "", msg, flags=re.I).strip()
+        return {"title": title or msg, "description": ""}
+    if tool_name == "list_goals":
+        return {}
+    if tool_name == "complete_goal":
+        q = re.sub(r"^(complete.*goal|done.*goal|finished.*goal|mark.*done|shipped.*goal)\s*[:\-]?\s*", "", msg, flags=re.I).strip()
+        return {"query": q or msg}
+    if tool_name == "drop_goal":
+        q = re.sub(r"^(drop.*goal|cancel.*goal|remove.*goal|not doing)\s*[:\-]?\s*", "", msg, flags=re.I).strip()
+        return {"query": q or msg}
     return {}
 
 

@@ -60,6 +60,33 @@ def load_memory(state: TrumanState) -> dict:
         return {"memory_context": "", "node_errors": errs}
 
 
+# ── Node 3b: load_goals ──────────────────────────────────────────────────────
+def load_goals(state: TrumanState) -> dict:
+    """
+    Pull top 3 active goals from SQLite and format as a short context string.
+    Runs only if ENABLE_GOALS=1. Fails soft — empty string if anything breaks.
+    """
+    import os
+    if os.environ.get("ENABLE_GOALS", "1") != "1":
+        return {"goals_context": ""}
+    try:
+        from truman.storage.db import get_active_goals
+        goals = get_active_goals(limit=3)
+        if not goals:
+            return {"goals_context": ""}
+        lines = ["ACTIVE GOALS:"]
+        for g in goals:
+            line = f"- {g['title']}"
+            if g.get("description"):
+                line += f": {g['description']}"
+            lines.append(line)
+        return {"goals_context": "\n".join(lines)}
+    except Exception as e:
+        errs = dict(state.get("node_errors") or {})
+        errs["load_goals"] = str(e)
+        return {"goals_context": "", "node_errors": errs}
+
+
 # ── Node 3: detect_pool ───────────────────────────────────────────────────────
 def detect_pool(state: TrumanState) -> dict:
     try:
@@ -188,9 +215,11 @@ def call_llm(state: TrumanState) -> dict:
         persona_reminder = "\n\nCRITICAL: You are texting Om on his dashboard. Be direct, casual, lowercase. No bullet points. No asking permission. Commit to your answer. Match Om's energy."
         last_session_ctx = _last_session_str()
 
+        goals_ctx = state.get("goals_context", "")
         system_content = (
             SYSTEM + clock_line
             + (f"\n\nRelevant memory:\n{mem_ctx}" if mem_ctx else "")
+            + (f"\n\n{goals_ctx}" if goals_ctx else "")
             + last_session_ctx + mood_line + persona_reminder
         )
 

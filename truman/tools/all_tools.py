@@ -311,6 +311,48 @@ def concept_ingest(text: str) -> str:
         return f"concept graph write failed: {e}"
 
 
+@tool
+def add_goal(title: str, description: str = "") -> str:
+    """Add a new active goal for Om — something he wants to accomplish. Use when Om says 'I want to', 'my goal is', 'add a goal', 'remember I need to ship X'. Stores it persistently and injects into every future session."""
+    from truman.storage.db import add_goal as _add
+    gid = _add(title, description or None)
+    return f"goal added: '{title}'"
+
+
+@tool
+def list_goals() -> str:
+    """List all of Om's current active goals. Use when Om asks 'what are my goals', 'show my goals', 'what am I working towards'."""
+    from truman.storage.db import get_all_goals
+    goals = get_all_goals()
+    if not goals:
+        return "no goals set yet."
+    lines = []
+    for g in goals:
+        status_icon = {"active": "→", "done": "✓", "dropped": "✗", "paused": "⏸"}.get(g["status"], "?")
+        line = f"{status_icon} {g['title']}"
+        if g.get("description"):
+            line += f" — {g['description']}"
+        lines.append(line)
+    return "\n".join(lines)
+
+
+@tool
+def complete_goal(query: str) -> str:
+    """Mark a goal as completed. Use when Om says 'done with X', 'finished X', 'mark X as done', 'shipped X'. Matches by partial title text."""
+    from truman.storage.db import complete_goal as _complete
+    ok = _complete(query)
+    return f"marked done: '{query}'" if ok else f"couldn't find active goal matching '{query}' — use list_goals to check."
+
+
+@tool
+def drop_goal(query: str) -> str:
+    """Drop/cancel a goal. Use when Om says 'drop X', 'cancel X', 'remove goal X', 'not doing X anymore'. Matches by partial title text."""
+    from truman.storage.db import drop_goal as _drop
+    ok = _drop(query)
+    return f"dropped: '{query}'" if ok else f"couldn't find active goal matching '{query}' — use list_goals to check."
+
+
 TOOLS = [web_search, get_weather, remember, recall, set_reminder, list_reminders,
          search_history, recent_conversations, read_mac_file, list_mac_dir, search_mac_files,
-         write_mac_file, list_models, set_model, pipeline_mode, concept_search, concept_ingest]
+         write_mac_file, list_models, set_model, pipeline_mode, concept_search, concept_ingest,
+         add_goal, list_goals, complete_goal, drop_goal]

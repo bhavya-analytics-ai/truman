@@ -628,6 +628,63 @@ def killswitch_set(off: bool) -> None:
         os.remove(_KILL_FLAG)
 
 
+# ── Goals ────────────────────────────────────────────────────────────────────
+def add_goal(title: str, description: str = None, priority: int = 3) -> str:
+    """Insert a new active goal. Returns the new goal's UUID."""
+    import uuid
+    gid = str(uuid.uuid4())
+    now = _now()
+    with _conn() as c:
+        c.execute(
+            """INSERT INTO memory_goals(id, ts, source, title, description, status, updated_at)
+               VALUES (?,?,?,?,?,?,?)""",
+            (gid, now, "om", title, description or "", "active", now),
+        )
+    return gid
+
+
+def get_active_goals(limit: int = 3) -> list[dict]:
+    """Return top N active goals ordered by ts desc (most recently added first)."""
+    with _conn() as c:
+        rows = c.execute(
+            """SELECT id, ts, title, description, progress, updated_at
+               FROM memory_goals WHERE status = 'active'
+               ORDER BY ts DESC LIMIT ?""",
+            (limit,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_all_goals() -> list[dict]:
+    with _conn() as c:
+        rows = c.execute(
+            "SELECT id, ts, title, description, status, updated_at FROM memory_goals ORDER BY ts DESC"
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def complete_goal(query: str) -> bool:
+    """Mark goal matching query title as done. Returns True if found."""
+    now = _now()
+    with _conn() as c:
+        cur = c.execute(
+            "UPDATE memory_goals SET status='done', updated_at=? WHERE status='active' AND title LIKE ?",
+            (now, f"%{query}%"),
+        )
+        return cur.rowcount > 0
+
+
+def drop_goal(query: str) -> bool:
+    """Mark goal matching query title as dropped. Returns True if found."""
+    now = _now()
+    with _conn() as c:
+        cur = c.execute(
+            "UPDATE memory_goals SET status='dropped', updated_at=? WHERE status='active' AND title LIKE ?",
+            (now, f"%{query}%"),
+        )
+        return cur.rowcount > 0
+
+
 def log_tool_call(
     session_id: Optional[int],
     name: str,
