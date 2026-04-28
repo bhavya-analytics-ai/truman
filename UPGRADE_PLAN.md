@@ -53,8 +53,8 @@ Memory Stack (5 tiers):
 | 3.1 | Repo index, list_repos, per-repo Cognee scoping | ✅ Shipped | c24a92b |
 | 3.x | Skill priority fix, github async, persona inventory | ✅ Shipped | 45e01c2 |
 | 3.2 | Live progress tracking + completion toast + /api/tasks | ✅ Shipped | c62c335 |
-| 4 | Goals + curiosity layer | 🔜 Next | — |
-| 5 | Risk gate node | ⬜ Planned | — |
+| 4 | Goals + curiosity layer | ✅ Shipped | ff36be1 |
+| 5 | Risk gate node | 🔜 Next | — |
 | 6 | E2B code sandbox | ⬜ Planned | — |
 | 7 | Screenpipe screen context | ⬜ Planned | — |
 | 8 | Mac bridge (local actions) | ⬜ Planned | — |
