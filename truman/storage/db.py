@@ -221,6 +221,16 @@ CREATE TABLE IF NOT EXISTS memory_feeds (
 CREATE INDEX IF NOT EXISTS idx_feeds_date   ON memory_feeds(date);
 CREATE INDEX IF NOT EXISTS idx_feeds_source ON memory_feeds(source);
 
+-- ── Pending actions (risk gate — 5 min TTL) ──────────────────────────────────
+CREATE TABLE IF NOT EXISTS pending_actions (
+    id         TEXT    PRIMARY KEY,
+    tool_name  TEXT    NOT NULL,
+    args       TEXT    NOT NULL,
+    user_input TEXT    NOT NULL,
+    created_at TEXT    NOT NULL,
+    expires_at TEXT    NOT NULL
+);
+
 -- ── Repo index ────────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS memory_repos (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -683,6 +693,46 @@ def drop_goal(query: str) -> bool:
             (now, f"%{query}%"),
         )
         return cur.rowcount > 0
+
+
+# ── Pending actions (risk gate) ───────────────────────────────────────────────
+def save_pending_action(tool_name: str, args: Any, user_input: str) -> str:
+    """Store a risky action pending confirmation. Returns the action ID."""
+    import uuid
+    from datetime import timedelta
+    pid = str(uuid.uuid4())
+    now = datetime.now()
+    expires = (now + timedelta(minutes=5)).isoformat(timespec="seconds")
+    with _conn() as c:
+        c.execute(
+            "INSERT INTO pending_actions(id, tool_name, args, user_input, created_at, expires_at) VALUES (?,?,?,?,?,?)",
+            (pid, tool_name, json.dumps(args, default=str), user_input,
+             now.isoformat(timespec="seconds"), expires),
+        )
+    return pid
+
+
+def get_pending_action() -> Optional[dict]:
+    """Most recent non-expired pending action, or None."""
+    now = _now()
+    with _conn() as c:
+        row = c.execute(
+            "SELECT * FROM pending_actions WHERE expires_at > ? ORDER BY created_at DESC LIMIT 1",
+            (now,),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def clear_pending_action(pid: str) -> None:
+    with _conn() as c:
+        c.execute("DELETE FROM pending_actions WHERE id = ?", (pid,))
+
+
+def expire_pending_actions() -> None:
+    """Delete all expired pending actions. Call on every turn."""
+    now = _now()
+    with _conn() as c:
+        c.execute("DELETE FROM pending_actions WHERE expires_at <= ?", (now,))
 
 
 def log_tool_call(

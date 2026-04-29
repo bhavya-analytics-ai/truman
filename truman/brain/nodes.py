@@ -148,6 +148,94 @@ def detect_tool(state: TrumanState) -> dict:
         return {"tool_name": None, "node_errors": errs}
 
 
+# ── Node 4a: risk_gate ───────────────────────────────────────────────────────
+_CONFIRM_RE = __import__("re").compile(r"\b(do it|yes|confirm|go ahead|yeah do it|yep|proceed)\b", __import__("re").I)
+_CANCEL_RE  = __import__("re").compile(r"\b(cancel|no|stop|nevermind|nope|abort)\b", __import__("re").I)
+
+def risk_gate(state: TrumanState) -> dict:
+    """
+    Intercepts risky tool calls and waits for explicit confirmation.
+    - safe/caution tools: pass straight through (zero overhead)
+    - risky tools: block, store in pending_actions, return preview message
+    - "do it" / "cancel" on next turn: execute or discard
+    ENABLE_RISK_GATE=1 kill switch.
+    """
+    import os
+    if os.environ.get("ENABLE_RISK_GATE", "1") != "1":
+        return {"risk_tier": "safe", "awaiting_confirm": False}
+    try:
+        from truman.storage.db import (
+            get_pending_action, clear_pending_action,
+            expire_pending_actions, save_pending_action,
+        )
+        from truman.core.risk import get_tier
+
+        expire_pending_actions()
+        user_input = state["user_input"]
+        tool_name  = state.get("tool_name")
+
+        # Check if Om is confirming / cancelling a pending action
+        pending = get_pending_action()
+        if pending:
+            if _CONFIRM_RE.search(user_input):
+                clear_pending_action(pending["id"])
+                import json as _j
+                from truman.tools.all_tools import TOOLS
+                args = _j.loads(pending["args"])
+                tool_map = {t.name: t for t in TOOLS}
+                try:
+                    result = str(tool_map[pending["tool_name"]].invoke(args))
+                except Exception as ex:
+                    result = f"tool error: {ex}"
+                return {
+                    "tool_name":         pending["tool_name"],
+                    "tool_result":       result,
+                    "tool_calls_made":   [{"name": pending["tool_name"]}],
+                    "risk_tier":         "risky",
+                    "awaiting_confirm":  False,
+                    "pending_action_id": None,
+                }
+            elif _CANCEL_RE.search(user_input):
+                clear_pending_action(pending["id"])
+                return {
+                    "tool_name":         None,
+                    "risk_tier":         "safe",
+                    "awaiting_confirm":  False,
+                    "pending_action_id": None,
+                    "tool_result":       "cancelled.",
+                }
+
+        if not tool_name:
+            return {"risk_tier": "safe", "awaiting_confirm": False}
+
+        tier = get_tier(tool_name)
+
+        if tier == "risky":
+            from truman.text.agent import _extract_arg
+            args = _extract_arg(user_input, tool_name)
+            pid  = save_pending_action(tool_name, args, user_input)
+            preview = f"`{tool_name}`"
+            if isinstance(args, dict):
+                first = next(iter(args.values()), None)
+                if first:
+                    preview += f" — {str(first)[:80]}"
+            elif args:
+                preview += f" — {str(args)[:80]}"
+            return {
+                "tool_name":         None,        # block execution this turn
+                "risk_tier":         "risky",
+                "awaiting_confirm":  True,
+                "pending_action_id": pid,
+                "tool_result":       f"[risk gate] about to run {preview}. say 'do it' to confirm or 'cancel'",
+            }
+
+        return {"risk_tier": tier, "awaiting_confirm": False, "pending_action_id": None}
+    except Exception as e:
+        errs = dict(state.get("node_errors") or {})
+        errs["risk_gate"] = str(e)
+        return {"risk_tier": "safe", "awaiting_confirm": False, "node_errors": errs}
+
+
 # ── Node 4b: route_skill ─────────────────────────────────────────────────────
 def route_skill(state: TrumanState) -> dict:
     """
@@ -203,6 +291,9 @@ def execute_tool(state: TrumanState) -> dict:
     # (would clobber tool_result and tool_calls_made set by route_skill)
     if state.get("skill_name"):
         return {}
+    # risk_gate blocked OR confirmed — tool_calls_made already set, don't overwrite
+    if state.get("tool_calls_made") or state.get("awaiting_confirm"):
+        return {}
     tool_name = state.get("tool_name")
     if not tool_name:
         return {"tool_result": None, "tool_calls_made": []}
@@ -226,6 +317,11 @@ def execute_tool(state: TrumanState) -> dict:
 
 # ── Node 6: call_llm ──────────────────────────────────────────────────────────
 def call_llm(state: TrumanState) -> dict:
+    # Risk gate blocked this turn — return the gate message directly, no LLM call
+    if state.get("awaiting_confirm") and state.get("tool_result"):
+        gate_msg = state["tool_result"].replace("[risk gate] ", "", 1)
+        return {"response": gate_msg, "model_label": "risk-gate"}
+
     try:
         from datetime import datetime, timezone, timedelta
         from zoneinfo import ZoneInfo

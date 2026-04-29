@@ -24,6 +24,11 @@ class TrumanState(TypedDict):
     goals_context:   str             # load_goals — top active goals
     curiosity_context: str           # curiosity — Cognee search on active goals
 
+    # ── Risk gate ────────────────────────────────────────────────────────────
+    risk_tier:         str           # safe | caution | risky
+    pending_action_id: Optional[str] # set when awaiting confirm
+    awaiting_confirm:  bool          # True = blocked waiting for "do it"
+
     # ── LLM output ───────────────────────────────────────────────────────────
     messages:        list            # built before call_llm
     response:        str             # call_llm

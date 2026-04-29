@@ -19,6 +19,7 @@ def _build_graph():
     g.add_node("curiosity",      nodes.curiosity)
     g.add_node("detect_pool",    nodes.detect_pool)
     g.add_node("detect_tool",    nodes.detect_tool)
+    g.add_node("risk_gate",      nodes.risk_gate)
     g.add_node("route_skill",    nodes.route_skill)
     g.add_node("execute_tool",   nodes.execute_tool)
     g.add_node("call_llm",       nodes.call_llm)
@@ -31,7 +32,8 @@ def _build_graph():
     g.add_edge("load_goals",     "curiosity")
     g.add_edge("curiosity",      "detect_pool")
     g.add_edge("detect_pool",    "detect_tool")
-    g.add_edge("detect_tool",    "route_skill")
+    g.add_edge("detect_tool",    "risk_gate")
+    g.add_edge("risk_gate",      "route_skill")
     # route_skill → execute_tool (if skill ran, execute_tool is a no-op because tool_name is None or skill already filled tool_result)
     g.add_edge("route_skill",    "execute_tool")
     g.add_edge("execute_tool",   "call_llm")
@@ -80,7 +82,10 @@ def run(user_input: str, session_id: str = "default", pool_hint: str = None) -> 
         "mood":             "neutral",
         "memory_context":   "",
         "goals_context":    "",
-        "curiosity_context": "",
+        "curiosity_context":  "",
+        "risk_tier":          "safe",
+        "pending_action_id":  None,
+        "awaiting_confirm":   False,
         "chosen_pool":      "general",
         "tool_name":        None,
         "tool_result":      None,
