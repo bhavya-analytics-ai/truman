@@ -18,7 +18,7 @@ RISK_TIERS: dict[str, list[str]] = {
         "concept_ingest", "remember",
     ],
     "risky": [
-        "write_mac_file", "read_mac_file", "set_model", "pipeline_mode",
+        "write_mac_file", "set_model", "pipeline_mode",
     ],
 }
 

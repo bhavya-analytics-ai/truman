@@ -149,8 +149,10 @@ def detect_tool(state: TrumanState) -> dict:
 
 
 # ── Node 4a: risk_gate ───────────────────────────────────────────────────────
-_CONFIRM_RE = __import__("re").compile(r"\b(do it|yes|confirm|go ahead|yeah do it|yep|proceed)\b", __import__("re").I)
-_CANCEL_RE  = __import__("re").compile(r"\b(cancel|no|stop|nevermind|nope|abort)\b", __import__("re").I)
+import re as _re_rg
+# Only unambiguous words — "yes"/"no"/"stop" are too common in normal speech
+_CONFIRM_RE = _re_rg.compile(r"\b(do it|confirm|go ahead|yeah do it|proceed)\b", _re_rg.I)
+_CANCEL_RE  = _re_rg.compile(r"\b(cancel|nevermind|nope|abort)\b", _re_rg.I)
 
 def risk_gate(state: TrumanState) -> dict:
     """
