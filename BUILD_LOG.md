@@ -38,6 +38,89 @@
 
 ## LOG
 
+---
+
+### 2026-04-28 — Phase 4 complete + Phase 5: Risk Gate
+
+**Commits: `5b3ec20`, `2fb9212`, `380e8f4`**
+
+#### Phase 4 — Model reconfig + Curiosity node (`5b3ec20`)
+
+**Problem:** deepseek-v3.2 hanging 30-46s on NIM, glm-4.7/mistral-nemotron dead. Pool config stale. No timeout on _build_llm(). Curiosity node was never built.
+
+**Model pool reconfig (`truman/core/config.py`):**
+- Removed: deepseek-v3.2, glm-4.7, mistral-nemotron (all dead/dying on NIM)
+- New stack — all alive, all free NVIDIA NIM:
+  - general: nvidia/llama-3.3-nemotron-super-49b-v1 → moonshotai/kimi-k2-instruct → stepfun-ai/step-3.5-flash
+  - coding: qwen/qwen3-coder-480b-a35b-instruct → moonshotai/kimi-k2-instruct → meta/llama-3.3-70b-instruct
+  - reasoning: moonshotai/kimi-k2-thinking → qwen/qwen3-coder-480b-a35b-instruct
+  - creative: moonshotai/kimi-k2-thinking → meta/llama-3.3-70b-instruct
+  - design: moonshotai/kimi-k2-thinking → qwen/qwen3-coder-480b-a35b-instruct
+  - docs: meta/llama-4-maverick-17b-128e-instruct → meta/llama-3.3-70b-instruct → moonshotai/kimi-k2-instruct
+  - vision: meta/llama-4-maverick-17b-128e-instruct
+  - fast: stepfun-ai/step-3.5-flash → nvidia/llama-3.3-nemotron-super-49b-v1
+  - agentic: qwen/qwen3-coder-480b-a35b-instruct → moonshotai/kimi-k2-instruct → meta/llama-3.3-70b-instruct
+
+**Timeout fix (`truman/core/model_router.py`):**
+- `_build_llm()`: added `timeout=8, max_retries=0` — kills 30s+ hangs on every call
+- Hardcoded fallback: `deepseek-v3.2` replaced with `nvidia/llama-3.3-nemotron-super-49b-v1`
+- Pipeline REASONER: deepseek-v3.2 → kimi-k2-thinking
+- Pipeline REVIEWER: glm-4.7 → meta/llama-3.3-70b-instruct
+- MODEL_INFO, _ALIASES, short_label all updated to match new models
+
+**Curiosity node (`truman/brain/nodes.py`, `loop.py`, `state.py`):**
+- New node `curiosity` runs after `load_goals`, before `detect_pool`
+- Searches Cognee concept graph using active goal titles as query
+- Injects "CURIOSITY (concept graph on your goals):" block into system prompt
+- `curiosity_context: str` field added to TrumanState
+- `curiosity_context: ""` added to initial_state in loop.py
+- ENABLE_CURIOSITY=1 kill switch (added to config.py defaults)
+- Fails soft — graph continues without it if Cognee unavailable
+
+**Verified:** plain chat → nemotron-49b, <3s, list_goals fires, 0 warnings. Brain: 11 nodes.
+
+---
+
+#### Phase 5 — Risk Gate (`2fb9212`, `380e8f4`)
+
+**New file: `truman/core/risk.py`**
+- 3 risk tiers:
+  - safe: web_search, get_weather, recall, list_goals, list_models, list_reminders, search_history, recent_conversations, concept_search, list_mac_dir, search_mac_files, read_mac_file
+  - caution: set_reminder, add_goal, complete_goal, drop_goal, concept_ingest, remember
+  - risky: write_mac_file, set_model, pipeline_mode
+- `get_tier(tool_name) → str` helper
+
+**DB changes (`truman/storage/db.py`):**
+- `pending_actions` table added to schema (id, tool_name, args JSON, user_input, created_at, expires_at)
+- 4 helpers: `save_pending_action`, `get_pending_action`, `clear_pending_action`, `expire_pending_actions` (5 min TTL)
+
+**Brain node `risk_gate` (`truman/brain/nodes.py`):**
+- Wired between detect_tool and route_skill
+- Safe/caution tools: pass through instantly (zero overhead, zero tokens)
+- Risky tool detected: save to pending_actions, set tool_name=None, set awaiting_confirm=True, return preview message
+- call_llm short-circuits when awaiting_confirm=True: returns gate preview directly (no LLM call, model_label="risk-gate")
+- execute_tool skips when tool_calls_made already set OR awaiting_confirm=True
+- "do it"/"confirm"/"go ahead"/"yeah do it"/"proceed" on next turn: executes tool with original stored args
+- "cancel"/"nevermind"/"nope"/"abort": clears pending action
+- ENABLE_RISK_GATE=1 kill switch
+
+**State fields added (`truman/brain/state.py`):** `risk_tier: str`, `pending_action_id: Optional[str]`, `awaiting_confirm: bool`
+
+**loop.py:** risk_gate node wired, 3 new fields in initial_state
+
+**Bugs fixed (`380e8f4`):**
+- `\byes\b`/`\bno\b`/`\bstop\b`/`\byep\b` removed from confirm/cancel regex — too broad, "yes I know" would have accidentally executed a risky tool, "stop being stupid" would cancel pending action
+- Confirm words: do it, confirm, go ahead, yeah do it, proceed
+- Cancel words: cancel, nevermind, nope, abort
+- read_mac_file moved from risky → safe (it's read-only, no risk)
+- `__import__("re")` hack replaced with clean import
+
+**Brain nodes (12):** classify_mood → concept_lookup → load_memory → load_goals → curiosity → detect_pool → detect_tool → risk_gate → route_skill → execute_tool → call_llm → save_memory
+
+**Verified:** gate intercepts write_mac_file correctly, confirm executes with original args, cancel clears cleanly, safe path (plain chat/list_goals) passes through with 0 warnings.
+
+---
+
 ### 2026-04-11
 
 #### Planning & Setup
@@ -283,3 +366,79 @@ truman/core/persona.py     +1 line
 **Token impact:** zero on safe path. Risky path: ~50 templated tokens for confirm prompt instead of normal LLM output.
 
 **Smartness gain:** defensive (auditable, won't clobber files), not offensive. Foundation for Phase 6 (E2B sandbox) and Phase 11 (deploy commands).
+---
+
+## 2026-04-30 — Session: Phase 6 — Speed + Truth + Toasts + Barge-in
+
+### Context
+Live Railway test surfaced major issues: 6-20s reply times, model lying about which model it was on, risk gate false-firing on casual messages, Truman fabricating project status, voice barge-in not stopping mid-utterance, dashboard activity panel spam.
+
+### Shipped (commits `d26236e`, `c882224`, `73e15b0`, `9b7692d`)
+
+**Speed (real culprit was Mem0 + Cognee, not the model):**
+- `concept_lookup` node: skip Cognee search for short msgs (<20 chars) or greetings — was 1-3s per turn wasted
+- `curiosity` node: same skip logic
+- `load_memory` node: skip Mem0 remote API call for short/greeting msgs — biggest single win, was 1-5s per turn
+- `_build_llm` timeout 8→15s — fewer accidental fallbacks, models get full time
+- Combined: "yo what's up" went from 17s → ~1-2s
+
+**Super-fast model swap (`POOL_GENERAL`):**
+- New primary: `meta/llama-3.1-8b-instruct` (sub-second on NIM)
+- Order: llama-3.1-8b → nemotron-nano-8b → step-flash → nemotron-49b → kimi-k2
+- `POOL_FAST` same trio
+- Hardcoded last-ditch fallback updated to fast 8B chain
+- Registered new models in `MODEL_INFO` + `_ALIASES` (fast/nano/llama8b) + `short_label`
+
+**Truth layer (no more model lies):**
+- Persona reminder hardened: "NEVER claim which model you are — just respond. NEVER write '[Tool result...]' or '(hypothetical output)' or invent bracket-blocks."
+- Hallucination strip v2: also catches `(hypothetical output...)`, `[MODEL: ...]`, bracket-hypothesis patterns
+
+**Risk gate false-fire fix:**
+- `set_model` regex tightened — now requires actual model name. "switch to step flash" in casual context no longer triggers.
+- Old: `\b(use model|switch.*model|set model|switch to)\b`
+- New: `\b(use model|switch.*model|set model|switch to (nemotron|kimi|step|qwen|llama|maverick|devstral)|use (nemotron|kimi|step|qwen|llama|maverick|devstral))\b`
+
+**Confirmation toasts (Om's request):**
+- New SSE event kind=`toast` pushed when ANY tool actually executes (`execute_tool` + `risk_gate` confirm path)
+- Format: `✓ tool_name — result preview (80 chars)`
+- `dashboard.html` `showToast()` function: green pop-up bottom-right, auto-dismiss 4s
+- Now Om can SEE when add_goal / set_reminder / set_model / write_mac_file actually fired
+
+**Voice barge-in fix:**
+- `realtime.py` `input_audio_buffer.speech_started` handler now sends `response.cancel` event to OpenAI WS
+- Previously just drained local audio queue → model kept generating, barge-in didn't actually stop it
+- Now Truman stops mid-word when Om speaks
+
+**Anti-fabrication persona rule (Phase 6 follow-up):**
+- 8B model was inventing project state ("forex going pretty good", "MAYA's intent parser headaches", "SeaCap pipeline moving")
+- ACTIVE_PROJECTS rewritten: names only, no canned status data
+- Hard rule: "you don't have live state. don't invent progress. ask Om if asked"
+- Hard rule: "talk TO Om in 2nd person, never ABOUT him in 3rd person" (was generating "om's in a good place today")
+- Trimmed to be natural — no scripted "idk man" templates
+
+### Files touched
+```
+truman/core/config.py               POOL_GENERAL + POOL_FAST reorder, fast 8B primary
+truman/core/model_router.py         timeout 8→15s, MODEL_INFO + aliases + short_label entries, fallback chain
+truman/core/persona.py              anti-fabrication + 2nd-person rules
+truman/text/agent.py                set_model regex tightened
+truman/brain/nodes.py               concept/curiosity/memory skip-short, persona reminder, hallucination strip v2, toast push on tool exec + risk confirm
+truman/voice/realtime.py            response.cancel on speech_started
+truman/voice/static/dashboard.html  showToast() + SSE kind=toast handler
+```
+
+### Verified live on Railway
+- "yo what's up" → ~1-2s response on llama-3.1-8b
+- Model badge accurate (no more nemotron lies)
+- No "[Tool result]" / "(hypothetical)" leakage
+- Toast pops up green when tool fires
+
+### Known regression (caught + patched in same session)
+- 8B model started fabricating project status when asked about MAYA/forex
+- Fix: persona rewrite (commits `73e15b0` → `9b7692d`)
+- Final form: hard "don't fake status" rule + natural language (no canned templates)
+
+### Next — Phase 7 — UI noise cut + sticky model lock
+- Dashboard activity panel: hide silent nodes, only show ones that did something
+- Sticky model: when Om says "use nemotron", pin it across messages until cleared (currently `_session_model` resets on Railway redeploys)
+- Possibly: per-tab model lock instead of process-global
