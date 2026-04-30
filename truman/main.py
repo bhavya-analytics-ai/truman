@@ -2,12 +2,18 @@
 main.py — Truman core
 Realtime API voice loop + proactive system + orb UI
 """
+# ── silence noisy deprecation chatter before any heavy import ─────────────────
+import warnings, os
+warnings.filterwarnings("ignore")
+os.environ.setdefault("PYTHONWARNINGS", "ignore")
+
 # ── config MUST be first module-level import ──────────────────────────────────
 # load_dotenv(override=True) fires when truman.core.config loads. Any import
 # placed before this line at module level that reads env vars (directly or
 # transitively) would pick up stale shell env instead of .env values.
 from truman.core import config  # noqa: F401
 
+import os
 import time
 import threading
 from truman.voice import orb
@@ -55,6 +61,12 @@ def main():
     # 4. Global hotkey — Cmd+Option+T toggles session
     hotkey.start(realtime.toggle_session)
 
+    # 5. Mac Bridge — connects to Railway for remote file access (only if RAILWAY_URL is set)
+    railway_url = os.environ.get("RAILWAY_URL", "")
+    if railway_url:
+        from truman.mac_bridge import start_background as start_mac_bridge
+        start_mac_bridge()
+
     # Boot message
     speak("Truman online. Press Command Option T to talk.")
 
@@ -65,7 +77,6 @@ def main():
     except KeyboardInterrupt:
         print("\n[Truman] Shutting down.")
         realtime.end_session()
-        import os
         os._exit(0)
 
 

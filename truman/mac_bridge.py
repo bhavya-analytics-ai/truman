@@ -158,7 +158,7 @@ async def _run():
                 url,
                 ping_interval=30,
                 ping_timeout=10,
-                extra_headers={"X-Bridge-Secret": BRIDGE_SECRET},
+                additional_headers={"X-Bridge-Secret": BRIDGE_SECRET},
             ) as ws:
                 await _handle(ws)
         except (websockets.exceptions.ConnectionClosed,
