@@ -13,6 +13,7 @@ Install deps:
 """
 import asyncio
 import base64
+import os
 import collections
 import difflib
 import json
@@ -110,7 +111,7 @@ _last_activity   = 0.0     # epoch seconds of last speech event — powers idle 
 # ── Idle auto-close (cost control) ────────────────────────────────────────────
 # Realtime bills per second of connection, not per message. Leaving a session
 # open silently = still burning tokens. Auto-close after this much silence.
-IDLE_TIMEOUT_SEC = 180     # 3 min of no speech → hang up
+IDLE_TIMEOUT_SEC = int(os.environ.get("IDLE_TIMEOUT_SEC", 180))  # override via env (Railway sets 600)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -179,9 +180,17 @@ async def _handle_events(ws):
             print("[Realtime] Connected. Listening...")
             orb.set_state(orb.LISTENING)
 
-        # ── User speaking → barge-in + reset orb
+        # ── User speaking → barge-in + cancel in-flight response
         elif etype == "input_audio_buffer.speech_started":
             _barge_in()
+            # tell OpenAI to cancel the current response so it stops generating audio
+            try:
+                asyncio.run_coroutine_threadsafe(
+                    ws.send(json.dumps({"type": "response.cancel"})),
+                    _event_loop,
+                )
+            except Exception:
+                pass
             _last_activity = time.time()
             orb.set_state(orb.LISTENING)
             proactive.record_interaction()
@@ -269,24 +278,38 @@ async def _handle_events(ws):
         # ── Turn complete
         elif etype == "response.done":
             _last_activity = time.time()
-            if _asst_transcript:
-                print(f"Truman: {_asst_transcript.strip()}")
-                # feed the echo-detection deque so the next user turn can drop speaker bleed
-                _recent_assistant.append(_asst_transcript.strip())
+            user_text = _user_transcript.strip()
+            asst_text = _asst_transcript.strip()
 
-            if _user_transcript and _asst_transcript:
+            if asst_text:
+                print(f"Truman: {asst_text}")
+                _recent_assistant.append(asst_text)
+
+            if user_text and asst_text:
                 try:
                     memory.add([
-                        {"role": "user",      "content": _user_transcript},
-                        {"role": "assistant", "content": _asst_transcript},
+                        {"role": "user",      "content": user_text},
+                        {"role": "assistant", "content": asst_text},
                     ], user_id=USER_ID)
                 except Exception:
                     pass
                 try:
-                    db.log_turn(_session_id, "user",      _user_transcript)
-                    db.log_turn(_session_id, "assistant", _asst_transcript)
+                    db.log_turn(_session_id, "user",      user_text)
+                    db.log_turn(_session_id, "assistant", asst_text)
                 except Exception as e:
                     print(f"[DB] log_turn failed: {e}")
+
+            # Push transcripts to browser so voice turns appear in chat UI
+            if user_text:
+                try:
+                    audio_out.put_nowait({"type": "transcript", "role": "user", "text": user_text})
+                except queue.Full:
+                    pass
+            if asst_text:
+                try:
+                    audio_out.put_nowait({"type": "transcript", "role": "assistant", "text": asst_text})
+                except queue.Full:
+                    pass
 
             _user_transcript = ""
             _asst_transcript = ""
@@ -327,7 +350,21 @@ def _build_instructions() -> str:
             recent_ctx = "\n".join(lines)
         last_sum = db.last_session_summary()
         if last_sum and last_sum.get("summary"):
-            summary_ctx = f"[{last_sum.get('started_at', '')}] {last_sum['summary']}"
+            raw = last_sum["summary"]
+            try:
+                s = json.loads(raw)
+                parts = [f"[{last_sum.get('started_at', '')}] {s.get('summary', '')}"]
+                if s.get("tasks_completed"):
+                    parts.append("Tasks done: " + ", ".join(s["tasks_completed"]))
+                if s.get("key_decisions"):
+                    parts.append("Decisions: " + ", ".join(s["key_decisions"]))
+                if s.get("errors"):
+                    parts.append("Errors: " + ", ".join(s["errors"]))
+                if s.get("next_day_priorities"):
+                    parts.append("Priorities: " + ", ".join(s["next_day_priorities"]))
+                summary_ctx = " | ".join(parts)
+            except (json.JSONDecodeError, TypeError):
+                summary_ctx = f"[{last_sum.get('started_at', '')}] {raw}"
     except Exception as e:
         print(f"[DB] context pull failed: {e}")
 

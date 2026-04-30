@@ -29,6 +29,11 @@ def concept_lookup(state: TrumanState) -> dict:
     import os
     if os.environ.get("ENABLE_COGNEE", "1") != "1":
         return {}
+    # skip Cognee search for short/casual messages — saves 1-3s per turn
+    _ui = state["user_input"].strip()
+    _GREETINGS = {"yo", "hey", "hi", "sup", "what's up", "whats up", "yoo", "heyy", "wassup"}
+    if len(_ui) < 20 or _ui.lower().rstrip("!?.") in _GREETINGS:
+        return {}
     try:
         from truman.brain.concepts import search_sync, ingest_background
         # search existing graph
@@ -100,6 +105,10 @@ def curiosity(state: TrumanState) -> dict:
         return {"curiosity_context": ""}
     goals_ctx = state.get("goals_context", "")
     if not goals_ctx:
+        return {"curiosity_context": ""}
+    # skip for short/casual messages
+    _ui = state["user_input"].strip()
+    if len(_ui) < 20:
         return {"curiosity_context": ""}
     try:
         from truman.brain.concepts import search_sync
@@ -189,6 +198,11 @@ def risk_gate(state: TrumanState) -> dict:
                     result = str(tool_map[pending["tool_name"]].invoke(args))
                 except Exception as ex:
                     result = f"tool error: {ex}"
+                try:
+                    from truman.storage.notifications import push as _push
+                    _push(f"✓ {pending['tool_name']} confirmed — {result[:80]}", kind="toast")
+                except Exception:
+                    pass
                 return {
                     "tool_name":         pending["tool_name"],
                     "tool_result":       result,
@@ -307,6 +321,12 @@ def execute_tool(state: TrumanState) -> dict:
             return {"tool_result": None, "tool_calls_made": []}
         args = _extract_arg(state["user_input"], tool_name)
         result = tool_map[tool_name].invoke(args)
+        # confirmation toast → dashboard
+        try:
+            from truman.storage.notifications import push as _push
+            _push(f"✓ {tool_name} — {str(result)[:80]}", kind="toast")
+        except Exception:
+            pass
         return {
             "tool_result":     str(result),
             "tool_calls_made": [{"name": tool_name}],
@@ -342,7 +362,7 @@ def call_llm(state: TrumanState) -> dict:
         mem_ctx = state.get("memory_context", "")
         mood = state.get("mood", "neutral")
         mood_line = f"\n\nMOOD CONTEXT: {mood}" if mood and mood != "neutral" else ""
-        persona_reminder = "\n\nCRITICAL: You are texting Om on his dashboard. Be direct, casual, lowercase. No bullet points. No asking permission. Commit to your answer. Match Om's energy."
+        persona_reminder = "\n\nCRITICAL: You are texting Om on his dashboard. Be direct, casual, lowercase. No bullet points. No asking permission. Commit to your answer. Match Om's energy. NEVER claim which model you are — just respond. NEVER write '[Tool result...]' or '(hypothetical output)' or invent bracket-blocks."
         last_session_ctx = _last_session_str()
 
         goals_ctx     = state.get("goals_context", "")
@@ -382,8 +402,12 @@ def call_llm(state: TrumanState) -> dict:
         raw = result["content"]
         model_label = result["model"]
         response = strip_markdown(raw)
-        # strip any fake [Tool result ...] blocks the LLM hallucinated
-        response = _re.sub(r'\[Tool result[^\]]*\][:\s]*[^\n]*\n?', '', response).strip()
+        # strip hallucinated tool/model blocks
+        response = _re.sub(r'\[Tool result[^\]]*\][:\s]*[^\n]*\n?', '', response)
+        response = _re.sub(r'\[[^\]]{1,40}\]\s*\([^\)]*hypothetical[^\)]*\)[^\n]*\n?', '', response, flags=_re.I)
+        response = _re.sub(r'\(hypothetical output[^\)]*\)[^\n]*\n?', '', response, flags=_re.I)
+        response = _re.sub(r'\[MODEL:[^\]]*\]', '', response, flags=_re.I)
+        response = response.strip()
 
         # update chat history
         chat_history.append({"role": "user",      "content": user_input})

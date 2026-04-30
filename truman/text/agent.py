@@ -196,7 +196,7 @@ _TOOL_PATTERNS = [
     (re.compile(r"\b(find.*file|search.*file|locate.*file)\b", re.I), "search_mac_files"),
     (re.compile(r"\b(write.*file|save.*file|create.*file)\b", re.I), "write_mac_file"),
     (re.compile(r"\b(what model|which model|show.*model|list.*model|model.*have|available model|model.*pool|show me.*model|what.*model.*have)\b", re.I), "list_models"),
-    (re.compile(r"\b(use model|switch.*model|set model|switch to)\b", re.I), "set_model"),
+    (re.compile(r"\b(use model|switch.*model|set model|switch to (nemotron|kimi|step|qwen|llama|maverick|devstral)|use (nemotron|kimi|step|qwen|llama|maverick|devstral))\b", re.I), "set_model"),
     (re.compile(r"\b(pipeline|pipeline mode|double check|3.?stage)\b", re.I), "pipeline_mode"),
     (re.compile(r"\b(concept|how does.*work|explain.*concept|what.*strategy|concept graph|domain knowledge)\b", re.I), "concept_search"),
     (re.compile(r"\b(teach you|learn this|add.*concept|store.*knowledge|concept.*ingest)\b", re.I), "concept_ingest"),

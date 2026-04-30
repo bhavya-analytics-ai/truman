@@ -358,6 +358,7 @@ startTasksPoll();
     try {
       const d = JSON.parse(e.data);
       if (d.type === 'connected') return;
+      if (d.kind === 'toast') { showToast(d.message); return; }
       if (d.message) addMsg('truman', d.message, {});
     } catch(_) {}
   };
@@ -366,6 +367,15 @@ startTasksPoll();
     setTimeout(connectSSE, 5000);   // reconnect after 5s on error
   };
 })();
+
+// ── Toast notifications ──────────────────────────────────────────────────────
+function showToast(msg) {
+  const t = document.createElement('div');
+  t.textContent = msg;
+  t.style.cssText = 'position:fixed;bottom:80px;right:20px;background:#1a1a2e;color:#00ff88;border:1px solid #00ff8855;padding:10px 16px;border-radius:8px;font-size:13px;z-index:9999;max-width:340px;box-shadow:0 4px 12px #0008;animation:fadeIn .2s ease';
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 4000);
+}
 
 // ── Session management ──────────────────────────────────────────────────────
 function genId() { return 'sess-' + Date.now() + '-' + Math.random().toString(36).slice(2,7); }

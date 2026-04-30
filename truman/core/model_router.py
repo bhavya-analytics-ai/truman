@@ -196,11 +196,11 @@ def _build_llm(slug: str, temperature: float, tools: list | None = None):
     )
     if slug.startswith("openrouter:"):
         llm = ChatOpenAI(model=slug[11:], api_key=OPENROUTER_API_KEY, base_url=OPENROUTER_BASE_URL,
-                         temperature=temperature, timeout=8, max_retries=0)
+                         temperature=temperature, timeout=15, max_retries=0)
     else:
         model = slug.replace("nvidia:", "")
         llm = ChatOpenAI(model=model, api_key=NVIDIA_API_KEY, base_url=NVIDIA_BASE_URL,
-                         temperature=temperature, timeout=8, max_retries=0)
+                         temperature=temperature, timeout=15, max_retries=0)
     return llm.bind_tools(tools) if tools else llm
 
 # ── Core executor ─────────────────────────────────────────────────────────────
