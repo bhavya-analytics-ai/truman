@@ -26,6 +26,8 @@ PoolName = Literal["coding", "creative", "design", "docs", "vision",
 # ── Model metadata ────────────────────────────────────────────────────────────
 MODEL_INFO: dict[str, str] = {
     # NVIDIA NIM — alive models only
+    "nvidia:meta/llama-3.1-8b-instruct":               "8B, ultra-fast (<1s), strong instruction follow, low hallucination",
+    "nvidia:nvidia/llama-3.1-nemotron-nano-8b-v1":     "8B nano, NVIDIA-optimized for speed, sub-second on NIM",
     "nvidia:nvidia/llama-3.3-nemotron-super-49b-v1":   "49B, fast, agentic, strong instruction follow",
     "nvidia:moonshotai/kimi-k2-instruct":               "MoE, general + coding, 128K ctx",
     "nvidia:moonshotai/kimi-k2-thinking":               "reasoning + creative, 256K ctx, deep think",
@@ -69,6 +71,11 @@ def get_session_model() -> str | None:
 
 # ── Slug resolver ─────────────────────────────────────────────────────────────
 _ALIASES = {
+    "llama8b":   "nvidia:meta/llama-3.1-8b-instruct",
+    "llama-8b":  "nvidia:meta/llama-3.1-8b-instruct",
+    "fast":      "nvidia:meta/llama-3.1-8b-instruct",
+    "nano":      "nvidia:nvidia/llama-3.1-nemotron-nano-8b-v1",
+    "nemotron-nano": "nvidia:nvidia/llama-3.1-nemotron-nano-8b-v1",
     "nemotron":  "nvidia:nvidia/llama-3.3-nemotron-super-49b-v1",
     "kimi":      "nvidia:moonshotai/kimi-k2-instruct",
     "kimi-think":"nvidia:moonshotai/kimi-k2-thinking",
@@ -162,6 +169,8 @@ def short_label(slug: str) -> str:
         return "or:" + slug.split("/")[-1].split(":")[0]
     model = slug.replace("nvidia:", "").split(":")[0]
     short = {
+        "meta/llama-3.1-8b-instruct":                "llama3.1-8b",
+        "nvidia/llama-3.1-nemotron-nano-8b-v1":      "nemotron-nano",
         "nvidia/llama-3.3-nemotron-super-49b-v1":    "nemotron-49b",
         "moonshotai/kimi-k2-instruct":               "kimi-k2",
         "moonshotai/kimi-k2-thinking":               "kimi-k2-think",
@@ -264,7 +273,7 @@ def run_with_pool(
             continue
 
     # Ultimate fallback — hardcoded reliable models in case pool config is stale
-    _FALLBACK = ["nvidia/llama-3.3-nemotron-super-49b-v1", "stepfun-ai/step-3.5-flash", "moonshotai/kimi-k2-instruct"]
+    _FALLBACK = ["meta/llama-3.1-8b-instruct", "nvidia/llama-3.1-nemotron-nano-8b-v1", "stepfun-ai/step-3.5-flash", "moonshotai/kimi-k2-instruct"]
     for slug in _FALLBACK:
         full_slug = f"nvidia:{slug}"
         if full_slug in model_list:

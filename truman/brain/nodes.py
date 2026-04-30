@@ -54,6 +54,11 @@ def concept_lookup(state: TrumanState) -> dict:
 
 # ── Node 3: load_memory (Mem0 facts) ─────────────────────────────────────────
 def load_memory(state: TrumanState) -> dict:
+    # skip Mem0 (remote API, 1-5s) for short/casual messages
+    _ui = state["user_input"].strip()
+    _GREETINGS = {"yo", "hey", "hi", "sup", "what's up", "whats up", "yoo", "heyy", "wassup"}
+    if len(_ui) < 20 or _ui.lower().rstrip("!?.") in _GREETINGS:
+        return {"memory_context": ""}
     try:
         from truman.text.agent import mem_search
         results = mem_search(state["user_input"])
