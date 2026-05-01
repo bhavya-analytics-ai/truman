@@ -47,8 +47,8 @@ def start_morning_briefing(speak_fn, agent_fn):
             "Give Om a sharp morning briefing — what day it is, anything relevant from memory "
             "about what he's working on. Keep it under 3 sentences, casual, no fluff."
         )
-        response = agent_fn(prompt, mood="")
-        speak_fn(response)
+        result = agent_fn(prompt, mood="")
+        speak_fn(result["response"] if isinstance(result, dict) else result)
 
     threading.Thread(target=_run, daemon=True).start()
 
@@ -69,8 +69,8 @@ def start_idle_checkin(speak_fn, agent_fn, idle_minutes=20):
                     f"Om has been quiet for about {idle_minutes} minutes. "
                     "Check in naturally — one short line, casual. Don't be dramatic about it."
                 )
-                response = agent_fn(prompt, mood="")
-                speak_fn(response)
+                result = agent_fn(prompt, mood="")
+                speak_fn(result["response"] if isinstance(result, dict) else result)
 
     threading.Thread(target=_run, daemon=True).start()
 
@@ -99,8 +99,8 @@ def start_reminder_loop(speak_fn, agent_fn):
                     "Say it naturally, one sentence."
                 )
                 try:
-                    response = agent_fn(prompt, mood="")
-                    speak_fn(response)
+                    result = agent_fn(prompt, mood="")
+                    speak_fn(result["response"] if isinstance(result, dict) else result)
                 except Exception as e:
                     print(f"[Reminders] Fire failed for '{r['note']}': {e}")
                     continue

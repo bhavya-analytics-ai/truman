@@ -144,7 +144,7 @@ realtime.py
 ### Master Orchestrator
 Truman — receives every command, decides which sub-agent handles it, coordinates execution, responds to Om.
 
-### 7 Sub-Agents *(levels 6–10, in flight)*
+### Sub-Agents *(roadmap — levels 7–10)*
 
 | Agent | Responsibility |
 |---|---|
@@ -156,20 +156,21 @@ Truman — receives every command, decides which sub-agent handles it, coordinat
 | **Media Agent** | PDF → audio, iCloud transfer, reminders |
 | **Productivity Agent** | Google Calendar, Google Sheets, scheduling |
 
-### Tools (live today)
+### Tools (live today — 15 tools)
 ```
-web_search     get_weather     remember     recall
-set_reminder   list_reminders
+web_search          get_weather         remember            recall
+set_reminder        list_reminders      search_history      recent_conversations
+read_mac_file       list_mac_dir        search_mac_files    write_mac_file
+list_models         set_model           pipeline_mode
 ```
 
 ### Tools (roadmap)
 ```
 send_email          send_whatsapp       scan_forex
-analyze_forex_code  write_file          read_file
-execute_code        create_github_repo  push_to_github
-deploy_to_vercel    create_google_sheet browser_navigate
-browser_login       browser_click       pdf_to_audio
-move_to_icloud      voice_authenticate  send_alert
+analyze_forex_code  execute_code        create_github_repo
+push_to_github      deploy_to_vercel    create_google_sheet
+browser_navigate    browser_login       browser_click
+pdf_to_audio        move_to_icloud      send_alert
 gitnexus_analyze    get_calendar
 ```
 
@@ -183,8 +184,8 @@ gitnexus_analyze    get_calendar
 | **Audio Capture / Playback** | **Browser WebRTC (`getUserMedia` with `echoCancellation`), AudioContext** |
 | **Audio Bridge** | **Flask + flask-sock WebSocket on :5001** |
 | **OpenAI Client** | **`websockets` (async)** |
-| **Agent Framework (non-realtime paths)** | LangChain + LangGraph |
-| **Brain (non-realtime paths)** | GPT-4o |
+| **Agent Framework (non-realtime paths)** | LangChain (keyword detection + direct tool execution — no bind_tools) |
+| **Brain (text)** | NVIDIA NIM `deepseek-ai/deepseek-v3.2` primary → Groq `llama-3.3-70b-versatile` fallback |
 | **Tracing** | LangSmith |
 | **Facts Memory** | Mem0 (hosted platform) |
 | **Episodic / Tasks Persistence** | **SQLite (WAL mode, FTS5)** |

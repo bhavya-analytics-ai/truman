@@ -143,40 +143,41 @@
   /* Activity sidebar */
   .activity-sidebar { position:fixed; top:0; right:-440px; width:420px; height:100dvh; background:#0a0a12; border-left:1px solid #1a1a2e; z-index:190; display:flex; flex-direction:column; transition:right 0.28s ease; overflow:hidden; }
   .activity-sidebar.open { right:0; }
-  body.activity-open .messages,
-  body.activity-open .input-area,
-  body.activity-open .session-bar,
-  body.activity-open .tasks-strip { margin-right:420px; transition:margin-right 0.28s ease; }
+  .activity-sidebar.open .asb-resize { display:block; }
+  /* Resize handle */
+  .asb-resize { display:none; position:absolute; left:0; top:0; width:5px; height:100%; cursor:ew-resize; z-index:10; background:transparent; }
+  .asb-resize:hover { background:rgba(79,70,229,0.3); }
   .asb-hdr { padding:14px 16px; border-bottom:1px solid #1a1a2e; display:flex; justify-content:space-between; align-items:center; flex-shrink:0; background:#0d0d1a; }
   .asb-hdr h2 { font-size:13px; color:#a78bfa; font-weight:600; letter-spacing:0.05em; }
   .asb-close { background:none; border:none; color:#555570; font-size:16px; cursor:pointer; padding:2px 6px; }
   .asb-close:hover { color:#e8e8f0; }
-  .asb-body { overflow-y:auto; padding:10px; display:flex; flex-direction:column; gap:4px; flex:1; }
+  .asb-body { overflow-y:auto; padding:12px; display:flex; flex-direction:column; gap:0; flex:1; }
   .asb-body::-webkit-scrollbar { width:3px; }
   .asb-body::-webkit-scrollbar-thumb { background:#2a2a4a; border-radius:2px; }
-  /* Turn groups */
-  .trace-turn { display:flex; flex-direction:column; gap:2px; margin-bottom:8px; }
-  .trace-turn-hdr { font-size:10px; color:#444460; padding:4px 6px; letter-spacing:0.06em; text-transform:uppercase; border-top:1px solid #16162a; margin-top:4px; }
-  /* Trace cards */
-  .trace-card { background:#0f0f1e; border:1px solid #1a1a2e; border-radius:7px; overflow:hidden; }
-  .trace-card-hdr { display:grid; grid-template-columns:auto 1fr auto; gap:8px; align-items:center; padding:6px 10px; cursor:pointer; user-select:none; }
-  .trace-card-hdr:hover { background:#141428; }
-  .trace-icon { font-size:11px; width:14px; text-align:center; flex-shrink:0; }
-  .trace-node { font-size:11px; font-weight:600; color:#7c7caa; min-width:100px; }
-  .trace-summary { font-size:11px; color:#e8e8f0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .trace-dur { font-size:10px; color:#444460; white-space:nowrap; padding-left:4px; }
-  .trace-card-body { display:none; padding:8px 10px 10px; border-top:1px solid #16162a; }
-  .trace-card.expanded .trace-card-body { display:block; }
-  .trace-detail-label { font-size:10px; color:#555570; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:3px; margin-top:8px; }
-  .trace-detail-label:first-child { margin-top:0; }
-  .trace-detail-val { font-size:11px; color:#c4c4d4; font-family:monospace; white-space:pre-wrap; word-break:break-all; max-height:120px; overflow-y:auto; background:#0a0a14; padding:6px; border-radius:4px; }
-  /* Status colors */
-  .trace-status-start .trace-node { color:#3b82f6; }
-  .trace-status-end .trace-node { color:#22c55e; }
-  .trace-status-error .trace-node { color:#ef4444; }
-  .trace-status-skipped .trace-node { color:#444460; }
-  .trace-status-skipped .trace-summary { color:#444460; }
-  /* Activity button in header */
+  /* Turn blocks */
+  .aturn { margin-bottom:16px; }
+  .aturn-hdr { font-size:10px; color:#444460; padding:0 0 6px 2px; display:flex; align-items:center; gap:8px; border-bottom:1px solid #16162a; margin-bottom:6px; }
+  .aturn-ts { color:#333350; }
+  .aturn-input { color:#666680; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:240px; font-style:italic; }
+  /* Action rows */
+  .arow { display:grid; grid-template-columns:20px 1fr auto; gap:8px; align-items:start; padding:5px 4px; border-radius:6px; cursor:pointer; }
+  .arow:hover { background:#0f0f20; }
+  .arow-icon { font-size:13px; text-align:center; padding-top:1px; }
+  .arow-main { display:flex; flex-direction:column; gap:2px; overflow:hidden; }
+  .arow-name { font-size:12px; font-weight:600; color:#a78bfa; }
+  .arow-name.tool { color:#fbbf24; }
+  .arow-name.skill { color:#34d399; }
+  .arow-name.llm { color:#60a5fa; }
+  .arow-name.error { color:#ef4444; }
+  .arow-sub { font-size:11px; color:#666680; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .arow-dur { font-size:10px; color:#333350; white-space:nowrap; padding-top:2px; }
+  /* Expanded detail */
+  .arow-detail { display:none; margin:4px 0 6px 28px; background:#0a0a18; border-radius:6px; padding:8px; border:1px solid #16162a; }
+  .arow.expanded .arow-detail { display:block; }
+  .arow-detail-lbl { font-size:10px; color:#444460; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:3px; margin-top:6px; }
+  .arow-detail-lbl:first-child { margin-top:0; }
+  .arow-detail-val { font-size:11px; color:#b0b0c8; font-family:monospace; white-space:pre-wrap; word-break:break-all; max-height:140px; overflow-y:auto; }
+  /* Activity button */
   .activity-btn { background:none; border:1px solid #2a2a4a; border-radius:8px; color:#7c7caa; font-size:11px; padding:4px 10px; cursor:pointer; }
   .activity-btn:hover { border-color:#4f46e5; color:#a78bfa; }
   .activity-btn.active { border-color:#4f46e5; color:#a78bfa; background:#16162a; }
@@ -212,6 +213,7 @@
 
 <!-- Activity sidebar -->
 <div class="activity-sidebar" id="activity-sidebar">
+  <div class="asb-resize" id="asb-resize"></div>
   <div class="asb-hdr">
     <h2>TRUMAN ACTIVITY</h2>
     <button class="asb-close" onclick="closeActivity()">✕</button>
@@ -1066,8 +1068,10 @@ function updatePanelFromResponse(d, userMsg, respText) {
 
 <script>
 // ── Activity Sidebar ──────────────────────────────────────────────────────────
+// Only show meaningful events: tool calls, skill runs, LLM calls, errors
+const _VISIBLE_NODES = new Set(['execute_tool', 'route_skill', 'call_llm']);
 let activityOpen = false;
-const _traceTurns = {};   // turn_id → [{node, status, summary, args, result, duration_ms, ts}]
+const _traceTurns = {};   // turn_id → { ts, input, rows: [] }
 const _turnOrder  = [];   // ordered list of turn_ids
 
 function toggleActivity() { activityOpen ? closeActivity() : openActivity(); }
@@ -1076,13 +1080,11 @@ async function openActivity() {
   activityOpen = true;
   document.getElementById('activity-sidebar').classList.add('open');
   document.getElementById('activity-btn').classList.add('active');
-  document.body.classList.add('activity-open');
-  // load history from DB
   try {
     const r = await fetch('/api/trace?limit=300');
     const rows = await r.json();
-    if (Array.isArray(rows)) rows.forEach(row => _ingestTraceRow(row));
-    _renderActivity();
+    if (Array.isArray(rows)) rows.forEach(row => _ingestRow(row));
+    _renderAll();
   } catch(e) { console.error('[Activity] load error:', e); }
 }
 
@@ -1090,117 +1092,188 @@ function closeActivity() {
   activityOpen = false;
   document.getElementById('activity-sidebar').classList.remove('open');
   document.getElementById('activity-btn').classList.remove('active');
-  document.body.classList.remove('activity-open');
 }
 
-function _ingestTraceRow(row) {
+// ── Resize handle ─────────────────────────────────────────────────────────────
+(function initResize() {
+  const handle  = document.getElementById('asb-resize');
+  const sidebar = document.getElementById('activity-sidebar');
+  if (!handle || !sidebar) return;
+  let dragging = false, startX = 0, startW = 0;
+
+  function applyWidth(w) {
+    w = Math.max(280, Math.min(700, w));
+    sidebar.style.width = w + 'px';
+  }
+
+  handle.addEventListener('mousedown', e => {
+    dragging = true;
+    startX = e.clientX;
+    startW = sidebar.offsetWidth;
+    document.body.style.userSelect = 'none';
+    e.preventDefault();
+  });
+  document.addEventListener('mousemove', e => {
+    if (!dragging) return;
+    applyWidth(startW + (startX - e.clientX));  // drag left = wider
+  });
+  document.addEventListener('mouseup', () => {
+    if (dragging) { dragging = false; document.body.style.userSelect = ''; }
+  });
+})();
+
+// ── Data ingestion ─────────────────────────────────────────────────────────────
+function _ingestRow(row) {
   const tid = row.turn_id || 'unknown';
-  if (!_traceTurns[tid]) { _traceTurns[tid] = []; _turnOrder.push(tid); }
-  // avoid duplicates (history load vs SSE)
-  const already = _traceTurns[tid].some(e => e.id && e.id === row.id);
-  if (!already) _traceTurns[tid].push(row);
+
+  if (!_traceTurns[tid]) {
+    _traceTurns[tid] = { ts: row.ts, input: '', rows: [] };
+    _turnOrder.push(tid);
+  }
+  // capture user input from classify_mood start
+  if (row.node === 'classify_mood' && row.status === 'start') {
+    _traceTurns[tid].ts    = row.ts;
+    _traceTurns[tid].input = (row.summary || '').replace(/^"(.*)"$/, '$1');
+  }
+
+  const isVisible = _VISIBLE_NODES.has(row.node);
+  const isError   = row.status === 'error';
+  const isEnd     = row.status === 'end' && !(row.summary || '').startsWith('skipped');
+  if ((!isVisible && !isError) || (!isEnd && !isError)) return;
+
+  const already = _traceTurns[tid].rows.some(r => r.id && r.id === row.id);
+  if (!already) _traceTurns[tid].rows.push(row);
 }
 
-function _renderActivity() {
+// ── Row metadata helpers ──────────────────────────────────────────────────────
+function _rowMeta(ev) {
+  if (ev.status === 'error')    return { icon: '✕', cls: 'error', label: ev.node };
+  if (ev.node === 'execute_tool') {
+    let name = 'tool';
+    try { name = JSON.parse(ev.args_json || '{}').tool_name || 'tool'; } catch(_) {}
+    return { icon: '⚙', cls: 'tool', label: name };
+  }
+  if (ev.node === 'route_skill') {
+    let name = 'skill';
+    try { name = JSON.parse(ev.args_json || '{}').skill_name || 'skill'; } catch(_) {}
+    return { icon: '★', cls: 'skill', label: name };
+  }
+  if (ev.node === 'call_llm') {
+    let pool = 'llm';
+    try { pool = JSON.parse(ev.args_json || '{}').pool || 'llm'; } catch(_) {}
+    return { icon: '◈', cls: 'llm', label: pool };
+  }
+  return { icon: '●', cls: '', label: ev.node };
+}
+
+function _rowSub(ev) {
+  try {
+    if (ev.result_json) {
+      const r = JSON.parse(ev.result_json);
+      const s = typeof r === 'string' ? r : JSON.stringify(r);
+      return s.slice(0, 70) + (s.length > 70 ? '…' : '');
+    }
+  } catch(_) {}
+  return ev.summary || '';
+}
+
+// ── Build DOM ─────────────────────────────────────────────────────────────────
+function _renderAll() {
   const body = document.getElementById('activity-body');
-  if (_turnOrder.length === 0) return;
   body.innerHTML = '';
-  // render turns oldest→newest, each as a group
-  [..._turnOrder].forEach(tid => {
-    const events = _traceTurns[tid];
-    const grp = document.createElement('div');
-    grp.className = 'trace-turn';
-    grp.id = 'turn-' + tid;
-    // turn header: show user input from classify_mood start event
-    const firstStart = events.find(e => e.node === 'classify_mood' && e.status === 'start');
-    const inputPreview = firstStart ? (firstStart.summary || '').replace(/^"(.*)"$/, '$1').slice(0,50) : tid;
-    const ts = firstStart ? new Date(firstStart.ts * 1000).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'}) : '';
-    const hdr = document.createElement('div');
-    hdr.className = 'trace-turn-hdr';
-    hdr.textContent = `${ts}  "${inputPreview}"`;
-    grp.appendChild(hdr);
-    events.forEach((ev, i) => {
-      grp.appendChild(_buildTraceCard(ev, `${tid}-${i}`));
-    });
-    body.appendChild(grp);
+  if (_turnOrder.length === 0) {
+    body.innerHTML = '<div id="activity-placeholder" style="color:#444460;padding:24px;text-align:center;font-size:12px">no activity yet — send a message</div>';
+    return;
+  }
+  _turnOrder.forEach(tid => {
+    const block = _buildTurnBlock(tid);
+    if (block) body.appendChild(block);
   });
   body.scrollTop = body.scrollHeight;
 }
 
-function _appendTraceEvent(row) {
-  _ingestTraceRow(row);
-  if (!activityOpen) return;
-  const tid = row.turn_id || 'unknown';
-  let grp = document.getElementById('turn-' + tid);
-  if (!grp) {
-    grp = document.createElement('div');
-    grp.className = 'trace-turn';
-    grp.id = 'turn-' + tid;
-    const ts = new Date(row.ts * 1000).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'});
-    const hdr = document.createElement('div');
-    hdr.className = 'trace-turn-hdr';
-    hdr.textContent = `${ts}  new turn`;
-    grp.appendChild(hdr);
-    const ph = document.getElementById('activity-placeholder'); if (ph) ph.remove();
-    document.getElementById('activity-body').appendChild(grp);
-  }
-  const idx = (_traceTurns[tid] || []).length - 1;
-  grp.appendChild(_buildTraceCard(row, `${tid}-${idx}`));
-  document.getElementById('activity-body').scrollTop = document.getElementById('activity-body').scrollHeight;
+function _buildTurnBlock(tid) {
+  const turn = _traceTurns[tid];
+  if (!turn || turn.rows.length === 0) return null;
+
+  const wrap = document.createElement('div');
+  wrap.className = 'aturn';
+  wrap.id = 'aturn-' + tid;
+
+  const ts  = turn.ts ? new Date(turn.ts * 1000).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '';
+  const inp = (turn.input || tid).slice(0, 48);
+  wrap.innerHTML = `<div class="aturn-hdr"><span class="aturn-ts">${ts}</span><span class="aturn-input">"${inp}"</span></div>`;
+
+  turn.rows.forEach((ev, i) => wrap.appendChild(_buildActionRow(ev, tid + '-' + i)));
+  return wrap;
 }
 
-function _buildTraceCard(ev, cardId) {
-  const card = document.createElement('div');
-  const statusClass = ev.status === 'start' ? 'trace-status-start'
-                    : ev.status === 'end' && (ev.summary||'').startsWith('skipped') ? 'trace-status-skipped'
-                    : ev.status === 'end' ? 'trace-status-end'
-                    : ev.status === 'error' ? 'trace-status-error' : '';
-  card.className = `trace-card ${statusClass}`;
-  card.id = 'tc-' + cardId;
+function _buildActionRow(ev, rowId) {
+  const meta = _rowMeta(ev);
+  const sub  = _rowSub(ev);
+  const dur  = ev.duration_ms != null ? ev.duration_ms + 'ms' : '';
 
-  const icon = ev.status === 'start' ? '⏳'
-             : ev.status === 'error' ? '✗'
-             : (ev.summary||'').startsWith('skipped') ? '○'
-             : '✓';
-  const dur = ev.duration_ms != null ? `${ev.duration_ms}ms` : '';
+  let detailHtml = '';
+  if (ev.args_json) {
+    try {
+      detailHtml += `<div class="arow-detail-lbl">args</div><div class="arow-detail-val">${JSON.stringify(JSON.parse(ev.args_json), null, 2)}</div>`;
+    } catch(_) { detailHtml += `<div class="arow-detail-lbl">args</div><div class="arow-detail-val">${ev.args_json}</div>`; }
+  }
+  if (ev.result_json) {
+    try {
+      const r = JSON.parse(ev.result_json);
+      const s = typeof r === 'string' ? r : JSON.stringify(r, null, 2);
+      detailHtml += `<div class="arow-detail-lbl">result</div><div class="arow-detail-val">${s}</div>`;
+    } catch(_) { detailHtml += `<div class="arow-detail-lbl">result</div><div class="arow-detail-val">${ev.result_json}</div>`; }
+  }
+  const hasDetail = !!detailHtml;
 
-  const hdr = document.createElement('div');
-  hdr.className = 'trace-card-hdr';
-  hdr.innerHTML = `
-    <span class="trace-icon">${icon}</span>
-    <div style="display:flex;flex-direction:column;gap:1px;overflow:hidden">
-      <span class="trace-node">${ev.node}</span>
-      <span class="trace-summary">${ev.summary || ''}</span>
+  const row = document.createElement('div');
+  row.className = 'arow';
+  row.id = 'arow-' + rowId;
+  row.innerHTML = `
+    <span class="arow-icon">${meta.icon}</span>
+    <div class="arow-main">
+      <span class="arow-name ${meta.cls}">${meta.label}</span>
+      ${sub ? `<span class="arow-sub">${sub}</span>` : ''}
+      ${hasDetail ? `<div class="arow-detail">${detailHtml}</div>` : ''}
     </div>
-    <span class="trace-dur">${dur}</span>`;
-  hdr.onclick = () => card.classList.toggle('expanded');
-  card.appendChild(hdr);
-
-  const body = document.createElement('div');
-  body.className = 'trace-card-body';
-  let bodyHtml = '';
-  if (ev.args_json || (ev.args && Object.keys(ev.args).length)) {
-    const args = ev.args_json ? JSON.parse(ev.args_json) : ev.args;
-    bodyHtml += `<div class="trace-detail-label">args</div>
-                 <div class="trace-detail-val">${JSON.stringify(args, null, 2)}</div>`;
+    <span class="arow-dur">${dur}</span>`;
+  if (hasDetail) {
+    row.style.cursor = 'pointer';
+    row.addEventListener('click', () => row.classList.toggle('expanded'));
   }
-  if (ev.result_json || ev.result) {
-    const res = ev.result_json ? JSON.parse(ev.result_json) : ev.result;
-    const resStr = typeof res === 'string' ? res : JSON.stringify(res, null, 2);
-    bodyHtml += `<div class="trace-detail-label">result</div>
-                 <div class="trace-detail-val">${resStr}</div>`;
-  }
-  if (!bodyHtml) bodyHtml = `<div style="color:#444460;font-size:11px;">no detail</div>`;
-  body.innerHTML = bodyHtml;
-  card.appendChild(body);
-  return card;
+  return row;
 }
 
-// Wire SSE trace events into activity panel
+// ── Live SSE push ─────────────────────────────────────────────────────────────
 window._sseTraceHandler = function(data) {
-  if (data.kind === 'trace') {
-    _appendTraceEvent(data);
+  if (data.kind !== 'trace') return;
+  _ingestRow(data);
+  if (!activityOpen) return;
+
+  const tid   = data.turn_id || 'unknown';
+  const turn  = _traceTurns[tid];
+
+  // only re-render for rows we actually stored
+  const isVisible = _VISIBLE_NODES.has(data.node);
+  const isError   = data.status === 'error';
+  const isEnd     = data.status === 'end' && !(data.summary || '').startsWith('skipped');
+  if ((!isVisible && !isError) || (!isEnd && !isError)) return;
+
+  const body  = document.getElementById('activity-body');
+  let block = document.getElementById('aturn-' + tid);
+  if (!block) {
+    const ph = document.getElementById('activity-placeholder');
+    if (ph) ph.remove();
+    block = _buildTurnBlock(tid);
+    if (block) body.appendChild(block);
+  } else {
+    // append only the newest row
+    const idx = (turn.rows.length - 1);
+    block.appendChild(_buildActionRow(data, tid + '-' + idx));
   }
+  body.scrollTop = body.scrollHeight;
 };
 </script>
 </body>

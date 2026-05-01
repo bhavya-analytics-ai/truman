@@ -12,13 +12,7 @@ Empty by default. Uncomment entries to enable. Boot order: MCP mount
 happens in main.py BEFORE agent.get_agent() so the LangChain agent binds
 the MCP tools alongside the natives.
 """
-MCP_SERVERS: dict = {
-    "fs": {
-        "command": "npx",
-        "args": [
-            "-y",
-            "@modelcontextprotocol/server-filesystem",
-            "/Users/ompandya/Desktop/mcp-sandbox",
-        ],
-    },
-}
+# Add MCP server entries here when building project servers (Phase 5).
+# Format: {"server_id": {"command": "...", "args": [...]}}
+# Each entry mounts its tools into Truman's TOOLS list at boot.
+MCP_SERVERS: dict = {}

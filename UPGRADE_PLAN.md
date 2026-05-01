@@ -49,26 +49,27 @@ Memory Stack (5 tiers):
 | 1 | LangGraph brain loop | ✅ Shipped | de5b7a0 |
 | 2 | Cognee concept graph | ✅ Shipped | 85e5ace |
 | 2.1 | NIM embeddings + timezone fix + reflect.py fix | ✅ Shipped | 972ccf4 |
-| 3   | Skills (files/web/github), kill switch, Groq removed | ✅ Shipped | 030aa9a |
+| 3 | Skills (files/web/github), kill switch, Groq removed | ✅ Shipped | 030aa9a |
 | 3.1 | Repo index, list_repos, per-repo Cognee scoping | ✅ Shipped | c24a92b |
-| 3.x | Skill priority fix, github async, persona inventory | ✅ Shipped | 45e01c2 |
-| 3.2 | Live progress tracking + completion toast + /api/tasks | ✅ Shipped | c62c335 |
+| 3.2 | Skill priority fix, github async, persona inventory | ✅ Shipped | 45e01c2 |
+| 3.3 | Live progress tracking + completion toast + /api/tasks | ✅ Shipped | c62c335 |
 | 4 | Goals + curiosity layer | ✅ Shipped | 5b3ec20 |
 | 5 | Risk gate node | ✅ Shipped | 2fb9212 |
 | 6 | Speed + truth + toasts + barge-in | ✅ Shipped | d26236e |
 | 6.1 | Fast 8B primary + Mem0 skip + persona anti-fabricate | ✅ Shipped | 9b7692d |
-| 7 | UI noise cut + sticky model lock | 🔜 Next | — |
-| 8 | E2B code sandbox | ⬜ Planned | — |
-| 7 | Screenpipe screen context | ⬜ Planned | — |
-| 8 | Mac bridge (local actions) | ⬜ Planned | — |
-| 9 | WhisperKit iOS mic | ⬜ Planned | — |
-| 10 | Voice diarization (pyannote) | ⬜ Planned | — |
-| 11 | Pipecat voice pipeline | ⬜ Planned | — |
-| 12 | Project folder indexer | ⬜ Planned | — |
-| 13 | GitHub repo ingestion | ⬜ Planned | — |
-| 14 | Multi-session UI + model switcher | ⬜ Planned | — |
-| 15 | Proactive push (goals → nudges) | ⬜ Planned | — |
-| 16 | Cybersecurity hardening | ⬜ Planned | — |
+| 7 | Mac bridge local tools + RUNTIME injection + tool cache | ✅ Shipped | a994c25 |
+| 7.1 | Activity sidebar — live brain trace panel (resizable) | ✅ Shipped | af65a5d |
+| 8 | Sticky model lock + keyword fix + persona leak fix | 🔜 Next | — |
+| 9 | E2B code sandbox | ⬜ Planned | — |
+| 10 | Screenpipe screen context | ⬜ Planned | — |
+| 11 | WhisperKit iOS mic | ⬜ Planned | — |
+| 12 | Voice diarization (pyannote) | ⬜ Planned | — |
+| 13 | Pipecat voice pipeline | ⬜ Planned | — |
+| 14 | Project folder indexer | ⬜ Planned | — |
+| 15 | GitHub repo ingestion | ⬜ Planned | — |
+| 16 | Multi-session UI + model switcher | ⬜ Planned | — |
+| 17 | Proactive push (goals → nudges) | ⬜ Planned | — |
+| 18 | Cybersecurity hardening | ⬜ Planned | — |
 
 ---
 

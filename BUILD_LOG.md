@@ -442,3 +442,77 @@ truman/voice/static/dashboard.html  showToast() + SSE kind=toast handler
 - Dashboard activity panel: hide silent nodes, only show ones that did something
 - Sticky model: when Om says "use nemotron", pin it across messages until cleared (currently `_session_model` resets on Railway redeploys)
 - Possibly: per-tab model lock instead of process-global
+
+---
+
+## 2026-05-01 — Phase 7: Mac Bridge Local Tools + Phase 7.1: Activity Sidebar
+
+**Commits: `a994c25`, `e309143`, `28a2a8a`, `98770ba`, `999cc1f`, `af65a5d`**
+
+### Phase 7 — Mac Bridge Local Tools + RUNTIME Injection + Tool Cache
+
+**Problem:** Mac file tools (`read_mac_file`, `list_mac_dir` etc.) always used WebSocket bridge — locally this bridge doesn't exist so they returned "Mac bridge not connected". LLM didn't know if it was running local or Railway. Tool results were forgotten turn-to-turn causing re-calls.
+
+**Mac bridge local routing:**
+- Added `_is_local()` check in `all_tools.py` — detects local vs Railway via `RAILWAY_URL` env
+- Local path: direct filesystem calls (`os.listdir`, `open()`, etc.) — no bridge needed
+- Railway path: existing `mac_request()` WebSocket bridge unchanged
+- Added `import os` (was missing, caused `NameError`)
+
+**RUNTIME injection:**
+- `agent.py` injects `RUNTIME: local` or `RUNTIME: railway` into system prompt every turn
+- Persona updated: "Check RUNTIME line — if local, use tool directly. If railway, say can't reach Mac files"
+- LLM now knows where it's running, stops hallucinating it's on Railway when local
+
+**Tool result cache:**
+- `_tool_cache` dict (per session, last 3 results) in `agent.py`
+- After any tool runs, result cached via `_cache_tool_result()`
+- Injected as "RECENT TOOL RESULTS" into system prompt — stops LLM re-calling same tools
+- `from collections import deque, defaultdict` added
+
+**Keyword + path extraction improvements:**
+- `list_mac_dir` patterns expanded: "see.*desktop", "what.*desktop", "desktop.*files" etc.
+- Smart path extraction: bare folder names like "AI Lab" → `~/Desktop/AI Lab`
+- Pool override: file tools force "fast" pool in `detect_pool` node (was routing to "creative")
+
+**Mem0/Cognee skip:**
+- Skip threshold raised 20→50 chars for short messages
+- File tool requests skip Mem0 + Cognee entirely (pre-check via `_detect_tool`)
+- "yoo" went from 18s → ~1s locally
+
+### Phase 7.1 — Activity Sidebar (Live Brain Trace Panel)
+
+**Problem:** Om wanted to see what Truman is doing in real-time — tools called, skills run, LLM pool used — without digging into logs.
+
+**What shipped:**
+- Slide-out resizable sidebar (`#activity-sidebar`) — fixed right edge, opens over chat
+- Only shows meaningful events: `execute_tool` (⚙), `route_skill` (★), `call_llm` (◈), errors (✕)
+- One card per turn — header shows timestamp + input preview
+- Click any row to expand inline → shows args + result
+- Resizable: drag left edge handle (280px–700px)
+- History loads from SQLite `trace_events` table on open
+- Live SSE push: new events append in real-time as Truman thinks
+- `trace_events` table added to SQLite schema
+- `push_trace()` — fire-and-forget: SSE push + SQLite write in background thread
+- `/api/trace` endpoint added to `orb.py`
+- All 12 brain nodes instrumented with start/end/error/skipped events
+- `turn_id` added to `TrumanState` — groups all events for one chat turn
+
+### Files touched
+```
+truman/tools/all_tools.py           _is_local(), local file helpers, import os
+truman/text/agent.py                _tool_cache, RUNTIME injection, keyword/path improvements
+truman/brain/nodes.py               _t() trace emitter, all 12 nodes instrumented, pool override, Mem0/Cognee skip
+truman/brain/state.py               turn_id field
+truman/brain/loop.py                turn_id generation, emit_event call
+truman/storage/db.py                trace_events table, log_trace(), get_trace_history()
+truman/storage/notifications.py     push_trace()
+truman/voice/orb.py                 /api/trace endpoint
+truman/core/persona.py              RUNTIME rule, tool result reporting rule
+truman/voice/static/dashboard.html  activity sidebar HTML/CSS/JS, resize handle, SSE trace handler
+```
+
+### Next — Phase 8 — Sticky model lock + keyword fixes + persona leak
+- Sticky model: pin model across turns when Om says "use nemotron" (currently resets per-process)
+- Fix "can you see my desktop?" keyword not always triggering `list_mac_dir`
+- Fix LLM leaking persona narration `"(Maintaining a flat tone...)"` in responses
