@@ -217,7 +217,7 @@
     <button class="asb-close" onclick="closeActivity()">✕</button>
   </div>
   <div class="asb-body" id="activity-body">
-    <div style="color:#444460;padding:24px;text-align:center;font-size:12px">no activity yet — send a message</div>
+    <div id="activity-placeholder" style="color:#444460;padding:24px;text-align:center;font-size:12px">no activity yet — send a message</div>
   </div>
 </div>
 
@@ -1141,7 +1141,7 @@ function _appendTraceEvent(row) {
     hdr.className = 'trace-turn-hdr';
     hdr.textContent = `${ts}  new turn`;
     grp.appendChild(hdr);
-    document.getElementById('activity-body').innerHTML = document.getElementById('activity-body').querySelector('[style*="no activity"]') ? '' : document.getElementById('activity-body').innerHTML;
+    const ph = document.getElementById('activity-placeholder'); if (ph) ph.remove();
     document.getElementById('activity-body').appendChild(grp);
   }
   const idx = (_traceTurns[tid] || []).length - 1;
