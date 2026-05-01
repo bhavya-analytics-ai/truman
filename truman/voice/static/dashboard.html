@@ -436,8 +436,35 @@ function showToast(msg) {
 // ── Session management ──────────────────────────────────────────────────────
 function genId() { return 'sess-' + Date.now() + '-' + Math.random().toString(36).slice(2,7); }
 
-let sessions = [{id: genId(), label: 'chat 1', msgs: ''}];
-let currentSession = 0;
+const _LS_KEY = 'truman_sessions_v1';
+const _LS_CUR = 'truman_current_v1';
+const _MSG_CAP = 60000; // cap per session to stay well under 5MB localStorage limit
+
+function _saveSessions() {
+  try {
+    const slim = sessions.map(s => ({
+      id: s.id, label: s.label,
+      msgs: (s.msgs || '').slice(-_MSG_CAP)  // keep last 60k chars
+    }));
+    localStorage.setItem(_LS_KEY, JSON.stringify(slim));
+    localStorage.setItem(_LS_CUR, String(currentSession));
+  } catch(e) {}
+}
+
+function _loadSessions() {
+  try {
+    const raw = localStorage.getItem(_LS_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed) || !parsed.length) return null;
+    return parsed;
+  } catch(e) { return null; }
+}
+
+// restore from localStorage or start fresh
+const _stored = _loadSessions();
+let sessions = _stored || [{id: genId(), label: 'chat 1', msgs: ''}];
+let currentSession = Math.min(parseInt(localStorage.getItem(_LS_CUR) || '0'), sessions.length - 1);
 
 function currentSessionId() { return sessions[currentSession].id; }
 
@@ -457,6 +484,7 @@ function switchSession(i) {
   currentSession = i;
   messages.innerHTML = sessions[i].msgs || '<div class="msg truman"><div class="bubble">yo. what\'s up?</div></div>';
   renderSessionBar();
+  _saveSessions();
 }
 
 function newSession() {
@@ -466,14 +494,21 @@ function newSession() {
   currentSession = sessions.length - 1;
   messages.innerHTML = '<div class="msg truman"><div class="bubble">yo. what\'s up?</div></div>';
   renderSessionBar();
+  _saveSessions();
 }
 
 function clearChat() {
   messages.innerHTML = '<div class="msg truman"><div class="bubble">yo. what\'s up?</div></div>';
   sessions[currentSession].msgs = '';
+  _saveSessions();
 }
 
 renderSessionBar();
+
+// restore active session's messages on page load
+if (_stored && sessions[currentSession].msgs) {
+  messages.innerHTML = sessions[currentSession].msgs;
+}
 
 // ── Mac status polling ──────────────────────────────────────────────────────
 async function checkMac() {
@@ -490,6 +525,8 @@ setInterval(checkMac, 10000);
 
 // ── Load history from SQLite ────────────────────────────────────────────────
 async function loadHistory() {
+  // if localStorage restored sessions, use them — skip SQLite fallback
+  if (_stored && sessions[currentSession].msgs) return;
   try {
     const r = await fetch('/api/history');
     const d = await r.json();
@@ -498,6 +535,8 @@ async function loadHistory() {
       d.turns.forEach(t => {
         addMsg(t.role === 'user' ? 'user' : 'truman', t.content, null);
       });
+      sessions[currentSession].msgs = messages.innerHTML;
+      _saveSessions();
     }
   } catch(e) {}
 }
@@ -640,6 +679,8 @@ async function send() {
     if (!respText) { setStatus('idle','idle'); addMsg('truman', '(no response — try again)', null); return; }
     addMsg('truman', respText, {model: d.model || 'deepseek-v3.2', pool: d.pool || 'general', tool_calls: d.tool_calls});
     updatePanelFromResponse(d, sendText || text, respText);
+    sessions[currentSession].msgs = messages.innerHTML;
+    _saveSessions();
     setStatus('idle', 'idle');
     // update mac dot + pool badge
     macDot.className = 'mac-dot' + (d.mac === 'connected' ? ' on' : '');
