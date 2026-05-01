@@ -8,6 +8,7 @@ One source of truth — no more drift.
 Docstrings ARE the tool descriptions the LLM sees on both paths. Edit
 docstrings here to change tool discoverability everywhere.
 """
+import os
 import re
 import datetime
 import subprocess
