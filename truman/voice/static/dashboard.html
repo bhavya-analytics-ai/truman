@@ -596,7 +596,8 @@ async function send() {
     status.remove();
     setStatus('error', 'error');
     setTimeout(() => setStatus('idle','idle'), 4000);
-    addMsg('truman', 'connection error — check railway is up', null);
+    console.error('[Truman] fetch error:', e);
+    addMsg('truman', 'server error — check the terminal', null);
   }
 }
 

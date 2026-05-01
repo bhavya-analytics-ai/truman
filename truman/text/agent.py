@@ -192,7 +192,7 @@ _TOOL_PATTERNS = [
     (re.compile(r"\b(search.*history|past conversation|what.*talk|history)\b", re.I), "search_history"),
     (re.compile(r"\b(recent conversation|last.*said|what.*said last|recent.*talk)\b", re.I), "recent_conversations"),
     (re.compile(r"\b(read.*file|show.*file|open.*file|read.*mac)\b", re.I), "read_mac_file"),
-    (re.compile(r"\b(list.*folder|list.*dir|what.*folder|browse.*folder|list.*file|what.*file|what.*desktop|show.*desktop|what.*on.*desktop|files.*on.*desktop|desktop.*files)\b", re.I), "list_mac_dir"),
+    (re.compile(r"\b(list.*folder|list.*dir|what.*folder|browse.*folder|list.*file|what.*file|what.*desktop|show.*desktop|what.*on.*desktop|files.*on.*desktop|desktop.*files|see.*desktop|access.*desktop|see.*my.*file|show.*my.*file|what.*in.*desktop)\b", re.I), "list_mac_dir"),
     (re.compile(r"\b(find.*file|search.*file|locate.*file)\b", re.I), "search_mac_files"),
     (re.compile(r"\b(write.*file|save.*file|create.*file)\b", re.I), "write_mac_file"),
     (re.compile(r"\b(what model|which model|show.*model|list.*model|model.*have|available model|model.*pool|show me.*model|what.*model.*have)\b", re.I), "list_models"),
