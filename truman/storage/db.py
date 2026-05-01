@@ -246,6 +246,16 @@ CREATE TABLE IF NOT EXISTS memory_repos (
     error       TEXT
 );
 
+-- ── User facts (cross-chat persistent memory about Om) ──────────────────────
+CREATE TABLE IF NOT EXISTS user_facts (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    fact        TEXT    NOT NULL,
+    importance  INTEGER NOT NULL DEFAULT 3,   -- 1 (low) to 5 (critical)
+    source      TEXT    NOT NULL DEFAULT 'manual',  -- manual | auto
+    created_at  REAL    NOT NULL,
+    last_used   REAL
+);
+
 -- ── Activity trace log ───────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS trace_events (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -795,6 +805,45 @@ def log_trace(session_id: str, turn_id: str, node: str, status: str,
                          (SELECT id FROM trace_events ORDER BY id DESC LIMIT 5000)""")
     except Exception:
         pass
+
+
+# ── User facts helpers ────────────────────────────────────────────────────────
+
+def save_fact(fact: str, importance: int = 3, source: str = "manual") -> int:
+    """Save a user fact. Returns new row id."""
+    with _conn() as c:
+        cur = c.execute(
+            "INSERT INTO user_facts (fact, importance, source, created_at) VALUES (?, ?, ?, ?)",
+            (fact.strip(), max(1, min(5, importance)), source, _time.time()),
+        )
+        return cur.lastrowid
+
+
+def get_top_facts(limit: int = 10) -> list[dict]:
+    """Top facts by importance + recency for system prompt injection."""
+    with _conn() as c:
+        rows = c.execute(
+            """SELECT id, fact, importance, source, created_at
+               FROM user_facts
+               ORDER BY importance DESC, created_at DESC
+               LIMIT ?""",
+            (limit,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_all_facts() -> list[dict]:
+    """All facts, newest first — for the memory panel."""
+    with _conn() as c:
+        rows = c.execute(
+            "SELECT id, fact, importance, source, created_at FROM user_facts ORDER BY id DESC"
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def delete_fact(fact_id: int) -> None:
+    with _conn() as c:
+        c.execute("DELETE FROM user_facts WHERE id = ?", (fact_id,))
 
 
 def get_trace_history(session_id: str = None, limit: int = 200) -> list[dict]:

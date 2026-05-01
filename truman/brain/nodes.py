@@ -460,9 +460,22 @@ def call_llm(state: TrumanState) -> dict:
 
         goals_ctx     = state.get("goals_context", "")
         curiosity_ctx = state.get("curiosity_context", "")
+
+        # load top user facts (cross-chat persistent memory about Om)
+        facts_ctx = ""
+        try:
+            from truman.storage.db import get_top_facts
+            facts = get_top_facts(10)
+            if facts:
+                lines = "\n".join(f"- {f['fact']}" for f in facts)
+                facts_ctx = f"\n\nWHAT YOU KNOW ABOUT OM (pinned facts):\n{lines}"
+        except Exception:
+            pass
+
         system_content = (
             SYSTEM + clock_line
             + (f"\n\nRelevant memory:\n{mem_ctx}" if mem_ctx else "")
+            + facts_ctx
             + (f"\n\n{goals_ctx}" if goals_ctx else "")
             + (f"\n\n{curiosity_ctx}" if curiosity_ctx else "")
             + last_session_ctx + mood_line + persona_reminder

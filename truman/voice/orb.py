@@ -269,6 +269,41 @@ def api_history():
         return jsonify({"turns": [], "error": str(e)})
 
 
+# ── User Facts ───────────────────────────────────────────────────────────────
+@app.route("/api/facts", methods=["GET"])
+def api_facts_get():
+    try:
+        from truman.storage import db
+        return jsonify({"facts": db.get_all_facts()})
+    except Exception as e:
+        return jsonify({"facts": [], "error": str(e)})
+
+@app.route("/api/facts", methods=["POST"])
+def api_facts_post():
+    try:
+        from truman.storage import db
+        from flask import request as freq
+        data = freq.get_json(force=True)
+        fact = (data.get("fact") or "").strip()
+        if not fact:
+            return jsonify({"error": "empty fact"}), 400
+        importance = int(data.get("importance", 3))
+        source = data.get("source", "manual")
+        fid = db.save_fact(fact, importance, source)
+        return jsonify({"id": fid, "ok": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/facts/<int:fact_id>", methods=["DELETE"])
+def api_facts_delete(fact_id):
+    try:
+        from truman.storage import db
+        db.delete_fact(fact_id)
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 # ── File Upload ───────────────────────────────────────────────────────────────
 TEXT_EXTS = {".py",".js",".ts",".html",".css",".json",".md",".txt",".csv",".xml",".yaml",".yml",".sh",".env"}
 IMAGE_EXTS = {".png",".jpg",".jpeg",".gif",".webp",".bmp",".tiff"}
