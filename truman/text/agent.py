@@ -340,7 +340,10 @@ def _run_legacy(user_input: str, mood: str = "", pool: str | None = None, sessio
         now_et = datetime.now(timezone(timedelta(hours=-4)))  # EDT fallback
     clock_line = f"\n\nCURRENT TIME: {now_et.strftime('%A, %b %d %Y, %I:%M %p ET')}"
     last_session_ctx = _last_session_str()
-    system_content = SYSTEM + clock_line + (f"\n\nRelevant memory:\n{mem_context}" if mem_context else "") + last_session_ctx + mood_line + persona_reminder
+    import os as _os
+    _runtime = "railway" if _os.environ.get("RAILWAY_ENVIRONMENT") else "local"
+    runtime_line = f"\n\nRUNTIME: {_runtime}. {'Mac files are accessible via tools.' if _runtime == 'local' else 'Mac files not accessible — running on Railway.'}"
+    system_content = SYSTEM + clock_line + runtime_line + (f"\n\nRelevant memory:\n{mem_context}" if mem_context else "") + last_session_ctx + mood_line + persona_reminder
 
     from truman.tools.all_tools import TOOLS
     tool_map = {t.name: t for t in TOOLS}
