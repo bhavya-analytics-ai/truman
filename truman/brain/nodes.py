@@ -143,10 +143,16 @@ def curiosity(state: TrumanState) -> dict:
 def detect_pool(state: TrumanState) -> dict:
     try:
         from truman.core.model_router import detect_pool as _detect_pool
+        from truman.text.agent import _detect_tool
 
         pool_hint = state.get("pool_hint")
         if pool_hint:
             return {"chosen_pool": pool_hint}
+
+        # file tools don't need big models — force fast
+        _FILE_TOOLS = {"list_mac_dir", "read_mac_file", "search_mac_files", "write_mac_file", "tree_mac_dir"}
+        if _detect_tool(state["user_input"]) in _FILE_TOOLS:
+            return {"chosen_pool": "fast"}
 
         chosen = _detect_pool(state["user_input"])
         return {"chosen_pool": chosen}

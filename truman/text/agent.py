@@ -11,7 +11,7 @@ Architecture:
 import re
 import time
 import json
-from collections import deque
+from collections import deque, defaultdict
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
@@ -20,6 +20,22 @@ from mem0 import MemoryClient
 from truman.core.config import MEM0_API_KEY, NVIDIA_API_KEY, NVIDIA_BASE_URL
 from truman.core.persona import SYSTEM
 from truman.core.model_router import detect_pool, get_session_model, short_label
+
+
+# ── Session tool result cache (last 3 results per session) ───────────────────
+_tool_cache: dict[str, deque] = defaultdict(lambda: deque(maxlen=3))
+
+def _cache_tool_result(session_id: str, tool_name: str, args: dict, result: str):
+    _tool_cache[session_id].append({"tool": tool_name, "args": args, "result": result})
+
+def _get_cached_tool_context(session_id: str) -> str:
+    entries = list(_tool_cache.get(session_id, []))
+    if not entries:
+        return ""
+    lines = ["RECENT TOOL RESULTS (use these before re-calling the same tool):"]
+    for e in entries:
+        lines.append(f"[{e['tool']}({e['args']})] → {e['result'][:500]}" + ("..." if len(e['result']) > 500 else ""))
+    return "\n".join(lines)
 
 
 def strip_markdown(text: str) -> str:
@@ -248,10 +264,17 @@ def _extract_arg(message: str, tool_name: str) -> dict:
     if tool_name == "pipeline_mode":
         return {"request": msg, "pool": detect_pool(msg)}
     if tool_name == "list_mac_dir":
-        # extract explicit path; default to ~/Desktop for "desktop" mentions, else home
-        path_m = re.search(r"(?:in|at|on|under|inside)\s+([\~/][\w/\.\-~ ]*)", msg, re.I)
+        # 1. absolute/home path explicitly mentioned
+        path_m = re.search(r"(~\/[\w/\.\-~ ]+|\/[\w/\.\-~ ]+)", msg, re.I)
         if path_m:
             return {"path": path_m.group(1).strip()}
+        # 2. "in <FolderName>" — bare folder name on desktop
+        folder_m = re.search(r"(?:in|inside|within|under|what(?:'s| is) in)\s+([A-Za-z][\w\s\-\.]{1,40}?)(?:\?|$|,|\bfolder\b|\bdir\b)", msg, re.I)
+        if folder_m:
+            folder = folder_m.group(1).strip().rstrip("?., ")
+            if folder.lower() not in ("my desktop", "desktop", "home", "mac", "laptop"):
+                return {"path": f"~/Desktop/{folder}"}
+        # 3. default
         if re.search(r"\bdesktop\b", msg, re.I):
             return {"path": "~/Desktop"}
         return {"path": "~"}
@@ -343,7 +366,9 @@ def _run_legacy(user_input: str, mood: str = "", pool: str | None = None, sessio
     import os as _os
     _runtime = "railway" if _os.environ.get("RAILWAY_ENVIRONMENT") else "local"
     runtime_line = f"\n\nRUNTIME: {_runtime}. {'Mac files are accessible via tools.' if _runtime == 'local' else 'Mac files not accessible — running on Railway.'}"
-    system_content = SYSTEM + clock_line + runtime_line + (f"\n\nRelevant memory:\n{mem_context}" if mem_context else "") + last_session_ctx + mood_line + persona_reminder
+    tool_cache_ctx = _get_cached_tool_context(session_id)
+    tool_cache_line = f"\n\n{tool_cache_ctx}" if tool_cache_ctx else ""
+    system_content = SYSTEM + clock_line + runtime_line + tool_cache_line + (f"\n\nRelevant memory:\n{mem_context}" if mem_context else "") + last_session_ctx + mood_line + persona_reminder
 
     from truman.tools.all_tools import TOOLS
     tool_map = {t.name: t for t in TOOLS}
@@ -357,6 +382,7 @@ def _run_legacy(user_input: str, mood: str = "", pool: str | None = None, sessio
             args = _extract_arg(user_input, tool_name)
             tool_result = tool_map[tool_name].invoke(args)
             tool_calls_made.append({"name": tool_name})
+            _cache_tool_result(session_id, tool_name, args, str(tool_result))
         except Exception as e:
             tool_result = f"tool error: {e}"
 
