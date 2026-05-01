@@ -479,10 +479,16 @@ function renderSessionBar() {
   });
 }
 
-function switchSession(i) {
+async function switchSession(i) {
   sessions[currentSession].msgs = messages.innerHTML;
   currentSession = i;
-  messages.innerHTML = sessions[i].msgs || '<div class="msg truman"><div class="bubble">yo. what\'s up?</div></div>';
+  if (sessions[i].msgs) {
+    messages.innerHTML = sessions[i].msgs;
+  } else {
+    messages.innerHTML = '<div class="msg truman"><div class="bubble">yo. what\'s up?</div></div>';
+    // try loading from SQLite for this session
+    await loadHistory(sessions[i].id);
+  }
   renderSessionBar();
   _saveSessions();
 }
@@ -524,11 +530,12 @@ checkMac();
 setInterval(checkMac, 10000);
 
 // ── Load history from SQLite ────────────────────────────────────────────────
-async function loadHistory() {
-  // if localStorage restored sessions, use them — skip SQLite fallback
+async function loadHistory(sessionId) {
+  // if localStorage restored sessions with messages, use them
   if (_stored && sessions[currentSession].msgs) return;
   try {
-    const r = await fetch('/api/history');
+    const sid = sessionId || currentSessionId();
+    const r = await fetch(`/api/history?session_id=${encodeURIComponent(sid)}`);
     const d = await r.json();
     if (d.turns && d.turns.length) {
       messages.innerHTML = '';

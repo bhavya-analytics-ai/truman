@@ -258,10 +258,12 @@ def api_events():
 
 @app.route("/api/history")
 def api_history():
-    """Return last 30 turns from SQLite for dashboard page-load restore."""
+    """Return turns from SQLite. If session_id passed, return only that session's turns."""
     try:
+        from flask import request as freq
         from truman.storage import db
-        turns = db.recent_turns(30)
+        sid = freq.args.get("session_id")
+        turns = db.session_turns(sid) if sid else db.recent_turns(30)
         return jsonify({"turns": turns})
     except Exception as e:
         return jsonify({"turns": [], "error": str(e)})
