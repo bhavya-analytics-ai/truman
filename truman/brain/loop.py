@@ -75,9 +75,13 @@ def run(user_input: str, session_id: str = "default", pool_hint: str = None) -> 
 
     t_start = time.time()
 
+    import uuid as _uuid
+    turn_id = str(_uuid.uuid4())[:8]
+
     initial_state: TrumanState = {
         "session_id":       session_id,
         "user_input":       user_input,
+        "turn_id":          turn_id,
         "pool_hint":        pool_hint,
         "mood":             "neutral",
         "memory_context":   "",

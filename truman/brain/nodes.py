@@ -7,13 +7,38 @@ import time
 from truman.brain.state import TrumanState
 
 
+# ── Trace helper ─────────────────────────────────────────────────────────────
+def _t(state: TrumanState, node: str, status: str,
+       summary: str = "", args: dict = None, result: str = None, duration_ms: int = None):
+    """Fire-and-forget trace event. Never raises."""
+    try:
+        import threading
+        from truman.storage.notifications import push_trace
+        threading.Thread(
+            target=push_trace,
+            kwargs=dict(
+                session_id=state.get("session_id", ""),
+                turn_id=state.get("turn_id", ""),
+                node=node, status=status, summary=summary,
+                args=args, result=result, duration_ms=duration_ms,
+            ),
+            daemon=True,
+        ).start()
+    except Exception:
+        pass
+
+
 # ── Node 1: classify_mood ─────────────────────────────────────────────────────
 def classify_mood(state: TrumanState) -> dict:
+    _t(state, "classify_mood", "start", summary=f'"{state["user_input"][:60]}"')
+    t0 = time.time()
     try:
         from truman.text.agent import _classify_mood
         mood = _classify_mood(state["user_input"])
+        _t(state, "classify_mood", "end", summary=f"mood → {mood}", duration_ms=int((time.time()-t0)*1000))
         return {"mood": mood}
     except Exception as e:
+        _t(state, "classify_mood", "error", summary=str(e))
         errs = dict(state.get("node_errors") or {})
         errs["classify_mood"] = str(e)
         return {"mood": "neutral", "node_errors": errs}
@@ -27,28 +52,32 @@ def concept_lookup(state: TrumanState) -> dict:
     Also fires a background ingest of the current input to grow the graph.
     """
     import os
+    t0 = time.time()
     if os.environ.get("ENABLE_COGNEE", "1") != "1":
+        _t(state, "concept_lookup", "end", summary="skipped (disabled)")
         return {}
-    # skip Cognee search for short/casual messages — saves 1-3s per turn
     _ui = state["user_input"].strip()
     _GREETINGS = {"yo", "hey", "hi", "sup", "what's up", "whats up", "yoo", "heyy", "wassup"}
     _FILE_TOOLS = {"list_mac_dir", "read_mac_file", "search_mac_files", "write_mac_file"}
     from truman.text.agent import _detect_tool
     if len(_ui) < 50 or _ui.lower().rstrip("!?.") in _GREETINGS or _detect_tool(_ui) in _FILE_TOOLS:
+        _t(state, "concept_lookup", "end", summary="skipped (short/greeting/file tool)")
         return {}
+    _t(state, "concept_lookup", "start", summary="searching concept graph")
     try:
         from truman.brain.concepts import search_sync, ingest_background
-        # search existing graph
         concept_ctx = search_sync(state["user_input"], top_k=4)
-        # grow graph in background (non-blocking)
         ingest_background(state["user_input"])
+        ms = int((time.time()-t0)*1000)
         if concept_ctx:
-            # append to memory context
             existing = state.get("memory_context", "")
             combined = f"{existing}\n\nCONCEPT GRAPH:\n{concept_ctx}" if existing else f"CONCEPT GRAPH:\n{concept_ctx}"
+            _t(state, "concept_lookup", "end", summary="found concept context", result=concept_ctx[:200], duration_ms=ms)
             return {"memory_context": combined}
+        _t(state, "concept_lookup", "end", summary="no concept matches", duration_ms=ms)
         return {}
     except Exception as e:
+        _t(state, "concept_lookup", "error", summary=str(e))
         errs = dict(state.get("node_errors") or {})
         errs["concept_lookup"] = str(e)
         return {"node_errors": errs}
@@ -56,19 +85,25 @@ def concept_lookup(state: TrumanState) -> dict:
 
 # ── Node 3: load_memory (Mem0 facts) ─────────────────────────────────────────
 def load_memory(state: TrumanState) -> dict:
-    # skip Mem0 (remote API, 1-5s) for short/casual messages or file tool requests
+    t0 = time.time()
     _ui = state["user_input"].strip()
     _GREETINGS = {"yo", "hey", "hi", "sup", "what's up", "whats up", "yoo", "heyy", "wassup"}
     _FILE_TOOLS = {"list_mac_dir", "read_mac_file", "search_mac_files", "write_mac_file"}
     from truman.text.agent import _detect_tool
     if len(_ui) < 50 or _ui.lower().rstrip("!?.") in _GREETINGS or _detect_tool(_ui) in _FILE_TOOLS:
+        _t(state, "load_memory", "end", summary="skipped (short/greeting/file tool)")
         return {"memory_context": ""}
+    _t(state, "load_memory", "start", summary="searching Mem0")
     try:
         from truman.text.agent import mem_search
         results = mem_search(state["user_input"])
         ctx = "\n".join([r["memory"] for r in results[:5]]) if results else ""
+        ms = int((time.time()-t0)*1000)
+        summary = f"{len(results)} mem0 facts loaded" if results else "no mem0 matches"
+        _t(state, "load_memory", "end", summary=summary, result=ctx[:200] if ctx else None, duration_ms=ms)
         return {"memory_context": ctx}
     except Exception as e:
+        _t(state, "load_memory", "error", summary=str(e))
         errs = dict(state.get("node_errors") or {})
         errs["load_memory"] = str(e)
         return {"memory_context": "", "node_errors": errs}
@@ -81,12 +116,17 @@ def load_goals(state: TrumanState) -> dict:
     Runs only if ENABLE_GOALS=1. Fails soft — empty string if anything breaks.
     """
     import os
+    t0 = time.time()
     if os.environ.get("ENABLE_GOALS", "1") != "1":
+        _t(state, "load_goals", "end", summary="skipped (disabled)")
         return {"goals_context": ""}
+    _t(state, "load_goals", "start", summary="loading active goals")
     try:
         from truman.storage.db import get_active_goals
         goals = get_active_goals(limit=3)
+        ms = int((time.time()-t0)*1000)
         if not goals:
+            _t(state, "load_goals", "end", summary="no active goals", duration_ms=ms)
             return {"goals_context": ""}
         lines = ["ACTIVE GOALS:"]
         for g in goals:
@@ -94,8 +134,11 @@ def load_goals(state: TrumanState) -> dict:
             if g.get("description"):
                 line += f": {g['description']}"
             lines.append(line)
-        return {"goals_context": "\n".join(lines)}
+        ctx = "\n".join(lines)
+        _t(state, "load_goals", "end", summary=f"{len(goals)} goals loaded", result=ctx, duration_ms=ms)
+        return {"goals_context": ctx}
     except Exception as e:
+        _t(state, "load_goals", "error", summary=str(e))
         errs = dict(state.get("node_errors") or {})
         errs["load_goals"] = str(e)
         return {"goals_context": "", "node_errors": errs}
@@ -110,30 +153,38 @@ def curiosity(state: TrumanState) -> dict:
     Fails soft — graph continues without it.
     """
     import os
+    t0 = time.time()
     if os.environ.get("ENABLE_CURIOSITY", "1") != "1":
+        _t(state, "curiosity", "end", summary="skipped (disabled)")
         return {"curiosity_context": ""}
     goals_ctx = state.get("goals_context", "")
     if not goals_ctx:
+        _t(state, "curiosity", "end", summary="skipped (no active goals)")
         return {"curiosity_context": ""}
-    # skip for short/casual messages or file tool requests
     _ui = state["user_input"].strip()
     _FILE_TOOLS = {"list_mac_dir", "read_mac_file", "search_mac_files", "write_mac_file"}
     from truman.text.agent import _detect_tool
     if len(_ui) < 50 or _detect_tool(_ui) in _FILE_TOOLS:
+        _t(state, "curiosity", "end", summary="skipped (short/file tool)")
         return {"curiosity_context": ""}
+    _t(state, "curiosity", "start", summary="searching concept graph for goal context")
     try:
         from truman.brain.concepts import search_sync
-        # extract goal titles from "ACTIVE GOALS:\n- title: desc\n..." format
         lines = [l.lstrip("- ").split(":")[0].strip()
                  for l in goals_ctx.splitlines() if l.startswith("-")]
         if not lines:
+            _t(state, "curiosity", "end", summary="no goal titles parsed")
             return {"curiosity_context": ""}
-        query = " ".join(lines[:2])   # top 2 goals as search query
+        query = " ".join(lines[:2])
         result = search_sync(query, top_k=3)
+        ms = int((time.time()-t0)*1000)
         if not result:
+            _t(state, "curiosity", "end", summary="no concept matches for goals", duration_ms=ms)
             return {"curiosity_context": ""}
+        _t(state, "curiosity", "end", summary="curiosity context found", result=result[:200], duration_ms=ms)
         return {"curiosity_context": f"CURIOSITY (concept graph on your goals):\n{result}"}
     except Exception as e:
+        _t(state, "curiosity", "error", summary=str(e))
         errs = dict(state.get("node_errors") or {})
         errs["curiosity"] = str(e)
         return {"curiosity_context": "", "node_errors": errs}
@@ -141,22 +192,26 @@ def curiosity(state: TrumanState) -> dict:
 
 # ── Node 3: detect_pool ───────────────────────────────────────────────────────
 def detect_pool(state: TrumanState) -> dict:
+    t0 = time.time()
     try:
         from truman.core.model_router import detect_pool as _detect_pool
         from truman.text.agent import _detect_tool
 
         pool_hint = state.get("pool_hint")
         if pool_hint:
+            _t(state, "detect_pool", "end", summary=f"pool → {pool_hint} (hint)", duration_ms=int((time.time()-t0)*1000))
             return {"chosen_pool": pool_hint}
 
-        # file tools don't need big models — force fast
         _FILE_TOOLS = {"list_mac_dir", "read_mac_file", "search_mac_files", "write_mac_file", "tree_mac_dir"}
         if _detect_tool(state["user_input"]) in _FILE_TOOLS:
+            _t(state, "detect_pool", "end", summary="pool → fast (file tool)", duration_ms=int((time.time()-t0)*1000))
             return {"chosen_pool": "fast"}
 
         chosen = _detect_pool(state["user_input"])
+        _t(state, "detect_pool", "end", summary=f"pool → {chosen}", duration_ms=int((time.time()-t0)*1000))
         return {"chosen_pool": chosen}
     except Exception as e:
+        _t(state, "detect_pool", "error", summary=str(e))
         errs = dict(state.get("node_errors") or {})
         errs["detect_pool"] = str(e)
         return {"chosen_pool": "general", "node_errors": errs}
@@ -164,11 +219,15 @@ def detect_pool(state: TrumanState) -> dict:
 
 # ── Node 4: detect_tool ───────────────────────────────────────────────────────
 def detect_tool(state: TrumanState) -> dict:
+    t0 = time.time()
     try:
         from truman.text.agent import _detect_tool
         tool = _detect_tool(state["user_input"])
+        summary = f"tool → {tool}" if tool else "no tool detected"
+        _t(state, "detect_tool", "end", summary=summary, duration_ms=int((time.time()-t0)*1000))
         return {"tool_name": tool}
     except Exception as e:
+        _t(state, "detect_tool", "error", summary=str(e))
         errs = dict(state.get("node_errors") or {})
         errs["detect_tool"] = str(e)
         return {"tool_name": None, "node_errors": errs}
@@ -189,7 +248,9 @@ def risk_gate(state: TrumanState) -> dict:
     ENABLE_RISK_GATE=1 kill switch.
     """
     import os
+    t0 = time.time()
     if os.environ.get("ENABLE_RISK_GATE", "1") != "1":
+        _t(state, "risk_gate", "end", summary="skipped (disabled)")
         return {"risk_tier": "safe", "awaiting_confirm": False}
     try:
         from truman.storage.db import (
@@ -262,8 +323,10 @@ def risk_gate(state: TrumanState) -> dict:
                 "tool_result":       f"[risk gate] about to run {preview}. say 'do it' to confirm or 'cancel'",
             }
 
+        _t(state, "risk_gate", "end", summary=f"tier → {tier}", duration_ms=int((time.time()-t0)*1000))
         return {"risk_tier": tier, "awaiting_confirm": False, "pending_action_id": None}
     except Exception as e:
+        _t(state, "risk_gate", "error", summary=str(e))
         errs = dict(state.get("node_errors") or {})
         errs["risk_gate"] = str(e)
         return {"risk_tier": "safe", "awaiting_confirm": False, "node_errors": errs}
@@ -278,12 +341,15 @@ def route_skill(state: TrumanState) -> dict:
     Runs before execute_tool — skill result takes priority.
     """
     import os
+    t0 = time.time()
     if os.environ.get("ENABLE_MCP", "1") != "1":
+        _t(state, "route_skill", "end", summary="skipped (MCP disabled)")
         return {"skill_name": None}
     try:
         from truman.skills.registry import detect_skill, route
         skill_name, tool_name = detect_skill(state["user_input"])
         if not skill_name:
+            _t(state, "route_skill", "end", summary="no skill match", duration_ms=int((time.time()-t0)*1000))
             return {"skill_name": None}
         result = route(skill_name, tool_name, state["user_input"])
         # log skill invocation to events drawer (sync skill calls only;
@@ -307,12 +373,16 @@ def route_skill(state: TrumanState) -> dict:
             ).start()
         except Exception:
             pass
+        ms = int((time.time()-t0)*1000)
+        _t(state, "route_skill", "end", summary=f"skill → {skill_name}.{tool_name}",
+           result=str(result)[:200], duration_ms=ms)
         return {
             "skill_name":      skill_name,
             "tool_result":     result,
             "tool_calls_made": [{"name": f"{skill_name}.{tool_name}"}],
         }
     except Exception as e:
+        _t(state, "route_skill", "error", summary=str(e))
         errs = dict(state.get("node_errors") or {})
         errs["route_skill"] = str(e)
         return {"skill_name": None, "node_errors": errs}
@@ -320,25 +390,30 @@ def route_skill(state: TrumanState) -> dict:
 
 # ── Node 5: execute_tool ──────────────────────────────────────────────────────
 def execute_tool(state: TrumanState) -> dict:
-    # If a skill already handled the request, don't run a legacy tool on top
-    # (would clobber tool_result and tool_calls_made set by route_skill)
+    t0 = time.time()
     if state.get("skill_name"):
+        _t(state, "execute_tool", "end", summary="skipped (skill handled)")
         return {}
-    # risk_gate blocked OR confirmed — tool_calls_made already set, don't overwrite
     if state.get("tool_calls_made") or state.get("awaiting_confirm"):
+        _t(state, "execute_tool", "end", summary="skipped (risk gate handled)")
         return {}
     tool_name = state.get("tool_name")
     if not tool_name:
+        _t(state, "execute_tool", "end", summary="no tool to run")
         return {"tool_result": None, "tool_calls_made": []}
+    _t(state, "execute_tool", "start", summary=f"running {tool_name}", args={"tool": tool_name})
     try:
         from truman.tools.all_tools import TOOLS
         from truman.text.agent import _extract_arg
         tool_map = {t.name: t for t in TOOLS}
         if tool_name not in tool_map:
+            _t(state, "execute_tool", "error", summary=f"tool {tool_name} not found")
             return {"tool_result": None, "tool_calls_made": []}
         args = _extract_arg(state["user_input"], tool_name)
         result = tool_map[tool_name].invoke(args)
-        # confirmation toast → dashboard
+        ms = int((time.time()-t0)*1000)
+        _t(state, "execute_tool", "end", summary=f"{tool_name} completed",
+           args=args, result=str(result)[:300], duration_ms=ms)
         try:
             from truman.storage.notifications import push as _push
             _push(f"✓ {tool_name} — {str(result)[:80]}", kind="toast")
@@ -349,6 +424,7 @@ def execute_tool(state: TrumanState) -> dict:
             "tool_calls_made": [{"name": tool_name}],
         }
     except Exception as e:
+        _t(state, "execute_tool", "error", summary=str(e))
         errs = dict(state.get("node_errors") or {})
         errs["execute_tool"] = str(e)
         return {"tool_result": f"tool error: {e}", "tool_calls_made": [], "node_errors": errs}
@@ -415,6 +491,9 @@ def call_llm(state: TrumanState) -> dict:
         import re as _re
         from truman.text.agent import strip_markdown
         from truman.core.model_router import run_with_pool
+        _t(state, "call_llm", "start", summary=f"calling {state.get('chosen_pool','general')} pool",
+           args={"pool": state.get("chosen_pool","general"), "tool_result": bool(tool_result)})
+        t0 = time.time()
         result = run_with_pool(messages, pool=state.get("chosen_pool", "general"), user_message=user_input)
         raw = result["content"]
         model_label = result["model"]
@@ -432,8 +511,12 @@ def call_llm(state: TrumanState) -> dict:
         if len(chat_history) > 32:
             _chat_histories[session_id] = chat_history[-32:]
 
+        ms = int((time.time()-t0)*1000)
+        _t(state, "call_llm", "end", summary=f"{model_label} → {len(response)} chars",
+           result=response[:200], duration_ms=ms)
         return {"response": response, "model_label": model_label}
     except Exception as e:
+        _t(state, "call_llm", "error", summary=str(e))
         errs = dict(state.get("node_errors") or {})
         errs["call_llm"] = str(e)
         return {"response": "", "model_label": "none", "node_errors": errs, "fatal_error": str(e)}
@@ -441,6 +524,7 @@ def call_llm(state: TrumanState) -> dict:
 
 # ── Node 7: save_memory ───────────────────────────────────────────────────────
 def save_memory(state: TrumanState) -> dict:
+    _t(state, "save_memory", "start", summary="saving turn to Mem0 (background)")
     try:
         import threading
         from truman.text.agent import _mem_add_smart
@@ -449,7 +533,9 @@ def save_memory(state: TrumanState) -> dict:
             args=(state["user_input"], state.get("response", "")),
             daemon=True,
         ).start()
+        _t(state, "save_memory", "end", summary="queued to Mem0")
     except Exception as e:
+        _t(state, "save_memory", "error", summary=str(e))
         errs = dict(state.get("node_errors") or {})
         errs["save_memory"] = str(e)
         return {"node_errors": errs}

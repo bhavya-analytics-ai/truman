@@ -246,6 +246,20 @@ CREATE TABLE IF NOT EXISTS memory_repos (
     error       TEXT
 );
 
+-- ── Activity trace log ───────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS trace_events (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts          REAL    NOT NULL,           -- unix timestamp (float)
+    session_id  TEXT    NOT NULL,
+    turn_id     TEXT    NOT NULL,           -- groups events per chat turn
+    node        TEXT    NOT NULL,           -- e.g. detect_tool, call_llm
+    status      TEXT    NOT NULL,           -- start | end | error
+    duration_ms INTEGER,                   -- only on 'end'
+    summary     TEXT,                      -- one-line human-readable summary
+    args_json   TEXT,                      -- JSON: input args / params
+    result_json TEXT                       -- JSON: output preview
+);
+
 -- ── Unified timeline view (all memory types in one query) ─────────────────────
 CREATE VIEW IF NOT EXISTS memory_all AS
     SELECT id, ts, date, source, 'turn'       AS kind, content  AS body FROM turns
@@ -751,3 +765,59 @@ def log_tool_call(
             "INSERT INTO tool_calls(session_id, name, args, result, ts) VALUES (?, ?, ?, ?, ?)",
             (session_id, name, args_json, result_str, _now()),
         )
+
+
+# ── Trace event helpers ───────────────────────────────────────────────────────
+
+def log_trace(session_id: str, turn_id: str, node: str, status: str,
+              summary: str = "", args: Any = None, result: Any = None,
+              duration_ms: int = None) -> None:
+    """Save a brain node trace event to SQLite."""
+    import time as _time
+    try:
+        args_json   = json.dumps(args,   default=str) if args   is not None else None
+        result_json = json.dumps(result, default=str) if result is not None else None
+    except Exception:
+        args_json   = str(args)   if args   is not None else None
+        result_json = str(result) if result is not None else None
+    try:
+        with _conn() as c:
+            c.execute(
+                """INSERT INTO trace_events
+                   (ts, session_id, turn_id, node, status, duration_ms, summary, args_json, result_json)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (_time.time(), session_id, turn_id, node, status,
+                 duration_ms, summary[:300] if summary else None,
+                 args_json, result_json),
+            )
+            # keep last 5000 trace rows
+            c.execute("""DELETE FROM trace_events WHERE id NOT IN
+                         (SELECT id FROM trace_events ORDER BY id DESC LIMIT 5000)""")
+    except Exception:
+        pass
+
+
+def get_trace_history(session_id: str = None, limit: int = 200) -> list[dict]:
+    """Fetch recent trace events, optionally filtered by session."""
+    try:
+        with _conn() as c:
+            if session_id:
+                rows = c.execute(
+                    """SELECT id, ts, session_id, turn_id, node, status,
+                              duration_ms, summary, args_json, result_json
+                       FROM trace_events WHERE session_id = ?
+                       ORDER BY id DESC LIMIT ?""",
+                    (session_id, limit),
+                ).fetchall()
+            else:
+                rows = c.execute(
+                    """SELECT id, ts, session_id, turn_id, node, status,
+                              duration_ms, summary, args_json, result_json
+                       FROM trace_events ORDER BY id DESC LIMIT ?""",
+                    (limit,),
+                ).fetchall()
+        cols = ["id","ts","session_id","turn_id","node","status",
+                "duration_ms","summary","args_json","result_json"]
+        return [dict(zip(cols, r)) for r in reversed(rows)]
+    except Exception:
+        return []

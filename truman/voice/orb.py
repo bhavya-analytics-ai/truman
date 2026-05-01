@@ -228,6 +228,20 @@ def api_stream():
     )
 
 
+@app.route("/api/trace")
+def api_trace():
+    """Return persisted trace history (brain node events) for the activity panel."""
+    from flask import request as freq
+    try:
+        from truman.storage.db import get_trace_history
+        session_id = freq.args.get("session_id")
+        limit = int(freq.args.get("limit", 300))
+        rows = get_trace_history(session_id=session_id, limit=limit)
+        return jsonify(rows)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/api/events")
 def api_events():
     """Return last 100 events from DB events table (persisted ring buffer)."""

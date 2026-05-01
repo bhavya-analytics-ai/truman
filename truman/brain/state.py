@@ -10,6 +10,7 @@ class TrumanState(TypedDict):
     # ── Input ────────────────────────────────────────────────────────────────
     session_id:      str
     user_input:      str
+    turn_id:         str             # unique ID per chat turn (groups trace events)
     pool_hint:       Optional[str]   # explicit pool from caller (file upload etc)
 
     # ── Produced by nodes ────────────────────────────────────────────────────
