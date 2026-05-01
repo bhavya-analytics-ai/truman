@@ -152,6 +152,8 @@ def search(query: str, top_k: int = 5) -> list[str]:
 
 def ingest_background(text: str, dataset: str = "truman") -> None:
     """Fire-and-forget ingest — doesn't block the brain loop."""
+    if os.environ.get("ENABLE_COGNEE", "1") != "1":
+        return
     threading.Thread(target=ingest, args=(text, dataset), daemon=True).start()
 
 
@@ -161,6 +163,8 @@ def search_sync(query: str, top_k: int = 5) -> str:
     If query mentions a known repo name, scopes search to that repo's dataset first,
     then falls back to global search if no results.
     """
+    if os.environ.get("ENABLE_COGNEE", "1") != "1":
+        return ""
     # Per-repo scoping: if a repo name appears in the query, search that dataset first
     scoped = _scoped_search(query, top_k)
     if scoped:
