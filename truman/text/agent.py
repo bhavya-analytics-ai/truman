@@ -192,7 +192,7 @@ _TOOL_PATTERNS = [
     (re.compile(r"\b(search.*history|past conversation|what.*talk|history)\b", re.I), "search_history"),
     (re.compile(r"\b(recent conversation|last.*said|what.*said last|recent.*talk)\b", re.I), "recent_conversations"),
     (re.compile(r"\b(read.*file|show.*file|open.*file|read.*mac)\b", re.I), "read_mac_file"),
-    (re.compile(r"\b(list.*folder|list.*dir|what.*folder|browse.*folder)\b", re.I), "list_mac_dir"),
+    (re.compile(r"\b(list.*folder|list.*dir|what.*folder|browse.*folder|list.*file|what.*file|what.*desktop|show.*desktop|what.*on.*desktop|files.*on.*desktop|desktop.*files)\b", re.I), "list_mac_dir"),
     (re.compile(r"\b(find.*file|search.*file|locate.*file)\b", re.I), "search_mac_files"),
     (re.compile(r"\b(write.*file|save.*file|create.*file)\b", re.I), "write_mac_file"),
     (re.compile(r"\b(what model|which model|show.*model|list.*model|model.*have|available model|model.*pool|show me.*model|what.*model.*have)\b", re.I), "list_models"),
@@ -247,8 +247,17 @@ def _extract_arg(message: str, tool_name: str) -> dict:
         return {"model_slug": m.group(1) if m else msg}
     if tool_name == "pipeline_mode":
         return {"request": msg, "pool": detect_pool(msg)}
-    if tool_name in ("read_mac_file", "list_mac_dir", "search_mac_files", "write_mac_file"):
+    if tool_name == "list_mac_dir":
+        # extract explicit path; default to ~/Desktop for "desktop" mentions, else home
+        path_m = re.search(r"(?:in|at|on|under|inside)\s+([\~/][\w/\.\-~ ]*)", msg, re.I)
+        if path_m:
+            return {"path": path_m.group(1).strip()}
+        if re.search(r"\bdesktop\b", msg, re.I):
+            return {"path": "~/Desktop"}
         return {"path": "~"}
+    if tool_name in ("read_mac_file", "search_mac_files", "write_mac_file"):
+        path_m = re.search(r"(?:file|path|at|in|under)?\s*([\~/][\w/\.\-~]+)", msg, re.I)
+        return {"path": path_m.group(1).strip() if path_m else "~"}
     if tool_name == "concept_search":
         q = re.sub(r"^(concept|how does|explain|what.*strategy)\s*", "", msg, flags=re.I).strip()
         return {"query": q or msg}

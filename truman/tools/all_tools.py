@@ -204,9 +204,62 @@ def recent_conversations(n: int = 10) -> str:
     return "\n".join(lines)
 
 
+def _is_local() -> bool:
+    """True when running on Om's Mac directly (not Railway)."""
+    return not os.environ.get("RAILWAY_ENVIRONMENT")
+
+
+def _local_read_file(path: str) -> str:
+    from pathlib import Path
+    p = Path(path).expanduser()
+    if not p.exists():
+        return f"Error: no file at {path}"
+    content = p.read_text(errors="replace")
+    if len(content) > 50_000:
+        content = content[:50_000] + "\n\n[truncated at 50k chars]"
+    return content
+
+
+def _local_list_dir(path: str = "~") -> str:
+    from pathlib import Path
+    p = Path(path).expanduser()
+    if not p.exists():
+        return f"Error: no directory at {path}"
+    entries = sorted(p.iterdir(), key=lambda e: (e.is_file(), e.name))
+    lines = []
+    for e in entries[:300]:
+        kind = "file" if e.is_file() else "dir "
+        size = f" ({e.stat().st_size:,}b)" if e.is_file() else ""
+        lines.append(f"{kind}  {e.name}{size}")
+    if len(list(p.iterdir())) > 300:
+        lines.append("... (truncated at 300 entries)")
+    return "\n".join(lines) or "(empty)"
+
+
+def _local_search_files(root: str, pattern: str) -> str:
+    from pathlib import Path
+    p = Path(root).expanduser()
+    if not p.exists():
+        return f"Error: no directory at {root}"
+    matches = list(p.rglob(pattern))[:50]
+    if not matches:
+        return f"no files matching '{pattern}' under {root}"
+    return "\n".join(str(m) for m in matches)
+
+
+def _local_write_file(path: str, content: str) -> str:
+    from pathlib import Path
+    p = Path(path).expanduser()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(content)
+    return f"written {len(content)} chars to {p}"
+
+
 @tool
 def read_mac_file(path: str) -> str:
     """Read a file from Om's Mac. Use when Om says 'show me that file', 'read X', or references a file on his laptop. Path can be absolute or use ~."""
+    if _is_local():
+        return _local_read_file(path)
     from truman.voice.orb import mac_request
     result = mac_request("read_file", {"path": path})
     return result.get("result") if result.get("ok") else f"Error: {result.get('error')}"
@@ -215,6 +268,8 @@ def read_mac_file(path: str) -> str:
 @tool
 def list_mac_dir(path: str = "~") -> str:
     """List files and folders in a directory on Om's Mac. Use when Om asks what's in a folder or wants to browse his files."""
+    if _is_local():
+        return _local_list_dir(path)
     from truman.voice.orb import mac_request
     result = mac_request("list_dir", {"path": path})
     return result.get("result") if result.get("ok") else f"Error: {result.get('error')}"
@@ -223,6 +278,8 @@ def list_mac_dir(path: str = "~") -> str:
 @tool
 def search_mac_files(root: str, pattern: str) -> str:
     """Search for files matching a pattern on Om's Mac (e.g. pattern='*.py', root='~/Desktop/friday'). Use when Om asks to find a file."""
+    if _is_local():
+        return _local_search_files(root, pattern)
     from truman.voice.orb import mac_request
     result = mac_request("search_files", {"root": root, "pattern": pattern})
     return result.get("result") if result.get("ok") else f"Error: {result.get('error')}"
@@ -231,6 +288,8 @@ def search_mac_files(root: str, pattern: str) -> str:
 @tool
 def write_mac_file(path: str, content: str) -> str:
     """Write or create a file on Om's Mac. Use when Om says 'save this', 'create a file', 'write this to my desktop/notes/etc'. iCloud syncs it to his phone automatically. Path supports ~ for home dir."""
+    if _is_local():
+        return _local_write_file(path, content)
     from truman.voice.orb import mac_request
     result = mac_request("write_file", {"path": path, "content": content})
     return result.get("result") if result.get("ok") else f"Error: {result.get('error')}"
