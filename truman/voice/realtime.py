@@ -321,7 +321,12 @@ async def _handle_events(ws):
             orb.set_state(orb.LISTENING)
 
         elif etype == "error":
-            print(f"[Realtime Error] {event.get('error', event)}")
+            err = event.get("error", event)
+            # suppress harmless barge-in noise (cancel fired when nothing was playing)
+            if isinstance(err, dict) and err.get("code") == "response_cancel_not_active":
+                pass
+            else:
+                print(f"[Realtime Error] {err}")
 
 
 # ── Session config ────────────────────────────────────────────────────────────
