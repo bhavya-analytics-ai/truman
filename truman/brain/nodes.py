@@ -32,7 +32,9 @@ def concept_lookup(state: TrumanState) -> dict:
     # skip Cognee search for short/casual messages — saves 1-3s per turn
     _ui = state["user_input"].strip()
     _GREETINGS = {"yo", "hey", "hi", "sup", "what's up", "whats up", "yoo", "heyy", "wassup"}
-    if len(_ui) < 20 or _ui.lower().rstrip("!?.") in _GREETINGS:
+    _FILE_TOOLS = {"list_mac_dir", "read_mac_file", "search_mac_files", "write_mac_file"}
+    from truman.text.agent import _detect_tool
+    if len(_ui) < 50 or _ui.lower().rstrip("!?.") in _GREETINGS or _detect_tool(_ui) in _FILE_TOOLS:
         return {}
     try:
         from truman.brain.concepts import search_sync, ingest_background
@@ -54,10 +56,12 @@ def concept_lookup(state: TrumanState) -> dict:
 
 # ── Node 3: load_memory (Mem0 facts) ─────────────────────────────────────────
 def load_memory(state: TrumanState) -> dict:
-    # skip Mem0 (remote API, 1-5s) for short/casual messages
+    # skip Mem0 (remote API, 1-5s) for short/casual messages or file tool requests
     _ui = state["user_input"].strip()
     _GREETINGS = {"yo", "hey", "hi", "sup", "what's up", "whats up", "yoo", "heyy", "wassup"}
-    if len(_ui) < 20 or _ui.lower().rstrip("!?.") in _GREETINGS:
+    _FILE_TOOLS = {"list_mac_dir", "read_mac_file", "search_mac_files", "write_mac_file"}
+    from truman.text.agent import _detect_tool
+    if len(_ui) < 50 or _ui.lower().rstrip("!?.") in _GREETINGS or _detect_tool(_ui) in _FILE_TOOLS:
         return {"memory_context": ""}
     try:
         from truman.text.agent import mem_search
@@ -111,9 +115,11 @@ def curiosity(state: TrumanState) -> dict:
     goals_ctx = state.get("goals_context", "")
     if not goals_ctx:
         return {"curiosity_context": ""}
-    # skip for short/casual messages
+    # skip for short/casual messages or file tool requests
     _ui = state["user_input"].strip()
-    if len(_ui) < 20:
+    _FILE_TOOLS = {"list_mac_dir", "read_mac_file", "search_mac_files", "write_mac_file"}
+    from truman.text.agent import _detect_tool
+    if len(_ui) < 50 or _detect_tool(_ui) in _FILE_TOOLS:
         return {"curiosity_context": ""}
     try:
         from truman.brain.concepts import search_sync
