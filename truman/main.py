@@ -33,6 +33,10 @@ def main():
     # silence Flask's dev-server banner + suppress pyobjc/cython stderr leaks
     import logging as _lg
     _lg.getLogger("werkzeug").setLevel(_lg.ERROR)
+    # silence cognee's structlog output (it bypasses warnings module)
+    for _noisy in ("cognee", "cognee.shared.logging_utils", "GraphCompletionRetriever",
+                   "cognee.infrastructure", "cognee.modules", "structlog"):
+        _lg.getLogger(_noisy).setLevel(_lg.CRITICAL)
 
     # redirect stdout + stderr to swallow library noise + module boot prints.
     # restored before the clean summary so user only sees the labeled banner.

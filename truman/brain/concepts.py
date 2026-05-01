@@ -15,8 +15,14 @@ Embeddings: OpenAI (we already pay, cost is near-zero at this scale)
 Storage: truman/data/cognee/
 """
 import asyncio
+import logging
 import os
 import threading
+
+# silence cognee's verbose structlog output before any cognee import
+for _lg_name in ("cognee", "cognee.shared.logging_utils", "GraphCompletionRetriever",
+                  "cognee.infrastructure", "cognee.modules"):
+    logging.getLogger(_lg_name).setLevel(logging.CRITICAL)
 
 # ── Paths ──────────────────────────────────────────────────────────────────────
 _DATA_DIR = os.path.join(
