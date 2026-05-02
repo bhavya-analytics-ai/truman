@@ -164,13 +164,23 @@ def start_proactive_push(agent_fn):
                 if (now.hour == brief_h and now.minute <= 2
                         and _fired.get("morning") != today):
                     _fired["morning"] = today
-                    prompt = (
-                        f"It's {now.strftime('%A, %B %d')} at {now.strftime('%I:%M %p')} ET. "
-                        "Give Om a quick morning brief — what day it is, top active goals "
-                        "(pull from memory), and one thing he should focus on today. "
-                        "3 sentences max, casual, no fluff."
-                    )
-                    _push(_llm(prompt))
+                    # Try HTML email first; fall back to SSE push
+                    email_sent = False
+                    if os.environ.get("ENABLE_MORNING_EMAIL", "1") == "1":
+                        try:
+                            from truman.voice.email_digest import send_morning_brief
+                            email_sent = send_morning_brief()
+                        except Exception as e:
+                            print(f"[Proactive] email send error: {e}")
+                    if not email_sent:
+                        # fallback: SSE push to dashboard
+                        prompt = (
+                            f"It's {now.strftime('%A, %B %d')} at {now.strftime('%I:%M %p')} ET. "
+                            "Give Om a quick morning brief — what day it is, top active goals "
+                            "(pull from memory), and one thing he should focus on today. "
+                            "3 sentences max, casual, no fluff."
+                        )
+                        _push(_llm(prompt))
 
                 # ── b. Idle nudge — 4hr silence, skip quiet hours ─────────────
                 idle_hrs = (time.time() - _last_interaction) / 3600

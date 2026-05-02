@@ -73,7 +73,16 @@ _os.environ.setdefault("ENABLE_MCP_GITHUB",  "1")
 _os.environ.setdefault("ENABLE_GOALS",       "1")
 _os.environ.setdefault("ENABLE_CURIOSITY",   "1")
 _os.environ.setdefault("ENABLE_RISK_GATE",   "1")
-_os.environ.setdefault("ENABLE_PROACTIVE",   "1")
+_os.environ.setdefault("ENABLE_PROACTIVE",     "1")
+_os.environ.setdefault("ENABLE_MORNING_EMAIL", "1")
+
+# ── Morning email (Gmail SMTP) — fill in .env ─────────────────────────────────
+# GMAIL_APP_PASSWORD  → Google Account → Security → App Passwords → generate
+# MORNING_EMAIL_FROM  → your Gmail address (sender)
+# MORNING_EMAIL_TO    → where to receive (usually same as FROM)
+GMAIL_APP_PASSWORD  = os.getenv("GMAIL_APP_PASSWORD",  "")
+MORNING_EMAIL_FROM  = os.getenv("MORNING_EMAIL_FROM",  "")
+MORNING_EMAIL_TO    = os.getenv("MORNING_EMAIL_TO",    "")
 
 # ── Misc ──────────────────────────────────────────────────────────────────────
 os.environ["COGNEE_SKIP_CONNECTION_TEST"] = "true"
