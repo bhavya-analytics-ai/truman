@@ -75,6 +75,14 @@ _os.environ.setdefault("ENABLE_CURIOSITY",   "1")
 _os.environ.setdefault("ENABLE_RISK_GATE",   "1")
 _os.environ.setdefault("ENABLE_PROACTIVE",     "1")
 _os.environ.setdefault("ENABLE_MORNING_EMAIL", "1")
+_os.environ.setdefault("ENABLE_TELEGRAM",      "1")
+_os.environ.setdefault("ENABLE_MAC_BANNER",    "1")
+
+# ── Telegram bot (Phase 12) — fill in .env ───────────────────────────────────
+# TELEGRAM_BOT_TOKEN → @BotFather → /newbot → copy token
+# TELEGRAM_CHAT_ID   → message your bot once, check the poller log for your id
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
+TELEGRAM_CHAT_ID   = os.getenv("TELEGRAM_CHAT_ID",   "")
 
 # ── Morning email (Gmail SMTP) — fill in .env ─────────────────────────────────
 # GMAIL_APP_PASSWORD  → Google Account → Security → App Passwords → generate

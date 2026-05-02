@@ -64,6 +64,13 @@ def main():
     agent.get_agent()
     proactive.start_all(speak, agent.run, idle_minutes=20)
 
+    # Telegram poller — two-way iPhone ↔ Truman (Phase 12)
+    try:
+        from truman.delivery.telegram import start_poller as _tg_start
+        _tg_start(agent.run)
+    except Exception:
+        pass
+
     # Mac-master sync + daily backup
     try:
         from truman.storage.sync import start_sync

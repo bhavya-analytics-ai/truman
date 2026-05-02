@@ -63,8 +63,15 @@ def main():
 
     agent.get_agent()
     _start_nightly_reflection()
-    # proactive LLM calls disabled on Railway — burns groq tokens in background
-    # reminders still fire via the scheduler plist on Mac
+    proactive.start_proactive_push(agent.run)
+
+    # Telegram poller — runs on Railway so it works even when Mac is off (Phase 12)
+    try:
+        from truman.delivery.telegram import start_poller as _tg_start
+        _tg_start(agent.run)
+    except Exception as e:
+        print(f"[Cloud] Telegram poller failed to start: {e}")
+
     realtime.start()
 
     print(f"[Cloud] Truman running on port {port}")

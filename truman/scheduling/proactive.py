@@ -136,11 +136,28 @@ def start_proactive_push(agent_fn):
         return datetime.datetime.now(_ET).strftime("%Y-%m-%d")
 
     def _push(content: str):
+        """SSE push to dashboard (always fires — keeps dashboard in sync)."""
         try:
             from truman.storage.notifications import push_proactive
             push_proactive(content)
         except Exception as e:
-            print(f"[Proactive] push failed: {e}")
+            print(f"[Proactive] SSE push failed: {e}")
+
+    def _telegram(text: str, buttons: list = None):
+        """Send to Telegram (best-effort, fails silently if not configured)."""
+        try:
+            from truman.delivery.telegram import send_message
+            send_message(text, buttons)
+        except Exception as e:
+            print(f"[Proactive] Telegram send failed: {e}")
+
+    def _banner(title: str, body: str):
+        """macOS native notification (silently no-ops on Railway/Linux)."""
+        try:
+            from truman.delivery.mac_banner import notify
+            notify(title, body)
+        except Exception as e:
+            print(f"[Proactive] Banner failed: {e}")
 
     def _llm(prompt: str) -> str:
         try:
@@ -164,23 +181,23 @@ def start_proactive_push(agent_fn):
                 if (now.hour == brief_h and now.minute <= 2
                         and _fired.get("morning") != today):
                     _fired["morning"] = today
-                    # Try HTML email first; fall back to SSE push
-                    email_sent = False
+                    # HTML email (nicest format)
                     if os.environ.get("ENABLE_MORNING_EMAIL", "1") == "1":
                         try:
                             from truman.voice.email_digest import send_morning_brief
-                            email_sent = send_morning_brief()
+                            send_morning_brief()
                         except Exception as e:
                             print(f"[Proactive] email send error: {e}")
-                    if not email_sent:
-                        # fallback: SSE push to dashboard
-                        prompt = (
-                            f"It's {now.strftime('%A, %B %d')} at {now.strftime('%I:%M %p')} ET. "
-                            "Give Om a quick morning brief — what day it is, top active goals "
-                            "(pull from memory), and one thing he should focus on today. "
-                            "3 sentences max, casual, no fluff."
-                        )
-                        _push(_llm(prompt))
+                    # Telegram + SSE — always fire regardless of email
+                    prompt = (
+                        f"It's {now.strftime('%A, %B %d')} at {now.strftime('%I:%M %p')} ET. "
+                        "Give Om a quick morning brief — what day it is, top active goals "
+                        "(pull from memory), and one thing he should focus on today. "
+                        "3 sentences max, casual, no fluff."
+                    )
+                    brief_text = _llm(prompt)
+                    _telegram(f"☀️ *Morning Brief*\n\n{brief_text}")
+                    _push(brief_text)
 
                 # ── b. Idle nudge — 4hr silence, skip quiet hours ─────────────
                 idle_hrs = (time.time() - _last_interaction) / 3600
@@ -196,7 +213,9 @@ def start_proactive_push(agent_fn):
                         "Reference something from his active goals or last conversation if relevant. "
                         "Don't be dramatic."
                     )
-                    _push(_llm(prompt))
+                    nudge_text = _llm(prompt)
+                    _banner("Truman", nudge_text)   # macOS banner (Mac only, no-op on Railway)
+                    _push(nudge_text)               # SSE always
 
                 # ── c. Goal nudge at noon — stalled goals only ────────────────
                 if (now.hour == 12 and now.minute <= 2
@@ -223,7 +242,12 @@ def start_proactive_push(agent_fn):
                                 "Give Om a short, direct nudge (1–2 sentences). "
                                 "Casual tone, no lecture."
                             )
-                            _push(_llm(prompt))
+                            nudge_text = _llm(prompt)
+                            _telegram(
+                                f"🎯 *Goal Check-in*\n\n{nudge_text}",
+                                buttons=[[{"text": "View Goals", "callback_data": "view_goals"}]],
+                            )
+                            _push(nudge_text)  # SSE always
                     except Exception as e:
                         print(f"[Proactive] goal nudge error: {e}")
 
