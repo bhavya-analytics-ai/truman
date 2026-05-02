@@ -409,6 +409,50 @@ def api_facts_delete(fact_id):
         return jsonify({"error": str(e)}), 500
 
 
+# ── Persona Rules (Phase 13) ─────────────────────────────────────────────────
+@app.route("/api/rules", methods=["GET"])
+def api_rules_get():
+    try:
+        from truman.storage import db
+        return jsonify({"rules": db.get_all_rules()})
+    except Exception as e:
+        return jsonify({"rules": [], "error": str(e)})
+
+@app.route("/api/rules", methods=["POST"])
+def api_rules_post():
+    try:
+        from truman.storage import db
+        from flask import request as freq
+        data = freq.get_json(force=True)
+        rule = (data.get("rule") or "").strip()
+        if not rule:
+            return jsonify({"error": "empty rule"}), 400
+        rid = db.add_rule(rule, source=data.get("source", "manual"))
+        return jsonify({"id": rid, "ok": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/rules/<int:rule_id>", methods=["PATCH"])
+def api_rules_toggle(rule_id):
+    try:
+        from truman.storage import db
+        from flask import request as freq
+        data = freq.get_json(force=True)
+        db.toggle_rule(rule_id, int(data.get("active", 1)))
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/rules/<int:rule_id>", methods=["DELETE"])
+def api_rules_delete(rule_id):
+    try:
+        from truman.storage import db
+        db.delete_rule(rule_id)
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 # ── File Upload ───────────────────────────────────────────────────────────────
 TEXT_EXTS = {".py",".js",".ts",".html",".css",".json",".md",".txt",".csv",".xml",".yaml",".yml",".sh",".env"}
 IMAGE_EXTS = {".png",".jpg",".jpeg",".gif",".webp",".bmp",".tiff"}

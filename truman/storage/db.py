@@ -268,6 +268,15 @@ CREATE TABLE IF NOT EXISTS memory_repos (
     error       TEXT
 );
 
+-- ── Persona rules (Phase 13 — self-correcting persona) ──────────────────────
+CREATE TABLE IF NOT EXISTS persona_rules (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    rule       TEXT    NOT NULL,
+    active     INTEGER NOT NULL DEFAULT 1,
+    source     TEXT    NOT NULL DEFAULT 'manual',  -- 'manual' | 'auto'
+    created_at REAL    NOT NULL
+);
+
 -- ── User facts (cross-chat persistent memory about Om) ──────────────────────
 CREATE TABLE IF NOT EXISTS user_facts (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -333,6 +342,14 @@ def init():
                 "ALTER TABLE sessions ADD COLUMN label         TEXT",
                 "ALTER TABLE sessions ADD COLUMN first_message TEXT",
                 "CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_browser ON sessions(browser_id)",
+                # Phase 13: persona_rules table (add_rule creates it, but ensure it exists on old DBs)
+                """CREATE TABLE IF NOT EXISTS persona_rules (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    rule TEXT NOT NULL,
+                    active INTEGER NOT NULL DEFAULT 1,
+                    source TEXT NOT NULL DEFAULT 'manual',
+                    created_at REAL NOT NULL
+                )""",
             ]:
                 try:
                     c.execute(ddl)
@@ -983,6 +1000,48 @@ def get_sleep_stats(days: int = 7) -> list[dict]:
             (days,),
         ).fetchall()
     return [dict(r) for r in rows]
+
+
+# ── Persona rules (Phase 13) ──────────────────────────────────────────────────
+
+def add_rule(rule: str, source: str = "manual") -> int:
+    """Save a new persona rule. Returns new row id."""
+    import time as _t
+    with _conn() as c:
+        cur = c.execute(
+            "INSERT INTO persona_rules (rule, active, source, created_at) VALUES (?, 1, ?, ?)",
+            (rule.strip(), source, _t.time()),
+        )
+        return cur.lastrowid
+
+
+def get_active_rules() -> list[dict]:
+    """Active rules only — injected into every SYSTEM prompt."""
+    with _conn() as c:
+        rows = c.execute(
+            "SELECT id, rule, source, created_at FROM persona_rules WHERE active = 1 ORDER BY id"
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_all_rules() -> list[dict]:
+    """All rules (active + inactive) for the dashboard panel."""
+    with _conn() as c:
+        rows = c.execute(
+            "SELECT id, rule, active, source, created_at FROM persona_rules ORDER BY id DESC"
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def toggle_rule(rule_id: int, active: int) -> None:
+    """Toggle a rule on/off (active=1 or 0)."""
+    with _conn() as c:
+        c.execute("UPDATE persona_rules SET active = ? WHERE id = ?", (active, rule_id))
+
+
+def delete_rule(rule_id: int) -> None:
+    with _conn() as c:
+        c.execute("DELETE FROM persona_rules WHERE id = ?", (rule_id,))
 
 
 def get_trace_history(session_id: str = None, limit: int = 200) -> list[dict]:

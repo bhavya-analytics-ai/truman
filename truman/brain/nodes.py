@@ -472,10 +472,24 @@ def call_llm(state: TrumanState) -> dict:
         except Exception:
             pass
 
+        # load active persona rules (Phase 13 — self-correcting persona)
+        import os as _os
+        rules_ctx = ""
+        if _os.environ.get("ENABLE_SELF_CORRECT", "1") == "1":
+            try:
+                from truman.storage.db import get_active_rules
+                rules = get_active_rules()
+                if rules:
+                    lines = "\n".join(f"- {r['rule']}" for r in rules)
+                    rules_ctx = f"\n\nPERSONAL RULES (Om set these — follow them exactly):\n{lines}"
+            except Exception:
+                pass
+
         system_content = (
             SYSTEM + clock_line
             + (f"\n\nRelevant memory:\n{mem_ctx}" if mem_ctx else "")
             + facts_ctx
+            + rules_ctx
             + (f"\n\n{goals_ctx}" if goals_ctx else "")
             + (f"\n\n{curiosity_ctx}" if curiosity_ctx else "")
             + last_session_ctx + mood_line + persona_reminder

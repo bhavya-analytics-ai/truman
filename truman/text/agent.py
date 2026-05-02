@@ -217,6 +217,9 @@ _TOOL_PATTERNS = [
     (re.compile(r"\b(drop.*goals?|cancel.*goals?|remove.*goals?|not doing)\b", re.I), "drop_goal"),
     (re.compile(r"\b(gonna sleep|going to sleep|slept from|sleeping from|sleep from|waking up at|wake up at)\b", re.I), "log_sleep"),
     (re.compile(r"\b(change.*brief|set.*brief|morning brief.*time|brief.*at|quiet hours?|sleep window|update.*pref|change.*pref|my sleep.*is now|now.*sleep)\b", re.I), "update_pref"),
+    (re.compile(r"\b(add.*rule|new rule|rule\s*:|always\s+\w|never\s+say|never\s+do|from now on|stop doing|stop saying|add a rule|set a rule)", re.I), "add_rule"),
+    (re.compile(r"\b(list.*rules?|show.*rules?|my rules?|what rules?|rules you have|your rules?)\b", re.I), "list_rules"),
+    (re.compile(r"\b(delete.*rule|remove.*rule|forget.*rule)\b", re.I), "delete_rule"),
 ]
 
 
@@ -314,6 +317,15 @@ def _extract_arg(message: str, tool_name: str) -> dict:
         if m_qh:
             return {"key": "quiet_start__end", "value": f"{m_qh.group(1).strip()}|{m_qh.group(2).strip()}"}
         return {"key": "general", "value": msg}
+    if tool_name == "add_rule":
+        # "rule: always respond in bullet points" / "never say sorry" / "from now on X"
+        rule = re.sub(r"^(add.*?rule[:\s]+|new rule[:\s]+|rule[:\s]+|from now on[,\s]+|always\s+|never\s+say\s+|never\s+do\s+|stop\s+doing\s+|stop\s+saying\s+|set a rule[:\s]+)", "", msg, flags=re.I).strip()
+        return {"rule": rule or msg}
+    if tool_name == "list_rules":
+        return {}
+    if tool_name == "delete_rule":
+        m = re.search(r"(?:delete|remove|forget)\s+rule\s+(\d+)", msg, re.I)
+        return {"rule_id": int(m.group(1)) if m else 0}
     return {}
 
 

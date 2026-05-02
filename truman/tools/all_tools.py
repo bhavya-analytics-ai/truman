@@ -516,7 +516,51 @@ def log_sleep(sleep_start: str, sleep_end: str, raw_input: str = "") -> str:
     return pattern
 
 
+@tool
+def add_rule(rule: str) -> str:
+    """Add a persona rule that Truman must always follow — a hard behavioral constraint Om sets. Use when Om says 'always do X', 'never say X', 'rule: X', 'from now on X', 'stop doing X', 'add a rule'. These persist across every session and override default behavior."""
+    import os
+    if os.environ.get("ENABLE_SELF_CORRECT", "1") != "1":
+        return "self-correct feature is disabled (ENABLE_SELF_CORRECT=0)."
+    from truman.storage.db import add_rule as _add
+    rid = _add(rule.strip(), source="manual")
+    try:
+        from truman.storage.notifications import push as _push
+        _push(f"📋 Rule added: {rule[:60]}", kind="toast")
+    except Exception:
+        pass
+    return f"rule saved (id={rid}): '{rule}' — active immediately."
+
+
+@tool
+def list_rules() -> str:
+    """List all persona rules Om has set for Truman. Use when Om asks 'what rules do you have', 'show my rules', 'list your rules'."""
+    from truman.storage.db import get_all_rules
+    rules = get_all_rules()
+    if not rules:
+        return "no rules set yet."
+    lines = []
+    for r in rules:
+        status = "✓" if r["active"] else "✗ (off)"
+        lines.append(f"[{r['id']}] {status} {r['rule']}")
+    return "\n".join(lines)
+
+
+@tool
+def delete_rule(rule_id: int) -> str:
+    """Delete a persona rule by its ID. Use when Om says 'delete rule X', 'remove rule X', 'forget rule X'. Use list_rules first to get the ID."""
+    from truman.storage.db import delete_rule as _del
+    _del(rule_id)
+    try:
+        from truman.storage.notifications import push as _push
+        _push(f"🗑 Rule {rule_id} deleted", kind="toast")
+    except Exception:
+        pass
+    return f"rule {rule_id} deleted."
+
+
 TOOLS = [web_search, get_weather, remember, recall, set_reminder, list_reminders,
          search_history, recent_conversations, read_mac_file, list_mac_dir, search_mac_files,
          write_mac_file, list_models, set_model, pipeline_mode, concept_search, concept_ingest,
-         add_goal, list_goals, complete_goal, drop_goal, update_pref, log_sleep]
+         add_goal, list_goals, complete_goal, drop_goal, update_pref, log_sleep,
+         add_rule, list_rules, delete_rule]

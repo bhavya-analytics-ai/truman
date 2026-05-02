@@ -296,6 +296,10 @@
   .mem-hdr h2 { font-size:13px; color:#f59e0b; font-weight:600; letter-spacing:0.05em; }
   .mem-close { background:none; border:none; color:var(--text3); font-size:16px; cursor:pointer; }
   .mem-close:hover { color:var(--text); }
+  .mem-tabs { display:flex; border-bottom:1px solid var(--border); background:var(--bg2); flex-shrink:0; }
+  .mem-tab { flex:1; background:none; border:none; border-bottom:2px solid transparent; color:var(--text3); font-size:11px; padding:8px 0; cursor:pointer; letter-spacing:0.05em; font-family:inherit; }
+  .mem-tab.active { color:#f59e0b; border-bottom-color:#f59e0b; }
+  .mem-tab:hover { color:var(--text); }
   .mem-body { overflow-y:auto; padding:12px; display:flex; flex-direction:column; gap:8px; flex:1; }
   .mem-body::-webkit-scrollbar { width:3px; }
   .mem-body::-webkit-scrollbar-thumb { background:var(--border2); }
@@ -365,12 +369,25 @@
     <h2>📌 MEMORY</h2>
     <button class="mem-close" onclick="closeMemory()">✕</button>
   </div>
-  <div class="mem-body" id="mem-body">
+  <div class="mem-tabs">
+    <button class="mem-tab active" id="mem-tab-facts" onclick="switchMemTab('facts')">Facts</button>
+    <button class="mem-tab" id="mem-tab-rules" onclick="switchMemTab('rules')">Rules</button>
+  </div>
+  <!-- Facts tab -->
+  <div class="mem-body" id="mem-body" data-tab="facts">
     <div id="mem-placeholder" style="color:var(--text3);padding:24px;text-align:center;font-size:12px">no pinned facts yet — pin a message to remember it</div>
   </div>
-  <div class="mem-add">
+  <!-- Rules tab -->
+  <div class="mem-body" id="rules-body" data-tab="rules" style="display:none">
+    <div id="rules-placeholder" style="color:var(--text3);padding:24px;text-align:center;font-size:12px">no rules set yet — type "rule: always..." to add one</div>
+  </div>
+  <div class="mem-add" id="mem-add-facts">
     <input type="text" id="mem-input" placeholder="add a fact manually..." maxlength="300">
     <button class="mem-add-btn" onclick="addFactManual()">+ add</button>
+  </div>
+  <div class="mem-add" id="mem-add-rules" style="display:none">
+    <input type="text" id="rule-input" placeholder="add a rule... (e.g. never use bullet points)" maxlength="300">
+    <button class="mem-add-btn" onclick="addRuleManual()">+ add</button>
   </div>
 </div>
 
@@ -1488,11 +1505,26 @@ let memoryOpen = false;
 
 function toggleMemory() { memoryOpen ? closeMemory() : openMemory(); }
 
+let _activeMemTab = 'facts';
+
+function switchMemTab(tab) {
+  _activeMemTab = tab;
+  document.getElementById('mem-tab-facts').classList.toggle('active', tab === 'facts');
+  document.getElementById('mem-tab-rules').classList.toggle('active', tab === 'rules');
+  document.getElementById('mem-body').style.display   = tab === 'facts' ? '' : 'none';
+  document.getElementById('rules-body').style.display = tab === 'rules' ? '' : 'none';
+  document.getElementById('mem-add-facts').style.display = tab === 'facts' ? '' : 'none';
+  document.getElementById('mem-add-rules').style.display = tab === 'rules' ? '' : 'none';
+  if (tab === 'rules') refreshRules();
+  else refreshFacts();
+}
+
 async function openMemory() {
   memoryOpen = true;
   document.getElementById('memory-sidebar').classList.add('open');
   document.getElementById('memory-btn').classList.add('active');
-  await refreshFacts();
+  if (_activeMemTab === 'rules') await refreshRules();
+  else await refreshFacts();
 }
 
 function closeMemory() {
@@ -1572,6 +1604,80 @@ async function deleteFact(id) {
 
 document.getElementById('mem-input')?.addEventListener('keydown', e => {
   if (e.key === 'Enter') addFactManual();
+});
+
+// ── Rules panel (Phase 13) ───────────────────────────────────────────────────
+async function refreshRules() {
+  try {
+    const r = await fetch('/api/rules');
+    const d = await r.json();
+    renderRules(d.rules || []);
+  } catch(e) {}
+}
+
+function renderRules(rules) {
+  const body = document.getElementById('rules-body');
+  if (!rules.length) {
+    body.innerHTML = '<div id="rules-placeholder" style="color:var(--text3);padding:24px;text-align:center;font-size:12px">no rules set yet — type "rule: always..." to add one</div>';
+    return;
+  }
+  body.innerHTML = '';
+  rules.forEach(r => {
+    const row = document.createElement('div');
+    row.className = 'mem-fact';
+    row.id = 'rule-' + r.id;
+    const onOff = r.active ? 'on' : 'off';
+    row.innerHTML = `
+      <div style="flex:1">
+        <div class="mem-fact-text" style="${r.active ? '' : 'opacity:0.45;text-decoration:line-through'}">${r.rule.replace(/&/g,'&amp;').replace(/</g,'&lt;')}</div>
+        <div class="mem-imp">${onOff} · ${r.source}</div>
+      </div>
+      <button class="mem-fact-del" style="margin-right:4px;color:var(--text3)" onclick="toggleRule(${r.id},${r.active ? 0 : 1})" title="${r.active ? 'disable' : 'enable'}">${r.active ? '⏸' : '▶'}</button>
+      <button class="mem-fact-del" onclick="deleteRule(${r.id})" title="delete">✕</button>`;
+    body.appendChild(row);
+  });
+}
+
+async function addRuleManual() {
+  const inp = document.getElementById('rule-input');
+  const rule = inp.value.trim();
+  if (!rule) return;
+  try {
+    await fetch('/api/rules', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({rule, source: 'manual'})
+    });
+    inp.value = '';
+    showToast('📋 rule saved — active immediately');
+    await refreshRules();
+  } catch(e) {}
+}
+
+async function toggleRule(id, active) {
+  try {
+    await fetch(`/api/rules/${id}`, {
+      method: 'PATCH',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({active})
+    });
+    showToast(active ? '▶ rule enabled' : '⏸ rule disabled');
+    await refreshRules();
+  } catch(e) {}
+}
+
+async function deleteRule(id) {
+  try {
+    await fetch(`/api/rules/${id}`, {method: 'DELETE'});
+    document.getElementById('rule-' + id)?.remove();
+    const body = document.getElementById('rules-body');
+    if (!body.children.length) renderRules([]);
+    showToast('🗑 rule deleted');
+  } catch(e) {}
+}
+
+document.getElementById('rule-input')?.addEventListener('keydown', e => {
+  if (e.key === 'Enter') addRuleManual();
 });
 
 function updatePanelFromResponse(d, userMsg, respText) {

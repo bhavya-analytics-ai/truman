@@ -77,6 +77,7 @@ _os.environ.setdefault("ENABLE_PROACTIVE",     "1")
 _os.environ.setdefault("ENABLE_MORNING_EMAIL", "1")
 _os.environ.setdefault("ENABLE_TELEGRAM",      "1")
 _os.environ.setdefault("ENABLE_MAC_BANNER",    "1")
+_os.environ.setdefault("ENABLE_SELF_CORRECT",  "1")
 
 # ── Telegram bot (Phase 12) — fill in .env ───────────────────────────────────
 # TELEGRAM_BOT_TOKEN → @BotFather → /newbot → copy token
