@@ -168,10 +168,10 @@ def api_chat():
             except concurrent.futures.TimeoutError:
                 return jsonify({"error": "response timed out — try again"}), 504
 
-        # log to SQLite
+        # log to SQLite — map browser UUID → SQLite integer session id
         try:
-            sid = _db.start_session() if not hasattr(api_chat, '_sid') else api_chat._sid
-            api_chat._sid = sid
+            sid = _db.get_or_create_session(session_id)
+            _db.set_session_first_message(session_id, user_input)
             _db.log_turn(sid, "user", user_input)
             _db.log_turn(sid, "assistant", result["response"])
         except Exception:
@@ -307,6 +307,58 @@ def api_events():
         return jsonify({"events": events})
     except Exception as e:
         return jsonify({"events": [], "error": str(e)})
+
+
+@app.route("/api/sessions", methods=["GET"])
+def api_sessions():
+    """All sessions grouped by day for the sidebar."""
+    try:
+        from truman.storage import db
+        rows = db.get_sessions_by_day()
+        # group by date
+        from collections import OrderedDict
+        from datetime import datetime as _dt
+        groups = OrderedDict()
+        today = _dt.now().date()
+        for r in rows:
+            try:
+                d = _dt.fromisoformat(r["started_at"]).date()
+            except Exception:
+                d = today
+            delta = (today - d).days
+            if delta == 0:
+                label = "Today"
+            elif delta == 1:
+                label = "Yesterday"
+            else:
+                label = d.strftime("%B %-d")
+            groups.setdefault(label, []).append(r)
+        return jsonify({"groups": [{"day": k, "sessions": v} for k, v in groups.items()]})
+    except Exception as e:
+        return jsonify({"groups": [], "error": str(e)})
+
+
+@app.route("/api/sessions/<browser_id>", methods=["PATCH"])
+def api_session_rename(browser_id):
+    try:
+        from truman.storage import db
+        from flask import request as freq
+        label = (freq.get_json(force=True) or {}).get("label", "").strip()
+        if label:
+            db.update_session_label(browser_id, label[:50])
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/sessions/<browser_id>", methods=["DELETE"])
+def api_session_delete(browser_id):
+    try:
+        from truman.storage import db
+        db.delete_session(browser_id)
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/api/history")

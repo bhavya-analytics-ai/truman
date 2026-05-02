@@ -64,6 +64,13 @@ def main():
     agent.get_agent()
     proactive.start_all(speak, agent.run, idle_minutes=20)
 
+    # Mac-master sync + daily backup
+    try:
+        from truman.storage.sync import start_sync
+        start_sync()
+    except Exception:
+        pass
+
     # 3. Realtime engine + hotkey
     realtime.start()
     hotkey.start(realtime.toggle_session)

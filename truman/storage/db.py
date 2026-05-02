@@ -309,6 +309,11 @@ def init():
                 "ALTER TABLE memory_repos ADD COLUMN total    INTEGER NOT NULL DEFAULT 0",
                 "ALTER TABLE memory_repos ADD COLUMN stage    TEXT",
                 "ALTER TABLE memory_repos ADD COLUMN error    TEXT",
+                # sessions: add browser_id (UUID from frontend), label, first_message
+                "ALTER TABLE sessions ADD COLUMN browser_id    TEXT",
+                "ALTER TABLE sessions ADD COLUMN label         TEXT",
+                "ALTER TABLE sessions ADD COLUMN first_message TEXT",
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_browser ON sessions(browser_id)",
             ]:
                 try:
                     c.execute(ddl)
@@ -388,8 +393,66 @@ def recent_turns(n: int = 10) -> list[dict]:
     return [dict(r) for r in reversed(rows)]
 
 
-def session_turns(session_id: int) -> list[dict]:
+def get_or_create_session(browser_id: str, label: str = None) -> int:
+    """Return SQLite integer id for a browser session UUID, creating if needed."""
     with _conn() as c:
+        row = c.execute("SELECT id FROM sessions WHERE browser_id = ?", (browser_id,)).fetchone()
+        if row:
+            return row["id"]
+        cur = c.execute(
+            "INSERT INTO sessions(started_at, browser_id, label) VALUES (?, ?, ?)",
+            (_now(), browser_id, label),
+        )
+        return cur.lastrowid
+
+
+def update_session_label(browser_id: str, label: str) -> None:
+    with _conn() as c:
+        c.execute("UPDATE sessions SET label = ? WHERE browser_id = ?", (label, browser_id))
+
+
+def delete_session(browser_id: str) -> None:
+    with _conn() as c:
+        row = c.execute("SELECT id FROM sessions WHERE browser_id = ?", (browser_id,)).fetchone()
+        if row:
+            c.execute("DELETE FROM turns WHERE session_id = ?", (row["id"],))
+            c.execute("DELETE FROM sessions WHERE id = ?", (row["id"],))
+
+
+def get_sessions_by_day() -> list[dict]:
+    """All sessions grouped by day, newest first. Each has id, browser_id, label,
+    started_at, first_message, turn_count."""
+    with _conn() as c:
+        rows = c.execute("""
+            SELECT s.browser_id, s.label, s.started_at, s.first_message,
+                   COUNT(t.id) AS turn_count,
+                   MAX(t.ts)   AS last_active
+            FROM sessions s
+            LEFT JOIN turns t ON t.session_id = s.id
+            WHERE s.browser_id IS NOT NULL
+            GROUP BY s.id
+            ORDER BY s.started_at DESC
+            LIMIT 200
+        """).fetchall()
+    return [dict(r) for r in rows]
+
+
+def set_session_first_message(browser_id: str, msg: str) -> None:
+    with _conn() as c:
+        c.execute(
+            "UPDATE sessions SET first_message = ? WHERE browser_id = ? AND first_message IS NULL",
+            (msg[:120], browser_id),
+        )
+
+
+def session_turns(session_id) -> list[dict]:
+    """Accepts integer id or browser UUID string."""
+    with _conn() as c:
+        if isinstance(session_id, str):
+            row = c.execute("SELECT id FROM sessions WHERE browser_id = ?", (session_id,)).fetchone()
+            if not row:
+                return []
+            session_id = row["id"]
         rows = c.execute(
             "SELECT role, content, ts FROM turns WHERE session_id = ? ORDER BY id",
             (session_id,),

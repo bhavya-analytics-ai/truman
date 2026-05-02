@@ -61,14 +61,53 @@
   .hdr-select { background: var(--bg3); border: 1px solid var(--border2); border-radius: 7px; color: var(--text2); font-size: 11px; padding: 3px 7px; cursor: pointer; outline: none; }
   .hdr-select:hover, .hdr-select:focus { border-color: var(--accent); color: var(--accent2); }
 
-  /* Session bar */
-  .session-bar { padding: 5px 12px; background: var(--bg); border-bottom: 1px solid var(--border); display: flex; gap: 5px; overflow-x: auto; flex-shrink: 0; }
-  .session-bar::-webkit-scrollbar { height: 0; }
-  .session-tab { background: var(--bg3); border: 1px solid var(--border2); border-radius: 7px; color: var(--text2); font-size: 11px; padding: 4px 11px; cursor: pointer; white-space: nowrap; display: flex; align-items: center; gap: 5px; }
-  .session-tab.active { border-color: var(--accent); color: var(--accent2); background: var(--bg2); }
-  .session-tab:hover { border-color: var(--accent); }
-  .tab-del { background: none; border: none; color: var(--text3); font-size: 11px; cursor: pointer; padding: 0 1px; line-height: 1; }
-  .tab-del:hover { color: #ef4444; }
+  /* Layout: sidebar + main */
+  .body-wrap { display: flex; flex: 1; overflow: hidden; min-height: 0; }
+
+  /* Sessions sidebar */
+  .sessions-sidebar { width: 220px; flex-shrink: 0; background: var(--bg2); border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; }
+  .ssb-hdr { padding: 10px 12px 6px; display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
+  .ssb-hdr-title { font-size: 10px; font-weight: 700; letter-spacing: 0.1em; color: var(--text3); text-transform: uppercase; }
+  .ssb-new { background: none; border: 1px solid var(--border2); border-radius: 6px; color: var(--text2); font-size: 11px; padding: 3px 8px; cursor: pointer; }
+  .ssb-new:hover { border-color: var(--accent); color: var(--accent2); }
+  .ssb-body { flex: 1; overflow-y: auto; padding: 4px 0; }
+  .ssb-body::-webkit-scrollbar { width: 3px; }
+  .ssb-body::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
+
+  /* Day group */
+  .ssb-day { margin-bottom: 2px; }
+  .ssb-day-hdr { padding: 6px 12px 3px; font-size: 10px; font-weight: 700; color: var(--text3); text-transform: uppercase; letter-spacing: 0.08em; cursor: pointer; display: flex; align-items: center; gap: 5px; user-select: none; }
+  .ssb-day-hdr:hover { color: var(--text2); }
+  .ssb-day-arrow { font-size: 8px; transition: transform 0.15s; }
+  .ssb-day.collapsed .ssb-day-arrow { transform: rotate(-90deg); }
+  .ssb-day.collapsed .ssb-sessions { display: none; }
+
+  /* Session row */
+  .ssb-sess { padding: 6px 12px 6px 14px; cursor: pointer; display: flex; align-items: flex-start; gap: 6px; border-radius: 0; position: relative; transition: background 0.1s; }
+  .ssb-sess:hover { background: var(--bg3); }
+  .ssb-sess.active { background: var(--bg3); border-left: 2px solid var(--accent); padding-left: 12px; }
+  .ssb-sess-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--text3); flex-shrink: 0; margin-top: 5px; }
+  .ssb-sess.active .ssb-sess-dot { background: var(--accent2); }
+  .ssb-sess-info { flex: 1; min-width: 0; }
+  .ssb-sess-label { font-size: 12px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.4; }
+  .ssb-sess.active .ssb-sess-label { color: var(--accent2); }
+  .ssb-sess-preview { font-size: 10px; color: var(--text3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
+  .ssb-sess-count { font-size: 9px; color: var(--text3); flex-shrink: 0; margin-top: 4px; }
+
+  /* Hover preview popup */
+  .ssb-popup { position: fixed; left: 224px; background: var(--bg3); border: 1px solid var(--border2); border-radius: 8px; padding: 10px 12px; max-width: 240px; z-index: 300; box-shadow: 0 4px 16px rgba(0,0,0,0.5); pointer-events: none; }
+  .ssb-popup-title { font-size: 12px; font-weight: 600; color: var(--text); margin-bottom: 5px; }
+  .ssb-popup-msg { font-size: 11px; color: var(--text2); line-height: 1.5; }
+  .ssb-popup-meta { font-size: 10px; color: var(--text3); margin-top: 5px; }
+
+  /* Context menu */
+  .ctx-menu { position: fixed; background: var(--bg3); border: 1px solid var(--border2); border-radius: 8px; z-index: 400; padding: 4px 0; box-shadow: 0 4px 16px rgba(0,0,0,0.5); min-width: 130px; }
+  .ctx-item { padding: 7px 14px; font-size: 12px; color: var(--text); cursor: pointer; }
+  .ctx-item:hover { background: var(--bg2); }
+  .ctx-item.danger { color: #ef4444; }
+
+  /* Main area */
+  .main-area { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
 
   /* Messages */
   .messages { flex: 1; overflow-y: auto; padding: 14px 14px 6px; display: flex; flex-direction: column; gap: 10px; scroll-behavior: smooth; }
@@ -376,7 +415,21 @@
   </div>
 </div>
 
-<div class="session-bar" id="session-bar"></div>
+<div class="body-wrap">
+
+<!-- Sessions sidebar -->
+<div class="sessions-sidebar" id="sessions-sidebar">
+  <div class="ssb-hdr">
+    <span class="ssb-hdr-title">chats</span>
+    <button class="ssb-new" onclick="newSession()">+ new</button>
+  </div>
+  <div class="ssb-body" id="ssb-body">
+    <div style="padding:20px 12px;font-size:11px;color:var(--text3)">loading...</div>
+  </div>
+</div>
+
+<!-- Main chat area -->
+<div class="main-area">
 <div class="tasks-strip" id="tasks-strip"></div>
 
 <div class="messages" id="messages">
@@ -385,8 +438,8 @@
   </div>
 </div>
 
-<!-- Model picker row above input -->
-<div style="padding:4px 14px 2px;background:var(--bg2);border-top:1px solid var(--border);display:flex;align-items:center;gap:8px;">
+<!-- Model picker -->
+<div style="padding:4px 14px 2px;background:var(--bg2);border-top:1px solid var(--border);display:flex;align-items:center;gap:8px;flex-shrink:0;">
   <span style="font-size:10px;color:var(--text3);white-space:nowrap;">model</span>
   <select class="hdr-select" id="model-select" onchange="setModel(this.value)" style="flex:0 0 auto;max-width:260px;">
     <option value="">🟢 auto (truman picks)</option>
@@ -418,6 +471,8 @@
     </svg>
   </button>
 </div>
+</div><!-- /main-area -->
+</div><!-- /body-wrap -->
 
 <script>
 const messages   = document.getElementById('messages');
@@ -444,8 +499,7 @@ let _currentModel = '';  // pool string or '' for auto
 
 function setModel(pool) {
   _currentModel = pool;
-  sessions[currentSession].model = pool;
-  _saveSessions();
+  if (_activeId) { (_msgCache[_activeId] = _msgCache[_activeId] || {}).model = pool; _saveCache(); }
 }
 
 // ── Power / kill switch ───────────────────────────────────────────────────────
@@ -551,8 +605,7 @@ startTasksPoll();
       if (d.kind === 'turn') {
         if (d.session_id === currentSessionId() && !_localTurnInFlight) {
           addMsg(d.role === 'user' ? 'user' : 'truman', d.content, d.role === 'truman' ? d.meta : null);
-          sessions[currentSession].msgs = messages.innerHTML;
-          _saveSessions();
+          if (_activeId) { (_msgCache[_activeId] = _msgCache[_activeId]||{}).msgs = messages.innerHTML; _saveCache(); }
         }
         return;
       }
@@ -574,115 +627,235 @@ function showToast(msg) {
 // ── Session management ────────────────────────────────────────────────────────
 function genId() { return 'sess-' + Date.now() + '-' + Math.random().toString(36).slice(2,7); }
 
-const _LS_KEY = 'truman_sessions_v1';
-const _LS_CUR = 'truman_current_v1';
+const _LS_KEY  = 'truman_sessions_v1';
+const _LS_CUR  = 'truman_current_v1';
 const _MSG_CAP = 60000;
 
-function _saveSessions() {
-  try {
-    const slim = sessions.map(s => ({
-      id: s.id, label: s.label, model: s.model || '',
-      msgs: (s.msgs || '').slice(-_MSG_CAP)
-    }));
-    localStorage.setItem(_LS_KEY, JSON.stringify(slim));
-    localStorage.setItem(_LS_CUR, String(currentSession));
-  } catch(e) {}
+// _msgCache: browser_id → {label, msgs, model}  (device-local render cache)
+let _msgCache = {};
+try { _msgCache = JSON.parse(localStorage.getItem(_LS_KEY) || '{}'); } catch(e) {}
+
+function _saveCache() {
+  try { localStorage.setItem(_LS_KEY, JSON.stringify(_msgCache)); } catch(e) {}
 }
 
-function _loadSessions() {
+// Active session browser_id
+let _activeId = localStorage.getItem(_LS_CUR) || '';
+
+function currentSessionId() { return _activeId; }
+
+// ── Sidebar rendering ─────────────────────────────────────────────────────────
+let _sidebarGroups = [];   // [{day, sessions:[{browser_id,label,first_message,turn_count,...}]}]
+let _ssbPopup = null;
+let _ctxMenu  = null;
+
+async function loadSidebar() {
   try {
-    const raw = localStorage.getItem(_LS_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed) || !parsed.length) return null;
-    return parsed;
-  } catch(e) { return null; }
-}
-
-const _stored = _loadSessions();
-let sessions = _stored || [{id: genId(), label: 'chat 1', msgs: '', model: ''}];
-let currentSession = Math.min(parseInt(localStorage.getItem(_LS_CUR) || '0'), sessions.length - 1);
-
-function currentSessionId() { return sessions[currentSession].id; }
-
-function renderSessionBar() {
-  sessionBar.innerHTML = '';
-  sessions.forEach((s, i) => {
-    const tab = document.createElement('div');
-    tab.className = 'session-tab' + (i === currentSession ? ' active' : '');
-    const lbl = document.createElement('span');
-    lbl.textContent = s.label;
-    lbl.ondblclick = () => renameTab(i);
-    tab.appendChild(lbl);
-    if (sessions.length > 1) {
-      const del = document.createElement('button');
-      del.className = 'tab-del';
-      del.textContent = '×';
-      del.title = 'close tab';
-      del.onclick = (e) => { e.stopPropagation(); deleteSession(i); };
-      tab.appendChild(del);
+    const r = await fetch('/api/sessions');
+    const d = await r.json();
+    _sidebarGroups = d.groups || [];
+    // merge any local-only sessions (not yet synced to server) into first group
+    const serverIds = new Set(_sidebarGroups.flatMap(g => g.sessions.map(s => s.browser_id)));
+    const localOnly = Object.entries(_msgCache)
+      .filter(([id]) => !serverIds.has(id))
+      .map(([id, c]) => ({browser_id: id, label: c.label || 'new chat', first_message: '', turn_count: 0}));
+    if (localOnly.length) {
+      if (!_sidebarGroups.length || _sidebarGroups[0].day !== 'Today')
+        _sidebarGroups.unshift({day: 'Today', sessions: []});
+      _sidebarGroups[0].sessions.unshift(...localOnly);
     }
-    tab.onclick = () => switchSession(i);
-    sessionBar.appendChild(tab);
+  } catch(e) {
+    // offline — build from cache
+    const cached = Object.entries(_msgCache).map(([id, c]) =>
+      ({browser_id: id, label: c.label || 'chat', first_message: '', turn_count: 0}));
+    _sidebarGroups = cached.length ? [{day: 'Today', sessions: cached}] : [];
+  }
+  renderSidebar();
+  // if no active session yet, open first one
+  if (!_activeId && _sidebarGroups.length && _sidebarGroups[0].sessions.length) {
+    openSession(_sidebarGroups[0].sessions[0].browser_id);
+  } else if (!_activeId) {
+    newSession();
+  }
+}
+
+function renderSidebar() {
+  const body = document.getElementById('ssb-body');
+  if (!_sidebarGroups.length) {
+    body.innerHTML = '<div style="padding:16px 12px;font-size:11px;color:var(--text3)">no chats yet</div>';
+    return;
+  }
+  body.innerHTML = '';
+  _sidebarGroups.forEach(group => {
+    const dayDiv = document.createElement('div');
+    dayDiv.className = 'ssb-day';
+    dayDiv.dataset.day = group.day;
+
+    const hdr = document.createElement('div');
+    hdr.className = 'ssb-day-hdr';
+    hdr.innerHTML = `<span class="ssb-day-arrow">▾</span>${group.day}`;
+    hdr.onclick = () => dayDiv.classList.toggle('collapsed');
+    dayDiv.appendChild(hdr);
+
+    const sessDiv = document.createElement('div');
+    sessDiv.className = 'ssb-sessions';
+    group.sessions.forEach(s => sessDiv.appendChild(_buildSessRow(s)));
+    dayDiv.appendChild(sessDiv);
+    body.appendChild(dayDiv);
   });
-  // restore model picker for this session
-  const m = sessions[currentSession].model || '';
+}
+
+function _buildSessRow(s) {
+  const row = document.createElement('div');
+  row.className = 'ssb-sess' + (s.browser_id === _activeId ? ' active' : '');
+  row.id = 'ssb-' + s.browser_id;
+  row.dataset.bid = s.browser_id;
+
+  const label = _msgCache[s.browser_id]?.label || s.label || 'chat';
+  const preview = s.first_message || '';
+  const count = s.turn_count || 0;
+
+  row.innerHTML = `
+    <div class="ssb-sess-dot"></div>
+    <div class="ssb-sess-info">
+      <div class="ssb-sess-label">${label.replace(/&/g,'&amp;').replace(/</g,'&lt;')}</div>
+      ${preview ? `<div class="ssb-sess-preview">${preview.replace(/&/g,'&amp;').replace(/</g,'&lt;')}</div>` : ''}
+    </div>
+    <div class="ssb-sess-count">${count > 0 ? count+'↕' : ''}</div>`;
+
+  row.onclick = () => openSession(s.browser_id);
+  row.oncontextmenu = (e) => { e.preventDefault(); showCtxMenu(e, s.browser_id, label); };
+  row.onmouseenter = (e) => showPopup(e, s);
+  row.onmouseleave = () => hidePopup();
+  return row;
+}
+
+async function openSession(bid) {
+  // save current chat to cache
+  if (_activeId) {
+    _msgCache[_activeId] = _msgCache[_activeId] || {};
+    _msgCache[_activeId].msgs = messages.innerHTML;
+    _saveCache();
+  }
+  _activeId = bid;
+  localStorage.setItem(_LS_CUR, bid);
+
+  // restore model
+  const m = _msgCache[bid]?.model || '';
   _currentModel = m;
   document.getElementById('model-select').value = m;
-}
 
-function renameTab(i) {
-  const name = prompt('rename tab:', sessions[i].label);
-  if (name && name.trim()) { sessions[i].label = name.trim().slice(0, 30); renderSessionBar(); _saveSessions(); }
-}
+  // update sidebar active state
+  document.querySelectorAll('.ssb-sess').forEach(el => {
+    el.classList.toggle('active', el.dataset.bid === bid);
+  });
 
-function deleteSession(i) {
-  sessions.splice(i, 1);
-  if (currentSession >= sessions.length) currentSession = sessions.length - 1;
-  messages.innerHTML = sessions[currentSession].msgs ||
-    '<div class="msg truman"><div class="bubble">yo. what\'s up?</div></div>';
-  renderSessionBar();
-  _saveSessions();
-}
-
-async function switchSession(i) {
-  sessions[currentSession].msgs = messages.innerHTML;
-  currentSession = i;
-  _currentModel = sessions[i].model || '';
-  document.getElementById('model-select').value = _currentModel;
-  if (sessions[i].msgs) {
-    messages.innerHTML = sessions[i].msgs;
+  // restore cached HTML or fetch from server
+  const cached = _msgCache[bid]?.msgs;
+  if (cached) {
+    messages.innerHTML = cached;
   } else {
     messages.innerHTML = '<div class="msg truman"><div class="bubble">yo. what\'s up?</div></div>';
-    await loadHistory(sessions[i].id);
+    await loadHistory(bid);
   }
-  renderSessionBar();
-  _saveSessions();
+  messages.scrollTop = messages.scrollHeight;
 }
 
 function newSession() {
-  sessions[currentSession].msgs = messages.innerHTML;
-  const n = sessions.length + 1;
-  sessions.push({id: genId(), label: `chat ${n}`, msgs: '', model: ''});
-  currentSession = sessions.length - 1;
+  if (_activeId) {
+    _msgCache[_activeId] = _msgCache[_activeId] || {};
+    _msgCache[_activeId].msgs = messages.innerHTML;
+  }
+  const bid = genId();
+  _msgCache[bid] = {label: 'new chat', msgs: '', model: ''};
+  _saveCache();
+  _activeId = bid;
+  localStorage.setItem(_LS_CUR, bid);
   _currentModel = '';
   document.getElementById('model-select').value = '';
   messages.innerHTML = '<div class="msg truman"><div class="bubble">yo. what\'s up?</div></div>';
-  renderSessionBar();
-  _saveSessions();
+  // add to sidebar top
+  if (!_sidebarGroups.length || _sidebarGroups[0].day !== 'Today')
+    _sidebarGroups.unshift({day: 'Today', sessions: []});
+  _sidebarGroups[0].sessions.unshift({browser_id: bid, label: 'new chat', first_message: '', turn_count: 0});
+  renderSidebar();
+  // mark active
+  const el = document.getElementById('ssb-' + bid);
+  if (el) el.classList.add('active');
 }
 
 function clearChat() {
   messages.innerHTML = '<div class="msg truman"><div class="bubble">yo. what\'s up?</div></div>';
-  sessions[currentSession].msgs = '';
-  _saveSessions();
+  if (_activeId) { (_msgCache[_activeId] = _msgCache[_activeId] || {}).msgs = ''; _saveCache(); }
 }
+
+// ── Context menu (right-click) ────────────────────────────────────────────────
+function showCtxMenu(e, bid, label) {
+  hideCtxMenu();
+  const m = document.createElement('div');
+  m.className = 'ctx-menu';
+  m.style.left = e.clientX + 'px';
+  m.style.top  = e.clientY + 'px';
+  m.innerHTML = `
+    <div class="ctx-item" onclick="renameSession('${bid}','${label.replace(/'/g,"\\'")}');hideCtxMenu()">✏ rename</div>
+    <div class="ctx-item danger" onclick="deleteSession('${bid}');hideCtxMenu()">✕ delete</div>`;
+  document.body.appendChild(m);
+  _ctxMenu = m;
+  setTimeout(() => document.addEventListener('click', hideCtxMenu, {once:true}), 0);
+}
+
+function hideCtxMenu() { if (_ctxMenu) { _ctxMenu.remove(); _ctxMenu = null; } }
+
+async function renameSession(bid, currentLabel) {
+  const name = prompt('rename chat:', currentLabel);
+  if (!name || !name.trim()) return;
+  const label = name.trim().slice(0, 50);
+  if (_msgCache[bid]) _msgCache[bid].label = label;
+  _saveCache();
+  try { await fetch(`/api/sessions/${bid}`, {method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify({label})}); } catch(e) {}
+  await loadSidebar();
+  // auto-rename if it was the first-message-based label
+  const el = document.querySelector(`#ssb-${bid} .ssb-sess-label`);
+  if (el) el.textContent = label;
+}
+
+async function deleteSession(bid) {
+  if (!confirm('delete this chat?')) return;
+  delete _msgCache[bid];
+  _saveCache();
+  try { await fetch(`/api/sessions/${bid}`, {method:'DELETE'}); } catch(e) {}
+  if (_activeId === bid) {
+    _activeId = '';
+    messages.innerHTML = '<div class="msg truman"><div class="bubble">yo. what\'s up?</div></div>';
+  }
+  await loadSidebar();
+}
+
+// ── Hover preview popup ───────────────────────────────────────────────────────
+function showPopup(e, s) {
+  hidePopup();
+  const rect = e.currentTarget.getBoundingClientRect();
+  const p = document.createElement('div');
+  p.className = 'ssb-popup';
+  p.style.top = rect.top + 'px';
+  const label = _msgCache[s.browser_id]?.label || s.label || 'chat';
+  const preview = s.first_message || '(no messages)';
+  const count = s.turn_count || 0;
+  const ts = s.started_at ? new Date(s.started_at).toLocaleDateString() : '';
+  p.innerHTML = `
+    <div class="ssb-popup-title">${label.replace(/&/g,'&amp;').replace(/</g,'&lt;')}</div>
+    <div class="ssb-popup-msg">${preview.replace(/&/g,'&amp;').replace(/</g,'&lt;')}</div>
+    <div class="ssb-popup-meta">${count} messages${ts ? ' · ' + ts : ''}</div>`;
+  document.body.appendChild(p);
+  _ssbPopup = p;
+}
+
+function hidePopup() { if (_ssbPopup) { _ssbPopup.remove(); _ssbPopup = null; } }
 
 // ── Export / Import ───────────────────────────────────────────────────────────
 function exportChats() {
-  sessions[currentSession].msgs = messages.innerHTML;
-  _saveSessions();
-  const data = JSON.stringify(sessions, null, 2);
+  if (_activeId) { (_msgCache[_activeId] = _msgCache[_activeId] || {}).msgs = messages.innerHTML; _saveCache(); }
+  const data = JSON.stringify({sessions: _msgCache, exported: new Date().toISOString()}, null, 2);
   const blob = new Blob([data], {type: 'application/json'});
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
@@ -695,30 +868,30 @@ function importChats(event) {
   const file = event.target.files[0];
   if (!file) return;
   const reader = new FileReader();
-  reader.onload = (e) => {
+  reader.onload = async (e) => {
     try {
       const data = JSON.parse(e.target.result);
-      if (!Array.isArray(data) || !data.length) { showToast('invalid file'); return; }
-      sessions = data;
-      currentSession = 0;
-      _currentModel = sessions[0].model || '';
-      document.getElementById('model-select').value = _currentModel;
-      messages.innerHTML = sessions[0].msgs ||
-        '<div class="msg truman"><div class="bubble">yo. what\'s up?</div></div>';
-      renderSessionBar();
-      _saveSessions();
-      showToast(`imported ${sessions.length} chats`);
+      const imported = data.sessions || data;
+      if (typeof imported !== 'object') { showToast('invalid file'); return; }
+      // merge (don't overwrite existing)
+      Object.assign(_msgCache, imported);
+      _saveCache();
+      showToast('chats imported — reloading...');
+      await loadSidebar();
     } catch(err) { showToast('import failed'); }
   };
   reader.readAsText(file);
   event.target.value = '';
 }
 
-renderSessionBar();
-
-if (_stored && sessions[currentSession].msgs) {
-  messages.innerHTML = sessions[currentSession].msgs;
-}
+// init sidebar + restore last session on load
+loadSidebar().then(() => {
+  // if we had a cached active session, restore it
+  if (_activeId && _msgCache[_activeId]?.msgs) {
+    messages.innerHTML = _msgCache[_activeId].msgs;
+    messages.scrollTop = messages.scrollHeight;
+  }
+});
 
 // ── Mac status ────────────────────────────────────────────────────────────────
 async function checkMac() {
@@ -735,7 +908,7 @@ setInterval(checkMac, 10000);
 
 // ── Load history ──────────────────────────────────────────────────────────────
 async function loadHistory(sessionId) {
-  if (_stored && sessions[currentSession].msgs) return;
+  if (sessionId && _msgCache[sessionId]?.msgs) return;
   try {
     const url = sessionId ? `/api/history?session_id=${encodeURIComponent(sessionId)}` : '/api/history';
     const r = await fetch(url);
@@ -743,8 +916,8 @@ async function loadHistory(sessionId) {
     if (d.turns && d.turns.length) {
       messages.innerHTML = '';
       d.turns.forEach(t => addMsg(t.role === 'user' ? 'user' : 'truman', t.content, null));
-      sessions[currentSession].msgs = messages.innerHTML;
-      _saveSessions();
+      const bid = sessionId || _activeId;
+      if (bid) { (_msgCache[bid] = _msgCache[bid]||{}).msgs = messages.innerHTML; _saveCache(); }
     }
   } catch(e) {}
 }
@@ -965,10 +1138,14 @@ async function send() {
   setStatus('think', 'thinking...');
   const status = addStatus();
 
-  // auto-name tab from first real message
-  if (sessions[currentSession].label.match(/^chat \d+$/) && sendText && !sendText.startsWith('[')) {
-    sessions[currentSession].label = sendText.slice(0, 28).trim();
-    renderSessionBar();
+  // auto-name session from first real message
+  if (_activeId && (_msgCache[_activeId]?.label || 'new chat').match(/^(new chat|chat \d+)$/) && sendText && !sendText.startsWith('[')) {
+    const autoLabel = sendText.slice(0, 28).trim();
+    (_msgCache[_activeId] = _msgCache[_activeId]||{}).label = autoLabel;
+    _saveCache();
+    fetch(`/api/sessions/${_activeId}`, {method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify({label: autoLabel})}).catch(()=>{});
+    const el = document.querySelector(`#ssb-${_activeId} .ssb-sess-label`);
+    if (el) el.textContent = autoLabel;
   }
 
   const toolCycle = ['web_search','recall','search_history','remember'];
@@ -995,8 +1172,7 @@ async function send() {
     if (!respText) { setStatus('idle','idle'); addMsg('truman', '(no response — try again)', null); _localTurnInFlight = false; return; }
     addMsg('truman', respText, {model: d.model || 'deepseek-v3.2', pool: d.pool || 'general', tool_calls: d.tool_calls});
     updatePanelFromResponse(d, sendText || text, respText);
-    sessions[currentSession].msgs = messages.innerHTML;
-    _saveSessions();
+    if (_activeId) { (_msgCache[_activeId]=_msgCache[_activeId]||{}).msgs = messages.innerHTML; _saveCache(); }
     _localTurnInFlight = false;
     setStatus('idle', 'idle');
     macDot.className = 'mac-dot' + (d.mac === 'connected' ? ' on' : '');
