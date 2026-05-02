@@ -587,8 +587,9 @@ async function loadHistory(sessionId) {
   // if localStorage restored sessions with messages, use them
   if (_stored && sessions[currentSession].msgs) return;
   try {
-    const sid = sessionId || currentSessionId();
-    const r = await fetch(`/api/history?session_id=${encodeURIComponent(sid)}`);
+    // if switching to a specific session use its id, otherwise load recent global turns
+    const url = sessionId ? `/api/history?session_id=${encodeURIComponent(sessionId)}` : '/api/history';
+    const r = await fetch(url);
     const d = await r.json();
     if (d.turns && d.turns.length) {
       messages.innerHTML = '';
