@@ -412,7 +412,111 @@ def drop_goal(query: str) -> str:
     return f"dropped: '{query}'" if ok else f"couldn't find active goal matching '{query}' — use list_goals to check."
 
 
+@tool
+def update_pref(key: str, value: str) -> str:
+    """Update a Truman preference or setting. Use when Om says things like 'change morning brief to 10am', 'my sleep is now 2am to 9am', 'quiet hours are 1am to 8am', 'set brief time to 8am'. Keys: morning_brief_hour, quiet_start (HH:MM), quiet_end (HH:MM). Value should match the format for the key."""
+    import re as _re
+    from truman.storage.db import set_pref as _set
+
+    def _to_hhmm(s: str) -> str:
+        """Convert '4am', '8:50', '8.50am' → 'HH:MM' 24h."""
+        s = s.strip().lower().replace(".", ":")
+        m = _re.match(r"^(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$", s)
+        if not m:
+            return s
+        h, mn, mer = int(m.group(1)), int(m.group(2) or 0), m.group(3)
+        if mer == "pm" and h != 12: h += 12
+        if mer == "am" and h == 12: h = 0
+        return f"{h:02d}:{mn:02d}"
+
+    # compound key for quiet window: "quiet_start__end" → split into two prefs
+    if key == "quiet_start__end" and "|" in value:
+        start_raw, end_raw = value.split("|", 1)
+        qs = _to_hhmm(start_raw)
+        qe = _to_hhmm(end_raw)
+        _set("quiet_start", qs)
+        _set("quiet_end", qe)
+        return f"quiet hours updated — {qs} to {qe}"
+
+    if key == "morning_brief_hour":
+        hhmm = _to_hhmm(value)
+        _set("morning_brief_hour", hhmm)
+        h = int(hhmm.split(":")[0])
+        _set("morning_brief_hour_int", str(h))
+        return f"morning brief time updated — will fire at {hhmm} ET"
+
+    _set(key, value)
+    return f"preference updated — {key}: {value}"
+
+
+@tool
+def log_sleep(sleep_start: str, sleep_end: str, raw_input: str = "") -> str:
+    """Log Om's sleep for today. Use when Om says 'gonna sleep from X to Y', 'slept from X to Y', 'sleeping X to Y'. Parse sleep_start and sleep_end as HH:MM (24h). Compute stats and show the pattern back to Om."""
+    import re
+    from datetime import date as _date, datetime as _dt, timedelta as _td
+    from truman.storage.db import log_sleep as _log, get_sleep_stats as _stats
+
+    # parse times like "4", "4am", "4:30am", "16:30" → HH:MM 24h
+    def _parse_hhmm(s: str) -> str | None:
+        s = s.strip().lower().replace(".", ":")
+        m = re.match(r"^(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$", s)
+        if not m:
+            return None
+        h, mn, meridiem = int(m.group(1)), int(m.group(2) or 0), m.group(3)
+        if meridiem == "pm" and h != 12:
+            h += 12
+        if meridiem == "am" and h == 12:
+            h = 0
+        return f"{h:02d}:{mn:02d}"
+
+    start_hm = _parse_hhmm(sleep_start)
+    end_hm   = _parse_hhmm(sleep_end)
+    if not start_hm or not end_hm:
+        return f"couldn't parse times — try 'slept from 4am to 8:50am' or '23:00 to 07:30'."
+
+    # compute duration
+    sh, sm = map(int, start_hm.split(":"))
+    eh, em = map(int, end_hm.split(":"))
+    start_mins = sh * 60 + sm
+    end_mins   = eh * 60 + em
+    if end_mins <= start_mins:
+        end_mins += 24 * 60   # sleep crosses midnight
+    duration_min = end_mins - start_mins
+
+    today_str = _date.today().isoformat()
+    _log(today_str, start_hm, end_hm, duration_min, raw_input or f"{sleep_start} → {sleep_end}")
+
+    # build weekly stats
+    entries = _stats(days=7)
+    if not entries:
+        hrs = round(duration_min / 60, 1)
+        return f"logged: slept {start_hm}–{end_hm} ({hrs}h). first entry — pattern builds over time."
+
+    total_min = sum(e["duration_min"] for e in entries)
+    avg_min   = total_min / len(entries)
+    avg_h     = int(avg_min // 60)
+    avg_m     = int(avg_min % 60)
+
+    # typical wake-up (average end time)
+    ends = []
+    for e in entries:
+        eh2, em2 = map(int, e["sleep_end"].split(":"))
+        ends.append(eh2 * 60 + em2)
+    avg_end_min = sum(ends) / len(ends)
+    avg_end_h   = int(avg_end_min // 60) % 24
+    avg_end_m   = int(avg_end_min % 60)
+
+    hrs = round(duration_min / 60, 1)
+    pattern = (
+        f"logged: slept {start_hm}–{end_hm} ({hrs}h). "
+        f"7-day avg: {avg_h}h {avg_m}m/night, "
+        f"typical wake-up ~{avg_end_h:02d}:{avg_end_m:02d}. "
+        f"({len(entries)} entries)"
+    )
+    return pattern
+
+
 TOOLS = [web_search, get_weather, remember, recall, set_reminder, list_reminders,
          search_history, recent_conversations, read_mac_file, list_mac_dir, search_mac_files,
          write_mac_file, list_models, set_model, pipeline_mode, concept_search, concept_ingest,
-         add_goal, list_goals, complete_goal, drop_goal]
+         add_goal, list_goals, complete_goal, drop_goal, update_pref, log_sleep]

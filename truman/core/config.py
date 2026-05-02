@@ -73,6 +73,7 @@ _os.environ.setdefault("ENABLE_MCP_GITHUB",  "1")
 _os.environ.setdefault("ENABLE_GOALS",       "1")
 _os.environ.setdefault("ENABLE_CURIOSITY",   "1")
 _os.environ.setdefault("ENABLE_RISK_GATE",   "1")
+_os.environ.setdefault("ENABLE_PROACTIVE",   "1")
 
 # ── Misc ──────────────────────────────────────────────────────────────────────
 os.environ["COGNEE_SKIP_CONNECTION_TEST"] = "true"

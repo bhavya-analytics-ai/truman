@@ -73,6 +73,13 @@ def push_turn(role: str, content: str, session_id: str, meta: dict = None):
                 pass
 
 
+def push_proactive(content: str):
+    """Push a proactive message to all SSE clients — rendered with 💡 marker.
+    Session-id = 'proactive' so the dashboard always shows it regardless of
+    which chat session is active."""
+    push_turn(role="assistant", content=f"💡 {content}", session_id="proactive")
+
+
 def subscribe():
     """Return a queue that will receive pushed notifications. Call unsubscribe() when done."""
     q = _q_mod.Queue()

@@ -215,6 +215,8 @@ _TOOL_PATTERNS = [
     (re.compile(r"\b(list.*goals?|show.*goals?|my goals?|what.*goals?|all.*goals?)\b", re.I), "list_goals"),
     (re.compile(r"\b(complete.*goals?|done.*goals?|finished.*goals?|mark.*done|shipped.*goals?)\b", re.I), "complete_goal"),
     (re.compile(r"\b(drop.*goals?|cancel.*goals?|remove.*goals?|not doing)\b", re.I), "drop_goal"),
+    (re.compile(r"\b(gonna sleep|going to sleep|slept from|sleeping from|sleep from|waking up at|wake up at)\b", re.I), "log_sleep"),
+    (re.compile(r"\b(change.*brief|set.*brief|morning brief.*time|brief.*at|quiet hours?|sleep window|update.*pref|change.*pref|my sleep.*is now|now.*sleep)\b", re.I), "update_pref"),
 ]
 
 
@@ -292,6 +294,26 @@ def _extract_arg(message: str, tool_name: str) -> dict:
     if tool_name == "drop_goal":
         q = re.sub(r"^(drop.*goal|cancel.*goal|remove.*goal|not doing)\s*[:\-]?\s*", "", msg, flags=re.I).strip()
         return {"query": q or msg}
+    if tool_name == "log_sleep":
+        # "gonna sleep from 4 to 8:50" / "slept from 11pm to 7am"
+        m = re.search(r"(?:sleep|slept|sleeping)\s+from\s+([^\s]+(?:\s*[ap]m)?)\s+to\s+([^\s]+(?:\s*[ap]m)?)", msg, re.I)
+        if m:
+            return {"sleep_start": m.group(1).strip(), "sleep_end": m.group(2).strip(), "raw_input": msg}
+        # "gonna sleep from 4 to 8.50" (dot instead of colon)
+        m2 = re.search(r"(\d{1,2}(?:[:.]\d{2})?\s*(?:am|pm)?)\s+to\s+(\d{1,2}(?:[:.]\d{2})?\s*(?:am|pm)?)", msg, re.I)
+        if m2:
+            return {"sleep_start": m2.group(1).strip(), "sleep_end": m2.group(2).strip(), "raw_input": msg}
+        return {"sleep_start": "00:00", "sleep_end": "08:00", "raw_input": msg}
+    if tool_name == "update_pref":
+        # "change morning brief to 10am" → key=morning_brief_hour value=10
+        m_brief = re.search(r"brief.*?(?:to|at)\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)", msg, re.I)
+        if m_brief:
+            return {"key": "morning_brief_hour", "value": m_brief.group(1).strip()}
+        # "quiet hours are 1am to 8am" / "sleep window 2am to 9am"
+        m_qh = re.search(r"(?:quiet hours?|sleep window).*?(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)\s+to\s+(\d{1,2}(?::\d{2})?\s*(?:am|pm)?)", msg, re.I)
+        if m_qh:
+            return {"key": "quiet_start__end", "value": f"{m_qh.group(1).strip()}|{m_qh.group(2).strip()}"}
+        return {"key": "general", "value": msg}
     return {}
 
 

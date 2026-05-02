@@ -224,6 +224,25 @@ CREATE TABLE IF NOT EXISTS memory_feeds (
 CREATE INDEX IF NOT EXISTS idx_feeds_date   ON memory_feeds(date);
 CREATE INDEX IF NOT EXISTS idx_feeds_source ON memory_feeds(source);
 
+-- ── User preferences (changeable via natural language) ──────────────────────
+CREATE TABLE IF NOT EXISTS user_prefs (
+    key        TEXT PRIMARY KEY,
+    value      TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+-- ── Sleep log (tracks reported sleep, 7-day rolling average) ─────────────────
+CREATE TABLE IF NOT EXISTS sleep_log (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    date         TEXT NOT NULL,          -- YYYY-MM-DD (the day sleep started)
+    sleep_start  TEXT NOT NULL,          -- HH:MM 24h
+    sleep_end    TEXT NOT NULL,          -- HH:MM 24h
+    duration_min INTEGER NOT NULL,       -- computed minutes
+    raw_input    TEXT,                   -- what Om actually said
+    created_at   TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_sleep_log_date ON sleep_log(date);
+
 -- ── Pending actions (risk gate — 5 min TTL) ──────────────────────────────────
 CREATE TABLE IF NOT EXISTS pending_actions (
     id         TEXT    PRIMARY KEY,
@@ -911,6 +930,59 @@ def get_all_facts() -> list[dict]:
 def delete_fact(fact_id: int) -> None:
     with _conn() as c:
         c.execute("DELETE FROM user_facts WHERE id = ?", (fact_id,))
+
+
+# ── User prefs ────────────────────────────────────────────────────────────────
+
+def get_pref(key: str, default: str = None) -> Optional[str]:
+    with _conn() as c:
+        row = c.execute("SELECT value FROM user_prefs WHERE key = ?", (key,)).fetchone()
+    return row["value"] if row else default
+
+
+def set_pref(key: str, value: str) -> None:
+    with _conn() as c:
+        c.execute(
+            "INSERT INTO user_prefs(key, value, updated_at) VALUES (?,?,?) "
+            "ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at",
+            (key, value, _now()),
+        )
+
+
+def get_all_prefs() -> dict:
+    with _conn() as c:
+        rows = c.execute("SELECT key, value FROM user_prefs").fetchall()
+    return {r["key"]: r["value"] for r in rows}
+
+
+# ── Sleep log ────────────────────────────────────────────────────────────────
+
+def log_sleep(date: str, sleep_start: str, sleep_end: str,
+              duration_min: int, raw_input: str = None) -> None:
+    """Insert or replace sleep entry for a given date."""
+    with _conn() as c:
+        c.execute(
+            """INSERT INTO sleep_log(date, sleep_start, sleep_end, duration_min, raw_input, created_at)
+               VALUES (?,?,?,?,?,?)
+               ON CONFLICT(date) DO UPDATE SET
+                   sleep_start=excluded.sleep_start,
+                   sleep_end=excluded.sleep_end,
+                   duration_min=excluded.duration_min,
+                   raw_input=excluded.raw_input,
+                   created_at=excluded.created_at""",
+            (date, sleep_start, sleep_end, duration_min, raw_input, _now()),
+        )
+
+
+def get_sleep_stats(days: int = 7) -> list[dict]:
+    """Return last N sleep entries ordered by date desc."""
+    with _conn() as c:
+        rows = c.execute(
+            """SELECT date, sleep_start, sleep_end, duration_min, raw_input
+               FROM sleep_log ORDER BY date DESC LIMIT ?""",
+            (days,),
+        ).fetchall()
+    return [dict(r) for r in rows]
 
 
 def get_trace_history(session_id: str = None, limit: int = 200) -> list[dict]:
