@@ -177,6 +177,17 @@ def api_chat():
         except Exception:
             pass
 
+        # broadcast to all connected clients (multi-device sync)
+        try:
+            from truman.storage.notifications import push_turn
+            push_turn("user", user_input, session_id)
+            push_turn("assistant", result["response"], session_id, {
+                "model": result["model"], "pool": result["pool"],
+                "tool_calls": result["tool_calls"]
+            })
+        except Exception:
+            pass
+
         # auto-extract personal facts in background (zero latency impact)
         threading.Thread(
             target=_auto_extract_facts,

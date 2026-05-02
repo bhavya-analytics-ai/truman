@@ -457,6 +457,17 @@ startTasksPoll();
       if (d.type === 'connected') return;
       if (d.kind === 'toast') { showToast(d.message); return; }
       if (d.kind === 'trace') { if (window._sseTraceHandler) window._sseTraceHandler(d); return; }
+      if (d.kind === 'turn') {
+        // only show if it's for the active session AND came from another device
+        // (same-device turns are already added by send() directly)
+        if (d.session_id === currentSessionId() && !_localTurnInFlight) {
+          const role = d.role === 'user' ? 'user' : 'truman';
+          addMsg(role, d.content, role === 'truman' ? d.meta : null);
+          sessions[currentSession].msgs = messages.innerHTML;
+          _saveSessions();
+        }
+        return;
+      }
       if (d.message) addMsg('truman', d.message, {});
     } catch(_) {}
   };
@@ -685,11 +696,14 @@ function addStatus() {
   return div;
 }
 
+let _localTurnInFlight = false;
+
 async function send() {
   const text = input.value.trim();
   if (!text) return;
   input.value = '';
   input.style.height = 'auto';
+  _localTurnInFlight = true;
 
   let displayText = text;
   let sendText = text;
@@ -740,6 +754,7 @@ async function send() {
     updatePanelFromResponse(d, sendText || text, respText);
     sessions[currentSession].msgs = messages.innerHTML;
     _saveSessions();
+    _localTurnInFlight = false;
     setStatus('idle', 'idle');
     // update mac dot + pool badge
     macDot.className = 'mac-dot' + (d.mac === 'connected' ? ' on' : '');
@@ -750,6 +765,7 @@ async function send() {
   } catch(e) {
     clearInterval(toolInterval);
     status.remove();
+    _localTurnInFlight = false;
     setStatus('error', 'error');
     setTimeout(() => setStatus('idle','idle'), 4000);
     console.error('[Truman] fetch error:', e);

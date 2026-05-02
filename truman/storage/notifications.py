@@ -55,6 +55,24 @@ def push_trace(session_id: str, turn_id: str, node: str, status: str,
         pass
 
 
+def push_turn(role: str, content: str, session_id: str, meta: dict = None):
+    """Broadcast a new chat turn to all SSE clients (multi-device sync)."""
+    payload = {
+        "kind":       "turn",
+        "role":       role,
+        "content":    content,
+        "session_id": session_id,
+        "meta":       meta or {},
+        "ts":         time.time(),
+    }
+    with _listeners_lock:
+        for q in _listeners:
+            try:
+                q.put_nowait(payload)
+            except Exception:
+                pass
+
+
 def subscribe():
     """Return a queue that will receive pushed notifications. Call unsubscribe() when done."""
     q = _q_mod.Queue()
