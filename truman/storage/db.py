@@ -22,12 +22,15 @@ from contextlib import contextmanager
 from datetime import datetime
 from typing import Any, Optional
 
-# db.py lives at truman/storage/db.py; truman.db lives at truman/truman.db.
-# Two dirname() hops: truman/storage/db.py → truman/storage/ → truman/.
-DB_PATH = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    "truman.db",
-)
+# On Railway (volume mounted at /data), persist there so DB survives redeploys.
+# Locally, fall back to truman/truman.db alongside the code.
+if os.path.isdir("/data"):
+    DB_PATH = "/data/truman.db"
+else:
+    DB_PATH = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "truman.db",
+    )
 
 _init_lock = threading.Lock()
 _initialized = False

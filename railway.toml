@@ -6,3 +6,6 @@ startCommand = "python -m truman.main_cloud"
 restartPolicyType = "always"
 healthcheckPath = "/health"
 healthcheckTimeout = 30
+
+# Volume mount: in Railway dashboard → Service → Volumes → Add Volume
+# Mount path: /data  (db.py auto-detects and uses /data/truman.db when /data exists)

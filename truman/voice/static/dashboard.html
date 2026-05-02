@@ -6,233 +6,301 @@
 <title>Truman</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { background: #0a0a0f; color: #e8e8f0; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif; height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
+
+  /* ── Themes ─────────────────────────────────────────────────────────────── */
+  :root {
+    --bg:      #0a0a0f;
+    --bg2:     #0d0d1a;
+    --bg3:     #16162a;
+    --border:  #1a1a2e;
+    --border2: #2a2a4a;
+    --text:    #e8e8f0;
+    --text2:   #7c7caa;
+    --text3:   #555570;
+    --accent:  #4f46e5;
+    --accent2: #a78bfa;
+    --user-bubble: #4f46e5;
+  }
+  .theme-slate {
+    --bg: #0f1117; --bg2: #161b27; --bg3: #1e2535;
+    --border: #1e2535; --border2: #2e3a50;
+    --text: #e2e8f0; --text2: #7a90aa; --text3: #4a5a70;
+    --accent: #3b82f6; --accent2: #93c5fd; --user-bubble: #2563eb;
+  }
+  .theme-forest {
+    --bg: #050d08; --bg2: #0a1510; --bg3: #112018;
+    --border: #142019; --border2: #1e3028;
+    --text: #e8f0e8; --text2: #6aaa7a; --text3: #3a6a48;
+    --accent: #22c55e; --accent2: #86efac; --user-bubble: #16a34a;
+  }
+  .theme-crimson {
+    --bg: #0f0508; --bg2: #1a0810; --bg3: #2a1020;
+    --border: #2a1020; --border2: #3f1a30;
+    --text: #f0e8ee; --text2: #aa6a88; --text3: #703050;
+    --accent: #e11d48; --accent2: #fb7185; --user-bubble: #be123c;
+  }
+  .theme-cream {
+    --bg: #f5f0e8; --bg2: #ede8dc; --bg3: #e0d8c8;
+    --border: #d0c8b0; --border2: #b8b098;
+    --text: #2a2420; --text2: #6a6050; --text3: #9a9080;
+    --accent: #92400e; --accent2: #b45309; --user-bubble: #78350f;
+  }
+
+  body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif; height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
 
   /* Header */
-  .header { padding: 14px 18px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #1a1a2e; background: #0d0d1a; }
-  .header h1 { font-size: 17px; font-weight: 600; letter-spacing: 0.05em; color: #a78bfa; }
-  .mac-dot { width: 8px; height: 8px; border-radius: 50%; background: #ef4444; transition: background 0.3s; }
+  .header { padding: 10px 14px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border); background: var(--bg2); flex-shrink: 0; }
+  .header h1 { font-size: 16px; font-weight: 700; letter-spacing: 0.06em; color: var(--accent2); }
+  .hdr-right { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+  .mac-dot { width: 8px; height: 8px; border-radius: 50%; background: #ef4444; transition: background 0.3s; flex-shrink: 0; }
   .mac-dot.on { background: #22c55e; }
-  .hdr-btn { background: none; border: 1px solid #2a2a4a; border-radius: 8px; color: #7c7caa; font-size: 11px; padding: 4px 10px; cursor: pointer; }
-  .hdr-btn:hover { border-color: #4f46e5; color: #a78bfa; }
-  .session-bar { padding: 6px 14px; background: #0a0a12; border-bottom: 1px solid #1a1a2e; display: flex; gap: 6px; overflow-x: auto; }
-  .session-tab { background: #16162a; border: 1px solid #2a2a4a; border-radius: 8px; color: #7c7caa; font-size: 11px; padding: 4px 12px; cursor: pointer; white-space: nowrap; }
-  .session-tab.active { border-color: #4f46e5; color: #a78bfa; background: #1a1a3a; }
-  .session-tab:hover { border-color: #4f46e5; }
+  .hdr-btn { background: none; border: 1px solid var(--border2); border-radius: 7px; color: var(--text2); font-size: 11px; padding: 4px 9px; cursor: pointer; white-space: nowrap; }
+  .hdr-btn:hover { border-color: var(--accent); color: var(--accent2); }
+
+  /* Theme & model selects */
+  .hdr-select { background: var(--bg3); border: 1px solid var(--border2); border-radius: 7px; color: var(--text2); font-size: 11px; padding: 3px 7px; cursor: pointer; outline: none; }
+  .hdr-select:hover, .hdr-select:focus { border-color: var(--accent); color: var(--accent2); }
+
+  /* Session bar */
+  .session-bar { padding: 5px 12px; background: var(--bg); border-bottom: 1px solid var(--border); display: flex; gap: 5px; overflow-x: auto; flex-shrink: 0; }
+  .session-bar::-webkit-scrollbar { height: 0; }
+  .session-tab { background: var(--bg3); border: 1px solid var(--border2); border-radius: 7px; color: var(--text2); font-size: 11px; padding: 4px 11px; cursor: pointer; white-space: nowrap; display: flex; align-items: center; gap: 5px; }
+  .session-tab.active { border-color: var(--accent); color: var(--accent2); background: var(--bg2); }
+  .session-tab:hover { border-color: var(--accent); }
+  .tab-del { background: none; border: none; color: var(--text3); font-size: 11px; cursor: pointer; padding: 0 1px; line-height: 1; }
+  .tab-del:hover { color: #ef4444; }
 
   /* Messages */
-  .messages { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; scroll-behavior: smooth; }
-  .messages::-webkit-scrollbar { width: 0; }
+  .messages { flex: 1; overflow-y: auto; padding: 14px 14px 6px; display: flex; flex-direction: column; gap: 10px; scroll-behavior: smooth; }
+  .messages::-webkit-scrollbar { width: 3px; }
+  .messages::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
 
-  .msg { max-width: 88%; display: flex; flex-direction: column; gap: 4px; }
+  .msg { max-width: 88%; display: flex; flex-direction: column; gap: 3px; }
   .msg.user { align-self: flex-end; align-items: flex-end; }
   .msg.truman { align-self: flex-start; }
 
-  .bubble { padding: 10px 14px; border-radius: 16px; font-size: 15px; line-height: 1.5; }
-  .msg.user .bubble { background: #4f46e5; color: #fff; border-bottom-right-radius: 4px; }
-  .msg.truman .bubble { background: #16162a; color: #e8e8f0; border-bottom-left-radius: 4px; border: 1px solid #1e1e3a; }
+  .bubble { padding: 9px 13px; border-radius: 16px; font-size: 15px; line-height: 1.6; position: relative; }
+  .msg.user .bubble { background: var(--user-bubble); color: #fff; border-bottom-right-radius: 4px; }
+  .msg.truman .bubble { background: var(--bg3); color: var(--text); border-bottom-left-radius: 4px; border: 1px solid var(--border); }
 
-  .meta { font-size: 11px; color: #555570; display: flex; gap: 6px; flex-wrap: wrap; }
+  /* Markdown in bubbles */
+  .bubble strong { font-weight: 700; }
+  .bubble em { font-style: italic; opacity: 0.85; }
+  .bubble code { background: rgba(0,0,0,0.3); border-radius: 4px; padding: 1px 5px; font-family: 'SF Mono', monospace; font-size: 13px; }
+  .bubble pre { background: rgba(0,0,0,0.4); border-radius: 8px; padding: 10px 12px; margin: 6px 0; overflow-x: auto; }
+  .bubble pre code { background: none; padding: 0; font-size: 12px; }
+  .bubble a { color: var(--accent2); text-decoration: underline; word-break: break-all; }
+  .bubble a:hover { opacity: 0.8; }
+  .bubble ul, .bubble ol { padding-left: 18px; margin: 4px 0; }
+  .bubble li { margin: 2px 0; }
+  .bubble h1, .bubble h2, .bubble h3 { font-size: 14px; font-weight: 700; margin: 4px 0 2px; }
+
+  .msg-ts { font-size: 10px; color: var(--text3); padding: 0 4px; }
+  .msg-actions { display: flex; gap: 5px; align-items: center; opacity: 0; transition: opacity 0.15s; }
+  .msg.truman:hover .msg-actions { opacity: 1; }
+  .msg-action-btn { background: none; border: none; color: var(--text3); font-size: 12px; cursor: pointer; padding: 1px 4px; border-radius: 4px; }
+  .msg-action-btn:hover { color: var(--accent2); background: var(--bg3); }
+
+  .meta { font-size: 11px; color: var(--text3); display: flex; gap: 5px; flex-wrap: wrap; margin-top: 2px; }
   .msg.user .meta { justify-content: flex-end; }
-  .badge { background: #1a1a2e; border: 1px solid #2a2a4a; border-radius: 6px; padding: 1px 6px; font-size: 10px; color: #7c7caa; }
+  .badge { background: var(--bg2); border: 1px solid var(--border2); border-radius: 6px; padding: 1px 6px; font-size: 10px; color: var(--text2); }
   .badge.pool-coding { color: #34d399; border-color: #065f46; }
   .badge.pool-design { color: #60a5fa; border-color: #1e3a5f; }
   .badge.pool-creative { color: #f472b6; border-color: #5f1e3a; }
-  .badge.pool-general { color: #a78bfa; border-color: #3a1e5f; }
+  .badge.pool-general { color: var(--accent2); border-color: #3a1e5f; }
+  .badge.pool-reasoning { color: #60a5fa; border-color: #1e3a5f; }
+  .badge.pool-fast { color: #34d399; border-color: #065f46; }
   .badge.tool { color: #fbbf24; border-color: #5f4a1e; }
 
   /* Status indicator */
-  .status-line { align-self: flex-start; font-size: 13px; color: #7c7caa; padding: 6px 4px; display: flex; align-items: center; gap: 8px; }
-  .status-line .bar { width: 3px; height: 16px; border-radius: 2px; background: #4f46e5; animation: statusPulse 1s infinite; }
+  .status-line { align-self: flex-start; font-size: 13px; color: var(--text2); padding: 6px 4px; display: flex; align-items: center; gap: 8px; }
+  .status-line .bar { width: 3px; height: 16px; border-radius: 2px; background: var(--accent); animation: statusPulse 1s infinite; }
   .status-text { animation: statusFade 2s infinite; }
   @keyframes statusPulse { 0%,100% { opacity: 1; transform: scaleY(1); } 50% { opacity: 0.4; transform: scaleY(0.6); } }
   @keyframes statusFade { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
 
   /* Input area */
-  .input-area { padding: 12px 14px; border-top: 1px solid #1a1a2e; background: #0d0d1a; display: flex; gap: 10px; align-items: flex-end; }
-  textarea { flex: 1; background: #16162a; border: 1px solid #2a2a4a; border-radius: 14px; padding: 10px 14px; color: #e8e8f0; font-size: 15px; resize: none; outline: none; max-height: 120px; line-height: 1.4; font-family: inherit; }
-  textarea::placeholder { color: #44445a; }
-  textarea:focus { border-color: #4f46e5; }
+  .input-area { padding: 10px 12px; border-top: 1px solid var(--border); background: var(--bg2); display: flex; gap: 8px; align-items: flex-end; flex-shrink: 0; }
+  textarea { flex: 1; background: var(--bg3); border: 1px solid var(--border2); border-radius: 13px; padding: 9px 13px; color: var(--text); font-size: 15px; resize: none; outline: none; max-height: 120px; line-height: 1.4; font-family: inherit; }
+  textarea::placeholder { color: var(--text3); }
+  textarea:focus { border-color: var(--accent); }
 
-  .btn { width: 42px; height: 42px; border-radius: 50%; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: all 0.2s; }
-  .send-btn { background: #4f46e5; }
-  .send-btn:hover { background: #4338ca; }
+  .btn { width: 40px; height: 40px; border-radius: 50%; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; transition: all 0.2s; }
+  .send-btn { background: var(--accent); }
+  .send-btn:hover { filter: brightness(1.15); }
   .send-btn:active { transform: scale(0.93); }
-  .voice-btn { background: #16162a; border: 1px solid #2a2a4a; }
+  .voice-btn { background: var(--bg3); border: 1px solid var(--border2); }
   .voice-btn.listening { background: #7c3aed; border-color: #7c3aed; animation: pulse 1.5s infinite; }
   @keyframes pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(124,58,237,0.4); } 50% { box-shadow: 0 0 0 8px rgba(124,58,237,0); } }
-
   svg { pointer-events: none; }
 
-  /* Tasks strip — live background work progress */
-  .tasks-strip { padding:0 14px; background:#0a0a12; border-bottom:1px solid #1a1a2e; display:none; flex-direction:column; gap:0; max-height:180px; overflow-y:auto; }
+  /* Tasks strip */
+  .tasks-strip { padding:0 14px; background:var(--bg);border-bottom:1px solid var(--border);display:none;flex-direction:column;gap:0;max-height:180px;overflow-y:auto;flex-shrink:0; }
   .tasks-strip.visible { display:flex; padding:6px 14px; }
   .task-row { display:grid; grid-template-columns:18px 1fr auto; gap:8px; align-items:center; padding:6px 0; border-bottom:1px solid #14142a; font-size:11px; }
   .task-row:last-child { border-bottom:none; }
   .task-icon { font-size:13px; }
   .task-icon.done { color:#22c55e; }
-  .task-icon.run  { color:#a78bfa; animation:taskSpin 2s linear infinite; }
+  .task-icon.run  { color:var(--accent2); animation:taskSpin 2s linear infinite; }
   .task-icon.fail { color:#ef4444; }
   @keyframes taskSpin { 0%{opacity:0.4} 50%{opacity:1} 100%{opacity:0.4} }
   .task-info  { display:flex; flex-direction:column; gap:3px; min-width:0; }
-  .task-title { color:#e8e8f0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:11px; }
-  .task-stage { color:#7c7caa; font-size:10px; }
-  .task-bar   { width:100%; height:3px; background:#16162a; border-radius:2px; overflow:hidden; margin-top:2px; }
-  .task-bar-fill { height:100%; background:linear-gradient(90deg,#7c3aed,#a78bfa); transition:width 0.4s; }
+  .task-title { color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; font-size:11px; }
+  .task-stage { color:var(--text2); font-size:10px; }
+  .task-bar   { width:100%; height:3px; background:var(--bg3); border-radius:2px; overflow:hidden; margin-top:2px; }
+  .task-bar-fill { height:100%; background:linear-gradient(90deg,#7c3aed,var(--accent2)); transition:width 0.4s; }
   .task-bar-fill.done { background:#22c55e; }
   .task-bar-fill.fail { background:#ef4444; }
-  .task-pct { font-size:11px; color:#a78bfa; font-weight:600; min-width:36px; text-align:right; }
+  .task-pct { font-size:11px; color:var(--accent2); font-weight:600; min-width:36px; text-align:right; }
   .task-pct.done { color:#22c55e; }
   .task-pct.fail { color:#ef4444; }
 
-  /* Activity panel */
-  .activity-panel { position:fixed; top:120px; right:16px; width:210px; background:#0d0d1a; border:1px solid #2a2a4a; border-radius:12px; z-index:150; font-size:11px; box-shadow:0 4px 24px rgba(0,0,0,0.5); user-select:none; }
-  .ap-hdr { padding:8px 12px; display:flex; justify-content:space-between; align-items:center; cursor:grab; border-bottom:1px solid #1a1a2e; border-radius:12px 12px 0 0; background:#16162a; }
+  /* Activity panel (small floating) */
+  .activity-panel { position:fixed; top:120px; right:16px; width:210px; background:var(--bg2); border:1px solid var(--border2); border-radius:12px; z-index:150; font-size:11px; box-shadow:0 4px 24px rgba(0,0,0,0.5); user-select:none; }
+  .ap-hdr { padding:8px 12px; display:flex; justify-content:space-between; align-items:center; cursor:grab; border-bottom:1px solid var(--border); border-radius:12px 12px 0 0; background:var(--bg3); }
   .ap-hdr:active { cursor:grabbing; }
   .ap-hdr-left { display:flex; align-items:center; gap:6px; }
   .ap-dot { width:6px; height:6px; border-radius:50%; background:#22c55e; animation:apPulse 2s infinite; }
-  .ap-dot.busy { background:#a78bfa; }
+  .ap-dot.busy { background:var(--accent2); }
   .ap-dot.err { background:#ef4444; animation:none; }
   @keyframes apPulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
-  .ap-title { font-size:10px; font-weight:600; letter-spacing:0.08em; color:#7c7caa; }
-  .ap-min { background:none; border:none; color:#555570; font-size:13px; cursor:pointer; padding:0 2px; line-height:1; }
-  .ap-min:hover { color:#a78bfa; }
+  .ap-title { font-size:10px; font-weight:600; letter-spacing:0.08em; color:var(--text2); }
+  .ap-min { background:none; border:none; color:var(--text3); font-size:13px; cursor:pointer; padding:0 2px; line-height:1; }
+  .ap-min:hover { color:var(--accent2); }
   .ap-body { padding:10px 12px; display:flex; flex-direction:column; gap:7px; }
   .ap-row { display:grid; grid-template-columns:52px 1fr; gap:4px; align-items:start; }
-  .ap-label { color:#555570; font-size:10px; padding-top:1px; text-transform:uppercase; letter-spacing:0.05em; }
-  .ap-val { color:#e8e8f0; font-size:11px; word-break:break-word; }
-  .ap-val.model { color:#a78bfa; font-weight:600; }
+  .ap-label { color:var(--text3); font-size:10px; padding-top:1px; text-transform:uppercase; letter-spacing:0.05em; }
+  .ap-val { color:var(--text); font-size:11px; word-break:break-word; }
+  .ap-val.model { color:var(--accent2); font-weight:600; }
   .ap-val.pool-coding { color:#34d399; }
   .ap-val.pool-creative { color:#f472b6; }
   .ap-val.pool-reasoning { color:#60a5fa; }
-  .ap-val.pool-general { color:#a78bfa; }
+  .ap-val.pool-general { color:var(--accent2); }
   .ap-val.pool-design { color:#60a5fa; }
   .ap-val.pool-docs { color:#fbbf24; }
   .ap-val.pool-fast { color:#34d399; }
   .ap-val.pool-agentic { color:#f472b6; }
   .ap-val.err { color:#ef4444; font-size:10px; }
-  .ap-divider { height:1px; background:#1a1a2e; }
-  .ap-task-bar { height:3px; background:#1a1a2e; border-radius:2px; overflow:hidden; margin-top:3px; }
-  .ap-task-fill { height:100%; background:linear-gradient(90deg,#7c3aed,#a78bfa); transition:width 0.4s; }
+  .ap-divider { height:1px; background:var(--border); }
+  .ap-task-bar { height:3px; background:var(--border); border-radius:2px; overflow:hidden; margin-top:3px; }
+  .ap-task-fill { height:100%; background:linear-gradient(90deg,#7c3aed,var(--accent2)); transition:width 0.4s; }
   .ap-minimized .ap-body { display:none; }
   .ap-minimized { border-radius:12px; }
   .ap-minimized .ap-hdr { border-radius:12px; border-bottom:none; }
 
   /* Power button */
-  .power-btn { width:34px; height:34px; border-radius:50%; border:2px solid #22c55e; background:none; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:all 0.2s; }
+  .power-btn { width:32px; height:32px; border-radius:50%; border:2px solid #22c55e; background:none; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:all 0.2s; }
   .power-btn:hover { border-color:#16a34a; box-shadow:0 0 8px rgba(34,197,94,0.4); }
   .power-btn.off { border-color:#ef4444; }
   .power-btn.off:hover { box-shadow:0 0 8px rgba(239,68,68,0.4); }
-  .power-icon { width:14px; height:14px; border-radius:50%; border:2px solid #22c55e; position:relative; }
+  .power-icon { width:13px; height:13px; border-radius:50%; border:2px solid #22c55e; position:relative; }
   .power-icon::after { content:''; position:absolute; top:-4px; left:50%; transform:translateX(-50%); width:2px; height:6px; background:#22c55e; border-radius:1px; }
   .power-btn.off .power-icon { border-color:#ef4444; }
   .power-btn.off .power-icon::after { background:#ef4444; }
 
   /* Status pill */
-  .status-pill { display:flex; align-items:center; gap:5px; background:#16162a; border:1px solid #2a2a4a; border-radius:20px; padding:3px 10px 3px 7px; cursor:pointer; transition:border-color 0.2s; }
-  .status-pill:hover { border-color:#4f46e5; }
+  .status-pill { display:flex; align-items:center; gap:5px; background:var(--bg3); border:1px solid var(--border2); border-radius:20px; padding:3px 10px 3px 7px; cursor:pointer; transition:border-color 0.2s; }
+  .status-pill:hover { border-color:var(--accent); }
   .status-dot { width:7px; height:7px; border-radius:50%; flex-shrink:0; }
   .status-dot.idle    { background:#22c55e; }
   .status-dot.think   { background:#3b82f6; animation:pillPulse 1s infinite; }
   .status-dot.listen  { background:#f59e0b; animation:pillPulse 1s infinite; }
-  .status-dot.act     { background:#a78bfa; animation:pillPulse 1s infinite; }
+  .status-dot.act     { background:var(--accent2); animation:pillPulse 1s infinite; }
   .status-dot.error   { background:#ef4444; }
-  .status-pill-label { font-size:10px; color:#7c7caa; }
+  .status-pill-label { font-size:10px; color:var(--text2); }
   @keyframes pillPulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
 
   /* Activity sidebar */
-  .activity-sidebar { position:fixed; top:0; right:-440px; width:420px; height:100dvh; background:#0a0a12; border-left:1px solid #1a1a2e; z-index:190; display:flex; flex-direction:column; transition:right 0.28s ease; overflow:hidden; }
+  .activity-sidebar { position:fixed; top:0; right:-440px; width:420px; height:100dvh; background:var(--bg); border-left:1px solid var(--border); z-index:190; display:flex; flex-direction:column; transition:right 0.28s ease; overflow:hidden; }
   .activity-sidebar.open { right:0; }
   .activity-sidebar.open .asb-resize { display:block; }
-  /* Resize handle */
   .asb-resize { display:none; position:absolute; left:0; top:0; width:5px; height:100%; cursor:ew-resize; z-index:10; background:transparent; }
   .asb-resize:hover { background:rgba(79,70,229,0.3); }
-  .asb-hdr { padding:14px 16px; border-bottom:1px solid #1a1a2e; display:flex; justify-content:space-between; align-items:center; flex-shrink:0; background:#0d0d1a; }
-  .asb-hdr h2 { font-size:13px; color:#a78bfa; font-weight:600; letter-spacing:0.05em; }
-  .asb-close { background:none; border:none; color:#555570; font-size:16px; cursor:pointer; padding:2px 6px; }
-  .asb-close:hover { color:#e8e8f0; }
+  .asb-hdr { padding:14px 16px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; flex-shrink:0; background:var(--bg2); }
+  .asb-hdr h2 { font-size:13px; color:var(--accent2); font-weight:600; letter-spacing:0.05em; }
+  .asb-close { background:none; border:none; color:var(--text3); font-size:16px; cursor:pointer; padding:2px 6px; }
+  .asb-close:hover { color:var(--text); }
   .asb-body { overflow-y:auto; padding:12px; display:flex; flex-direction:column; gap:0; flex:1; }
   .asb-body::-webkit-scrollbar { width:3px; }
-  .asb-body::-webkit-scrollbar-thumb { background:#2a2a4a; border-radius:2px; }
-  /* Turn blocks */
+  .asb-body::-webkit-scrollbar-thumb { background:var(--border2); border-radius:2px; }
   .aturn { margin-bottom:16px; }
-  .aturn-hdr { font-size:10px; color:#444460; padding:0 0 6px 2px; display:flex; align-items:center; gap:8px; border-bottom:1px solid #16162a; margin-bottom:6px; }
+  .aturn-hdr { font-size:10px; color:var(--text3); padding:0 0 6px 2px; display:flex; align-items:center; gap:8px; border-bottom:1px solid var(--bg3); margin-bottom:6px; }
   .aturn-ts { color:#333350; }
   .aturn-input { color:#666680; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:240px; font-style:italic; }
-  /* Action rows */
   .arow { display:grid; grid-template-columns:20px 1fr auto; gap:8px; align-items:start; padding:5px 4px; border-radius:6px; cursor:pointer; }
-  .arow:hover { background:#0f0f20; }
+  .arow:hover { background:var(--bg2); }
   .arow-icon { font-size:13px; text-align:center; padding-top:1px; }
   .arow-main { display:flex; flex-direction:column; gap:2px; overflow:hidden; }
-  .arow-name { font-size:12px; font-weight:600; color:#a78bfa; }
+  .arow-name { font-size:12px; font-weight:600; color:var(--accent2); }
   .arow-name.tool { color:#fbbf24; }
   .arow-name.skill { color:#34d399; }
   .arow-name.llm { color:#60a5fa; }
   .arow-name.error { color:#ef4444; }
-  .arow-sub { font-size:11px; color:#666680; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .arow-dur { font-size:10px; color:#333350; white-space:nowrap; padding-top:2px; }
-  /* Expanded detail */
-  .arow-detail { display:none; margin:4px 0 6px 28px; background:#0a0a18; border-radius:6px; padding:8px; border:1px solid #16162a; }
+  .arow-sub { font-size:11px; color:var(--text2); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .arow-dur { font-size:10px; color:var(--text3); white-space:nowrap; padding-top:2px; }
+  .arow-detail { display:none; margin:4px 0 6px 28px; background:var(--bg); border-radius:6px; padding:8px; border:1px solid var(--border); }
   .arow.expanded .arow-detail { display:block; }
-  .arow-detail-lbl { font-size:10px; color:#444460; text-transform:uppercase; letter-spacing:0.05em; margin-bottom:3px; margin-top:6px; }
+  .arow-detail-lbl { font-size:10px; color:var(--text3); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:3px; margin-top:6px; }
   .arow-detail-lbl:first-child { margin-top:0; }
   .arow-detail-val { font-size:11px; color:#b0b0c8; font-family:monospace; white-space:pre-wrap; word-break:break-all; max-height:140px; overflow-y:auto; }
-  /* Activity button */
-  .activity-btn { background:none; border:1px solid #2a2a4a; border-radius:8px; color:#7c7caa; font-size:11px; padding:4px 10px; cursor:pointer; }
-  .activity-btn:hover { border-color:#4f46e5; color:#a78bfa; }
-  .activity-btn.active { border-color:#4f46e5; color:#a78bfa; background:#16162a; }
-
-  /* Pin button on truman messages */
-  .pin-btn { background:none; border:none; color:#333350; font-size:12px; cursor:pointer; padding:0 3px; opacity:0; transition:opacity 0.15s; line-height:1; }
-  .msg.truman:hover .pin-btn { opacity:1; }
-  .pin-btn:hover { color:#f59e0b; }
+  .activity-btn { background:none; border:1px solid var(--border2); border-radius:7px; color:var(--text2); font-size:11px; padding:4px 9px; cursor:pointer; white-space:nowrap; }
+  .activity-btn:hover { border-color:var(--accent); color:var(--accent2); }
+  .activity-btn.active { border-color:var(--accent); color:var(--accent2); background:var(--bg3); }
 
   /* Memory panel */
-  .memory-sidebar { position:fixed; top:0; right:-380px; width:360px; height:100dvh; background:#0a0a12; border-left:1px solid #1a1a2e; z-index:190; display:flex; flex-direction:column; transition:right 0.28s ease; }
+  .memory-sidebar { position:fixed; top:0; right:-380px; width:360px; height:100dvh; background:var(--bg); border-left:1px solid var(--border); z-index:190; display:flex; flex-direction:column; transition:right 0.28s ease; }
   .memory-sidebar.open { right:0; }
-  .mem-hdr { padding:14px 16px; border-bottom:1px solid #1a1a2e; display:flex; justify-content:space-between; align-items:center; flex-shrink:0; background:#0d0d1a; }
+  .mem-hdr { padding:14px 16px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; flex-shrink:0; background:var(--bg2); }
   .mem-hdr h2 { font-size:13px; color:#f59e0b; font-weight:600; letter-spacing:0.05em; }
-  .mem-close { background:none; border:none; color:#555570; font-size:16px; cursor:pointer; }
-  .mem-close:hover { color:#e8e8f0; }
+  .mem-close { background:none; border:none; color:var(--text3); font-size:16px; cursor:pointer; }
+  .mem-close:hover { color:var(--text); }
   .mem-body { overflow-y:auto; padding:12px; display:flex; flex-direction:column; gap:8px; flex:1; }
   .mem-body::-webkit-scrollbar { width:3px; }
-  .mem-body::-webkit-scrollbar-thumb { background:#2a2a4a; }
-  .mem-fact { background:#16162a; border:1px solid #1e1e3a; border-radius:8px; padding:10px 12px; display:flex; align-items:flex-start; gap:8px; }
-  .mem-fact-text { flex:1; font-size:12px; color:#e8e8f0; line-height:1.5; }
-  .mem-fact-del { background:none; border:none; color:#333350; font-size:14px; cursor:pointer; flex-shrink:0; padding:0; }
+  .mem-body::-webkit-scrollbar-thumb { background:var(--border2); }
+  .mem-fact { background:var(--bg3); border:1px solid var(--border); border-radius:8px; padding:10px 12px; display:flex; align-items:flex-start; gap:8px; }
+  .mem-fact-text { flex:1; font-size:12px; color:var(--text); line-height:1.5; }
+  .mem-fact-del { background:none; border:none; color:var(--text3); font-size:14px; cursor:pointer; flex-shrink:0; padding:0; }
   .mem-fact-del:hover { color:#ef4444; }
   .mem-imp { font-size:10px; color:#f59e0b; margin-top:3px; }
-  .mem-add { padding:10px 12px; border-top:1px solid #1a1a2e; display:flex; gap:8px; flex-shrink:0; background:#0d0d1a; }
-  .mem-add input { flex:1; background:#16162a; border:1px solid #2a2a4a; border-radius:8px; padding:7px 10px; color:#e8e8f0; font-size:12px; outline:none; }
+  .mem-add { padding:10px 12px; border-top:1px solid var(--border); display:flex; gap:8px; flex-shrink:0; background:var(--bg2); }
+  .mem-add input { flex:1; background:var(--bg3); border:1px solid var(--border2); border-radius:8px; padding:7px 10px; color:var(--text); font-size:12px; outline:none; }
   .mem-add input:focus { border-color:#f59e0b; }
   .mem-add-btn { background:#f59e0b22; border:1px solid #f59e0b55; border-radius:8px; color:#f59e0b; font-size:11px; padding:6px 12px; cursor:pointer; white-space:nowrap; }
   .mem-add-btn:hover { background:#f59e0b33; }
 
+  /* Pin button */
+  .pin-btn { background:none; border:none; color:var(--text3); font-size:12px; cursor:pointer; padding:0 3px; opacity:0; transition:opacity 0.15s; line-height:1; }
+  .msg.truman:hover .pin-btn { opacity:1; }
+  .pin-btn:hover { color:#f59e0b; }
+
   /* Events drawer */
-  .drawer { position:fixed; top:0; right:-360px; width:340px; height:100dvh; background:#0d0d1a; border-left:1px solid #1a1a2e; z-index:200; display:flex; flex-direction:column; transition:right 0.25s ease; }
+  .drawer { position:fixed; top:0; right:-360px; width:340px; height:100dvh; background:var(--bg2); border-left:1px solid var(--border); z-index:200; display:flex; flex-direction:column; transition:right 0.25s ease; }
   .drawer.open { right:0; }
-  .drawer-hdr { padding:14px 16px; border-bottom:1px solid #1a1a2e; display:flex; justify-content:space-between; align-items:center; flex-shrink:0; }
-  .drawer-hdr h2 { font-size:13px; color:#a78bfa; font-weight:600; letter-spacing:0.05em; }
-  .drawer-close { background:none; border:none; color:#555570; font-size:16px; cursor:pointer; padding:2px 6px; }
-  .drawer-close:hover { color:#e8e8f0; }
+  .drawer-hdr { padding:14px 16px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; flex-shrink:0; }
+  .drawer-hdr h2 { font-size:13px; color:var(--accent2); font-weight:600; letter-spacing:0.05em; }
+  .drawer-close { background:none; border:none; color:var(--text3); font-size:16px; cursor:pointer; padding:2px 6px; }
+  .drawer-close:hover { color:var(--text); }
   .drawer-body { overflow-y:auto; padding:10px; display:flex; flex-direction:column; gap:6px; flex:1; }
   .drawer-body::-webkit-scrollbar { width:0; }
-
-  /* Log rows */
-  .log-row { background:#16162a; border:1px solid #1e1e3a; border-radius:8px; padding:8px 12px; display:grid; grid-template-columns:42px 1fr auto; gap:6px; align-items:start; }
+  .log-row { background:var(--bg3); border:1px solid var(--border); border-radius:8px; padding:8px 12px; display:grid; grid-template-columns:42px 1fr auto; gap:6px; align-items:start; }
   .log-dot { width:8px; height:8px; border-radius:50%; margin-top:3px; flex-shrink:0; }
   .log-dot.ok   { background:#22c55e; }
   .log-dot.slow { background:#f59e0b; }
   .log-dot.error{ background:#ef4444; }
   .log-dot.warn { background:#f59e0b; }
-  .log-time { font-size:10px; color:#555570; margin-top:1px; }
-  .log-msg  { font-size:12px; color:#e8e8f0; margin-bottom:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .log-meta { font-size:10px; color:#7c7caa; display:flex; gap:4px; flex-wrap:wrap; }
+  .log-time { font-size:10px; color:var(--text3); margin-top:1px; }
+  .log-msg  { font-size:12px; color:var(--text); margin-bottom:3px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .log-meta { font-size:10px; color:var(--text2); display:flex; gap:4px; flex-wrap:wrap; }
   .log-secs { font-size:11px; font-weight:600; text-align:right; white-space:nowrap; }
   .log-secs.ok   { color:#22c55e; }
   .log-secs.slow { color:#f59e0b; }
   .log-secs.error{ color:#ef4444; }
   .log-err  { font-size:10px; color:#ef4444; margin-top:3px; word-break:break-all; }
+
+  /* Scroll-to-bottom button */
+  .scroll-btn { position:fixed; bottom:80px; right:20px; width:34px; height:34px; border-radius:50%; background:var(--bg3); border:1px solid var(--border2); color:var(--text2); font-size:16px; cursor:pointer; display:none; align-items:center; justify-content:center; z-index:100; box-shadow:0 2px 8px rgba(0,0,0,0.4); }
+  .scroll-btn.visible { display:flex; }
+  .scroll-btn:hover { border-color:var(--accent); color:var(--accent2); }
 </style>
 </head>
 <body>
@@ -245,7 +313,7 @@
     <button class="asb-close" onclick="closeActivity()">✕</button>
   </div>
   <div class="asb-body" id="activity-body">
-    <div id="activity-placeholder" style="color:#444460;padding:24px;text-align:center;font-size:12px">no activity yet — send a message</div>
+    <div id="activity-placeholder" style="color:var(--text3);padding:24px;text-align:center;font-size:12px">no activity yet — send a message</div>
   </div>
 </div>
 
@@ -256,7 +324,7 @@
     <button class="mem-close" onclick="closeMemory()">✕</button>
   </div>
   <div class="mem-body" id="mem-body">
-    <div id="mem-placeholder" style="color:#444460;padding:24px;text-align:center;font-size:12px">no pinned facts yet — pin a message to remember it</div>
+    <div id="mem-placeholder" style="color:var(--text3);padding:24px;text-align:center;font-size:12px">no pinned facts yet — pin a message to remember it</div>
   </div>
   <div class="mem-add">
     <input type="text" id="mem-input" placeholder="add a fact manually..." maxlength="300">
@@ -271,23 +339,36 @@
     <button class="drawer-close" onclick="closeDrawer()">✕</button>
   </div>
   <div class="drawer-body" id="drawer-body">
-    <div style="color:#555570;padding:20px;text-align:center;font-size:12px">no events yet</div>
+    <div style="color:var(--text3);padding:20px;text-align:center;font-size:12px">no events yet</div>
   </div>
 </div>
 
+<!-- Scroll to bottom -->
+<button class="scroll-btn" id="scroll-btn" onclick="scrollToBottom()" title="scroll to bottom">↓</button>
+
 <div class="header">
   <h1>TRUMAN</h1>
-  <div style="display:flex;align-items:center;gap:8px;">
+  <div class="hdr-right">
     <div class="status-pill" id="status-pill" onclick="toggleDrawer()" title="click to see events">
       <div class="status-dot idle" id="status-dot"></div>
       <span class="status-pill-label" id="status-label">idle</span>
     </div>
-    <span id="pool-badge" style="font-size:10px;color:#7c7caa;background:#16162a;border:1px solid #2a2a4a;border-radius:6px;padding:2px 8px;display:none;"></span>
+    <span id="pool-badge" style="font-size:10px;color:var(--text2);background:var(--bg3);border:1px solid var(--border2);border-radius:6px;padding:2px 8px;display:none;"></span>
+    <!-- Theme picker -->
+    <select class="hdr-select" id="theme-select" onchange="setTheme(this.value)" title="background theme">
+      <option value="">🌑 midnight</option>
+      <option value="theme-slate">🌊 slate</option>
+      <option value="theme-forest">🌿 forest</option>
+      <option value="theme-crimson">🔴 crimson</option>
+      <option value="theme-cream">☀️ cream</option>
+    </select>
     <button class="activity-btn" id="memory-btn" onclick="toggleMemory()" title="pinned facts about Om">memory</button>
     <button class="activity-btn" id="activity-btn" onclick="toggleActivity()" title="Truman's brain activity">activity</button>
+    <button class="hdr-btn" onclick="exportChats()" title="download all chats as JSON">export</button>
+    <label class="hdr-btn" style="cursor:pointer" title="restore chats from JSON">import<input type="file" accept=".json" style="display:none" onchange="importChats(event)"></label>
     <button class="hdr-btn" onclick="newSession()">+ new</button>
     <button class="hdr-btn" onclick="clearChat()">clear</button>
-    <span style="font-size:11px;color:#555570;" id="mac-status">mac offline</span>
+    <span style="font-size:11px;color:var(--text3);" id="mac-status">mac offline</span>
     <div class="mac-dot" id="mac-dot"></div>
     <button class="power-btn" id="power-btn" onclick="togglePower()" title="Kill switch — Om only">
       <div class="power-icon"></div>
@@ -302,6 +383,19 @@
   <div class="msg truman">
     <div class="bubble">yo. what's up?</div>
   </div>
+</div>
+
+<!-- Model picker row above input -->
+<div style="padding:4px 14px 2px;background:var(--bg2);border-top:1px solid var(--border);display:flex;align-items:center;gap:8px;">
+  <span style="font-size:10px;color:var(--text3);white-space:nowrap;">model</span>
+  <select class="hdr-select" id="model-select" onchange="setModel(this.value)" style="flex:0 0 auto;max-width:260px;">
+    <option value="">🟢 auto (truman picks)</option>
+    <option value="general">⚡ deepseek v3.2 — fast, general chat</option>
+    <option value="reasoning">🧠 llama 3.1 70b — deep thinking, long answers</option>
+    <option value="fast">💨 llama 3.1 8b — instant, short replies</option>
+    <option value="coding">🎯 qwen 2.5 72b — code &amp; reasoning</option>
+    <option value="creative">🎨 mistral large — creative writing</option>
+  </select>
 </div>
 
 <div class="input-area">
@@ -334,7 +428,27 @@ const macDot     = document.getElementById('mac-dot');
 const macStatus  = document.getElementById('mac-status');
 const sessionBar = document.getElementById('session-bar');
 
-// ── Power / kill switch ──────────────────────────────────────────────────────
+// ── Theme ─────────────────────────────────────────────────────────────────────
+function setTheme(cls) {
+  document.body.className = cls || '';
+  localStorage.setItem('truman_theme', cls || '');
+  document.getElementById('theme-select').value = cls || '';
+}
+(function initTheme() {
+  const saved = localStorage.getItem('truman_theme') || '';
+  setTheme(saved);
+})();
+
+// ── Model picker ──────────────────────────────────────────────────────────────
+let _currentModel = '';  // pool string or '' for auto
+
+function setModel(pool) {
+  _currentModel = pool;
+  sessions[currentSession].model = pool;
+  _saveSessions();
+}
+
+// ── Power / kill switch ───────────────────────────────────────────────────────
 const powerBtn = document.getElementById('power-btn');
 let trumanOn = true;
 
@@ -352,7 +466,6 @@ function updatePowerUI() {
     powerBtn.classList.remove('off');
     powerBtn.title = 'Truman is ON — click to kill';
     powerBtn.querySelector('.power-icon').style.borderColor = '#22c55e';
-    powerBtn.querySelector('.power-icon').style.setProperty('--after-bg', '#22c55e');
   } else {
     powerBtn.classList.add('off');
     powerBtn.title = 'Truman is OFF — click to turn on';
@@ -365,19 +478,15 @@ async function togglePower() {
     const d = await r.json();
     trumanOn = d.on;
     updatePowerUI();
-    if (!trumanOn) {
-      addMsg('truman', "i'm off. om turned me off.", {});
-    } else {
-      addMsg('truman', "i'm back.", {});
-    }
+    addMsg('truman', trumanOn ? "i'm back." : "i'm off. om turned me off.", {});
   } catch(e) {}
 }
 
 fetchPowerState();
 
-// ── Live background tasks (repo ingests, etc) ───────────────────────────────
+// ── Live background tasks ─────────────────────────────────────────────────────
 const tasksStrip = document.getElementById('tasks-strip');
-let lastTaskState = {};   // name → status, for detecting transitions
+let lastTaskState = {};
 let tasksPollTimer = null;
 
 async function pollTasks() {
@@ -386,61 +495,43 @@ async function pollTasks() {
     const d = await r.json();
     const tasks = d.tasks || [];
     renderTasks(tasks);
-
-    // detect just-completed tasks → push a chat confirmation
     tasks.forEach(t => {
       const prev = lastTaskState[t.name];
-      if (prev && prev !== 'done' && t.status === 'done') {
+      if (prev && prev !== 'done' && t.status === 'done')
         addMsg('truman', `done — ingested ${t.files} files from ${t.name}. ask me anything about it.`, {});
-      }
-      if (prev && prev !== 'failed' && t.status === 'failed') {
+      if (prev && prev !== 'failed' && t.status === 'failed')
         addMsg('truman', `couldn't ingest ${t.name}: ${t.error || 'unknown error'}`, {});
-      }
       lastTaskState[t.name] = t.status;
-      // update activity panel with active task
-      if (typeof updateActivityPanel !== 'undefined') {
-        if (t.status === 'cloning' || t.status === 'ingesting') {
-          updateActivityPanel({ task: t });
-        } else if (t.status === 'done' || t.status === 'failed') {
-          updateActivityPanel({ task: t });
-        }
-      }
+      if (typeof updateActivityPanel !== 'undefined' &&
+          (t.status === 'cloning' || t.status === 'ingesting' || t.status === 'done' || t.status === 'failed'))
+        updateActivityPanel({ task: t });
     });
-    // clean up state for tasks that fell out of the active window
     const live = new Set(tasks.map(t => t.name));
     Object.keys(lastTaskState).forEach(n => { if (!live.has(n)) delete lastTaskState[n]; });
   } catch(e) {}
 }
 
 function renderTasks(tasks) {
-  if (!tasks.length) {
-    tasksStrip.classList.remove('visible');
-    tasksStrip.innerHTML = '';
-    return;
-  }
+  if (!tasks.length) { tasksStrip.classList.remove('visible'); tasksStrip.innerHTML = ''; return; }
   tasksStrip.classList.add('visible');
   tasksStrip.innerHTML = tasks.map(t => {
     const pct = t.total > 0 ? Math.min(100, Math.round((t.progress / t.total) * 100)) : (t.status === 'done' ? 100 : 0);
     const cls = t.status === 'done' ? 'done' : (t.status === 'failed' ? 'fail' : 'run');
     const icon = t.status === 'done' ? '✓' : (t.status === 'failed' ? '✕' : '◐');
-    const stage = t.status === 'done'
-        ? `done · ${t.files} files`
-        : (t.status === 'failed' ? (t.error || 'failed') : `${t.stage || 'working'} · ${t.progress}/${t.total || '?'}`);
-    return `
-      <div class="task-row">
-        <div class="task-icon ${cls}">${icon}</div>
-        <div class="task-info">
-          <div class="task-title">★ ${t.kind}: ${t.name}</div>
-          <div class="task-stage">${stage}</div>
-          <div class="task-bar"><div class="task-bar-fill ${cls === 'fail' ? 'fail' : (cls === 'done' ? 'done' : '')}" style="width:${pct}%"></div></div>
-        </div>
-        <div class="task-pct ${cls}">${pct}%</div>
+    const stage = t.status === 'done' ? `done · ${t.files} files`
+      : (t.status === 'failed' ? (t.error || 'failed') : `${t.stage || 'working'} · ${t.progress}/${t.total || '?'}`);
+    return `<div class="task-row">
+      <div class="task-icon ${cls}">${icon}</div>
+      <div class="task-info">
+        <div class="task-title">★ ${t.kind}: ${t.name}</div>
+        <div class="task-stage">${stage}</div>
+        <div class="task-bar"><div class="task-bar-fill ${cls === 'fail' ? 'fail' : (cls === 'done' ? 'done' : '')}" style="width:${pct}%"></div></div>
       </div>
-    `;
+      <div class="task-pct ${cls}">${pct}%</div>
+    </div>`;
   }).join('');
 }
 
-// poll every 2s — cheap, only hits SQLite
 function startTasksPoll() {
   if (tasksPollTimer) return;
   pollTasks();
@@ -448,7 +539,7 @@ function startTasksPoll() {
 }
 startTasksPoll();
 
-// ── Server-sent push notifications ─────────────────────────────────────────
+// ── SSE ───────────────────────────────────────────────────────────────────────
 (function connectSSE() {
   const es = new EventSource('/api/stream');
   es.onmessage = (e) => {
@@ -458,11 +549,8 @@ startTasksPoll();
       if (d.kind === 'toast') { showToast(d.message); return; }
       if (d.kind === 'trace') { if (window._sseTraceHandler) window._sseTraceHandler(d); return; }
       if (d.kind === 'turn') {
-        // only show if it's for the active session AND came from another device
-        // (same-device turns are already added by send() directly)
         if (d.session_id === currentSessionId() && !_localTurnInFlight) {
-          const role = d.role === 'user' ? 'user' : 'truman';
-          addMsg(role, d.content, role === 'truman' ? d.meta : null);
+          addMsg(d.role === 'user' ? 'user' : 'truman', d.content, d.role === 'truman' ? d.meta : null);
           sessions[currentSession].msgs = messages.innerHTML;
           _saveSessions();
         }
@@ -471,13 +559,10 @@ startTasksPoll();
       if (d.message) addMsg('truman', d.message, {});
     } catch(_) {}
   };
-  es.onerror = () => {
-    es.close();
-    setTimeout(connectSSE, 5000);   // reconnect after 5s on error
-  };
+  es.onerror = () => { es.close(); setTimeout(connectSSE, 5000); };
 })();
 
-// ── Toast notifications ──────────────────────────────────────────────────────
+// ── Toasts ─────────────────────────────────────────────────────────────────────
 function showToast(msg) {
   const t = document.createElement('div');
   t.textContent = msg;
@@ -486,18 +571,18 @@ function showToast(msg) {
   setTimeout(() => t.remove(), 4000);
 }
 
-// ── Session management ──────────────────────────────────────────────────────
+// ── Session management ────────────────────────────────────────────────────────
 function genId() { return 'sess-' + Date.now() + '-' + Math.random().toString(36).slice(2,7); }
 
 const _LS_KEY = 'truman_sessions_v1';
 const _LS_CUR = 'truman_current_v1';
-const _MSG_CAP = 60000; // cap per session to stay well under 5MB localStorage limit
+const _MSG_CAP = 60000;
 
 function _saveSessions() {
   try {
     const slim = sessions.map(s => ({
-      id: s.id, label: s.label,
-      msgs: (s.msgs || '').slice(-_MSG_CAP)  // keep last 60k chars
+      id: s.id, label: s.label, model: s.model || '',
+      msgs: (s.msgs || '').slice(-_MSG_CAP)
     }));
     localStorage.setItem(_LS_KEY, JSON.stringify(slim));
     localStorage.setItem(_LS_CUR, String(currentSession));
@@ -514,9 +599,8 @@ function _loadSessions() {
   } catch(e) { return null; }
 }
 
-// restore from localStorage or start fresh
 const _stored = _loadSessions();
-let sessions = _stored || [{id: genId(), label: 'chat 1', msgs: ''}];
+let sessions = _stored || [{id: genId(), label: 'chat 1', msgs: '', model: ''}];
 let currentSession = Math.min(parseInt(localStorage.getItem(_LS_CUR) || '0'), sessions.length - 1);
 
 function currentSessionId() { return sessions[currentSession].id; }
@@ -526,20 +610,50 @@ function renderSessionBar() {
   sessions.forEach((s, i) => {
     const tab = document.createElement('div');
     tab.className = 'session-tab' + (i === currentSession ? ' active' : '');
-    tab.textContent = s.label;
+    const lbl = document.createElement('span');
+    lbl.textContent = s.label;
+    lbl.ondblclick = () => renameTab(i);
+    tab.appendChild(lbl);
+    if (sessions.length > 1) {
+      const del = document.createElement('button');
+      del.className = 'tab-del';
+      del.textContent = '×';
+      del.title = 'close tab';
+      del.onclick = (e) => { e.stopPropagation(); deleteSession(i); };
+      tab.appendChild(del);
+    }
     tab.onclick = () => switchSession(i);
     sessionBar.appendChild(tab);
   });
+  // restore model picker for this session
+  const m = sessions[currentSession].model || '';
+  _currentModel = m;
+  document.getElementById('model-select').value = m;
+}
+
+function renameTab(i) {
+  const name = prompt('rename tab:', sessions[i].label);
+  if (name && name.trim()) { sessions[i].label = name.trim().slice(0, 30); renderSessionBar(); _saveSessions(); }
+}
+
+function deleteSession(i) {
+  sessions.splice(i, 1);
+  if (currentSession >= sessions.length) currentSession = sessions.length - 1;
+  messages.innerHTML = sessions[currentSession].msgs ||
+    '<div class="msg truman"><div class="bubble">yo. what\'s up?</div></div>';
+  renderSessionBar();
+  _saveSessions();
 }
 
 async function switchSession(i) {
   sessions[currentSession].msgs = messages.innerHTML;
   currentSession = i;
+  _currentModel = sessions[i].model || '';
+  document.getElementById('model-select').value = _currentModel;
   if (sessions[i].msgs) {
     messages.innerHTML = sessions[i].msgs;
   } else {
     messages.innerHTML = '<div class="msg truman"><div class="bubble">yo. what\'s up?</div></div>';
-    // try loading from SQLite for this session
     await loadHistory(sessions[i].id);
   }
   renderSessionBar();
@@ -549,8 +663,10 @@ async function switchSession(i) {
 function newSession() {
   sessions[currentSession].msgs = messages.innerHTML;
   const n = sessions.length + 1;
-  sessions.push({id: genId(), label: `chat ${n}`, msgs: ''});
+  sessions.push({id: genId(), label: `chat ${n}`, msgs: '', model: ''});
   currentSession = sessions.length - 1;
+  _currentModel = '';
+  document.getElementById('model-select').value = '';
   messages.innerHTML = '<div class="msg truman"><div class="bubble">yo. what\'s up?</div></div>';
   renderSessionBar();
   _saveSessions();
@@ -562,14 +678,49 @@ function clearChat() {
   _saveSessions();
 }
 
+// ── Export / Import ───────────────────────────────────────────────────────────
+function exportChats() {
+  sessions[currentSession].msgs = messages.innerHTML;
+  _saveSessions();
+  const data = JSON.stringify(sessions, null, 2);
+  const blob = new Blob([data], {type: 'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `truman-chats-${new Date().toISOString().slice(0,10)}.json`;
+  a.click();
+  showToast('chats exported');
+}
+
+function importChats(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const data = JSON.parse(e.target.result);
+      if (!Array.isArray(data) || !data.length) { showToast('invalid file'); return; }
+      sessions = data;
+      currentSession = 0;
+      _currentModel = sessions[0].model || '';
+      document.getElementById('model-select').value = _currentModel;
+      messages.innerHTML = sessions[0].msgs ||
+        '<div class="msg truman"><div class="bubble">yo. what\'s up?</div></div>';
+      renderSessionBar();
+      _saveSessions();
+      showToast(`imported ${sessions.length} chats`);
+    } catch(err) { showToast('import failed'); }
+  };
+  reader.readAsText(file);
+  event.target.value = '';
+}
+
 renderSessionBar();
 
-// restore active session's messages on page load
 if (_stored && sessions[currentSession].msgs) {
   messages.innerHTML = sessions[currentSession].msgs;
 }
 
-// ── Mac status polling ──────────────────────────────────────────────────────
+// ── Mac status ────────────────────────────────────────────────────────────────
 async function checkMac() {
   try {
     const r = await fetch('/health');
@@ -582,20 +733,16 @@ async function checkMac() {
 checkMac();
 setInterval(checkMac, 10000);
 
-// ── Load history from SQLite ────────────────────────────────────────────────
+// ── Load history ──────────────────────────────────────────────────────────────
 async function loadHistory(sessionId) {
-  // if localStorage restored sessions with messages, use them
   if (_stored && sessions[currentSession].msgs) return;
   try {
-    // if switching to a specific session use its id, otherwise load recent global turns
     const url = sessionId ? `/api/history?session_id=${encodeURIComponent(sessionId)}` : '/api/history';
     const r = await fetch(url);
     const d = await r.json();
     if (d.turns && d.turns.length) {
       messages.innerHTML = '';
-      d.turns.forEach(t => {
-        addMsg(t.role === 'user' ? 'user' : 'truman', t.content, null);
-      });
+      d.turns.forEach(t => addMsg(t.role === 'user' ? 'user' : 'truman', t.content, null));
       sessions[currentSession].msgs = messages.innerHTML;
       _saveSessions();
     }
@@ -603,7 +750,19 @@ async function loadHistory(sessionId) {
 }
 loadHistory();
 
-// ── Auto-resize textarea ────────────────────────────────────────────────────
+// ── Scroll to bottom ──────────────────────────────────────────────────────────
+const scrollBtn = document.getElementById('scroll-btn');
+
+messages.addEventListener('scroll', () => {
+  const atBottom = messages.scrollHeight - messages.scrollTop - messages.clientHeight < 80;
+  scrollBtn.classList.toggle('visible', !atBottom);
+});
+
+function scrollToBottom() {
+  messages.scrollTo({top: messages.scrollHeight, behavior: 'smooth'});
+}
+
+// ── Textarea auto-resize ──────────────────────────────────────────────────────
 input.addEventListener('input', () => {
   input.style.height = 'auto';
   input.style.height = Math.min(input.scrollHeight, 120) + 'px';
@@ -615,26 +774,100 @@ input.addEventListener('keydown', e => {
 
 sendBtn.addEventListener('click', send);
 
-// ── Chat ────────────────────────────────────────────────────────────────────
+// ── Markdown renderer ─────────────────────────────────────────────────────────
+function renderMarkdown(text) {
+  // escape HTML first
+  let s = text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+
+  // fenced code blocks ```...```
+  s = s.replace(/```(\w*)\n?([\s\S]*?)```/g, (_, lang, code) =>
+    `<pre><code>${code.trim()}</code></pre>`);
+
+  // inline code `...`
+  s = s.replace(/`([^`\n]+)`/g, '<code>$1</code>');
+
+  // bold **text**
+  s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+
+  // italic *text* (avoid matching leftover asterisks)
+  s = s.replace(/\*([^\s*][^*\n]{0,60}?[^\s*])\*/g, '<em>$1</em>');
+
+  // headers # ## ###
+  s = s.replace(/^#{1,3}\s+(.+)$/gm, '<strong>$1</strong>');
+
+  // bullet lists
+  s = s.replace(/^[\-\*\+]\s+(.+)$/gm, '<span style="display:block;padding-left:12px">&bull; $1</span>');
+
+  // numbered lists
+  s = s.replace(/^(\d+)\.\s+(.+)$/gm, '<span style="display:block;padding-left:12px">$1. $2</span>');
+
+  // auto-link URLs (not already in href)
+  s = s.replace(/(?<!href=")(https?:\/\/[^\s<>"&]+)/g,
+    '<a href="$1" target="_blank" rel="noopener">$1</a>');
+
+  // newlines → <br>
+  s = s.replace(/\n\n/g, '<br><br>');
+  s = s.replace(/\n/g, '<br>');
+
+  return s;
+}
+
+function renderUserText(text) {
+  // for user messages: just escape + preserve line breaks
+  return text
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/\n/g, '<br>');
+}
+
+// ── Timestamp helper ──────────────────────────────────────────────────────────
+function _nowTs() {
+  return new Date().toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+}
+
+// ── Chat message builder ──────────────────────────────────────────────────────
 function addMsg(role, text, meta) {
   const div = document.createElement('div');
   div.className = 'msg ' + role;
 
   const bubble = document.createElement('div');
   bubble.className = 'bubble';
-  bubble.innerHTML = text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n\n/g,'<br><br>').replace(/\n/g,' ');
+
+  if (role === 'truman') {
+    bubble.innerHTML = renderMarkdown(text || '');
+  } else {
+    bubble.innerHTML = renderUserText(text || '');
+  }
+
   div.appendChild(bubble);
 
-  // pin button for truman messages
+  // action row (pin + copy) for truman
   if (role === 'truman') {
+    const actions = document.createElement('div');
+    actions.className = 'msg-actions';
+
     const pinBtn = document.createElement('button');
-    pinBtn.className = 'pin-btn';
+    pinBtn.className = 'msg-action-btn pin-btn';
     pinBtn.title = 'pin to memory';
     pinBtn.textContent = '📌';
     pinBtn.onclick = () => pinMessage(text);
-    bubble.appendChild(pinBtn);
+
+    const copyBtn = document.createElement('button');
+    copyBtn.className = 'msg-action-btn';
+    copyBtn.title = 'copy';
+    copyBtn.textContent = '⎘';
+    copyBtn.onclick = () => {
+      navigator.clipboard.writeText(text).then(() => showToast('copied'));
+    };
+
+    actions.appendChild(pinBtn);
+    actions.appendChild(copyBtn);
+    div.appendChild(actions);
   }
 
+  // meta badges
   if (meta) {
     const m = document.createElement('div');
     m.className = 'meta';
@@ -661,14 +894,20 @@ function addMsg(role, text, meta) {
     div.appendChild(m);
   }
 
+  // timestamp
+  const ts = document.createElement('span');
+  ts.className = 'msg-ts';
+  ts.textContent = _nowTs();
+  div.appendChild(ts);
+
   messages.appendChild(div);
-  messages.scrollTop = messages.scrollHeight;
+  const atBottom = messages.scrollHeight - messages.scrollTop - messages.clientHeight < 120;
+  if (atBottom) messages.scrollTop = messages.scrollHeight;
   return div;
 }
 
-const statusPhrases = [
-  'thinking...', 'on it...', 'processing...', 'working on it...'
-];
+// ── Status indicators ─────────────────────────────────────────────────────────
+const statusPhrases = ['thinking...', 'on it...', 'processing...', 'working on it...'];
 const toolPhrases = {
   web_search: 'searching the web...', get_weather: 'checking weather...',
   remember: 'saving to memory...', recall: 'checking memory...',
@@ -684,13 +923,9 @@ function addStatus() {
   div.innerHTML = '<div class="bar"></div><span class="status-text">thinking...</span>';
   messages.appendChild(div);
   messages.scrollTop = messages.scrollHeight;
-
   let i = 0;
   const span = div.querySelector('.status-text');
-  const interval = setInterval(() => {
-    i = (i + 1) % statusPhrases.length;
-    span.textContent = statusPhrases[i];
-  }, 1800);
+  const interval = setInterval(() => { i = (i + 1) % statusPhrases.length; span.textContent = statusPhrases[i]; }, 1800);
   div._interval = interval;
   div.setTool = (tool) => { span.textContent = toolPhrases[tool] || tool + '...'; };
   div.remove = () => { clearInterval(interval); div.parentNode && div.parentNode.removeChild(div); };
@@ -699,6 +934,7 @@ function addStatus() {
 
 let _localTurnInFlight = false;
 
+// ── Send ──────────────────────────────────────────────────────────────────────
 async function send() {
   const text = input.value.trim();
   if (!text) return;
@@ -708,19 +944,19 @@ async function send() {
 
   let displayText = text;
   let sendText = text;
-  let sendPool = null;
+  let sendPool = _currentModel || null;
 
-  // if a file is pending, show card/image in chat and send content to backend
+  // if a file is pending
   if (_pendingFile) {
     if (_pendingFile.isImage) {
       addImageMsg(_pendingFile.file);
       sendText = `[Image: ${_pendingFile.filename}]\n\n${_pendingFile.text}`;
       sendPool = 'vision';
-      displayText = null; // image already added above
+      displayText = null;
     } else {
       displayText = `📎 ${_pendingFile.filename}`;
       sendText = `[File: ${_pendingFile.filename}]\n\n${_pendingFile.text}`;
-      sendPool = 'docs';
+      sendPool = sendPool || 'docs';
     }
     _pendingFile = null;
   }
@@ -729,7 +965,12 @@ async function send() {
   setStatus('think', 'thinking...');
   const status = addStatus();
 
-  // animate tool names while waiting
+  // auto-name tab from first real message
+  if (sessions[currentSession].label.match(/^chat \d+$/) && sendText && !sendText.startsWith('[')) {
+    sessions[currentSession].label = sendText.slice(0, 28).trim();
+    renderSessionBar();
+  }
+
   const toolCycle = ['web_search','recall','search_history','remember'];
   let ti = 0;
   const toolInterval = setInterval(() => { status.setTool(toolCycle[ti++ % toolCycle.length]); }, 3000);
@@ -747,17 +988,17 @@ async function send() {
       setStatus('error', 'error');
       addMsg('truman', 'error: ' + d.error, null);
       setTimeout(() => setStatus('idle','idle'), 4000);
+      _localTurnInFlight = false;
       return;
     }
     const respText = (d.response || '').trim();
-    if (!respText) { setStatus('idle','idle'); addMsg('truman', '(no response — try again)', null); return; }
+    if (!respText) { setStatus('idle','idle'); addMsg('truman', '(no response — try again)', null); _localTurnInFlight = false; return; }
     addMsg('truman', respText, {model: d.model || 'deepseek-v3.2', pool: d.pool || 'general', tool_calls: d.tool_calls});
     updatePanelFromResponse(d, sendText || text, respText);
     sessions[currentSession].msgs = messages.innerHTML;
     _saveSessions();
     _localTurnInFlight = false;
     setStatus('idle', 'idle');
-    // update mac dot + pool badge
     macDot.className = 'mac-dot' + (d.mac === 'connected' ? ' on' : '');
     macStatus.textContent = d.mac === 'connected' ? 'mac online' : 'mac offline';
     const pb = document.getElementById('pool-badge');
@@ -769,12 +1010,11 @@ async function send() {
     _localTurnInFlight = false;
     setStatus('error', 'error');
     setTimeout(() => setStatus('idle','idle'), 4000);
-    console.error('[Truman] fetch error:', e);
     addMsg('truman', 'server error — check the terminal', null);
   }
 }
 
-// ── File Upload ─────────────────────────────────────────────────────────────
+// ── File Upload ───────────────────────────────────────────────────────────────
 const IMAGE_EXTS = new Set(['.png','.jpg','.jpeg','.gif','.webp','.bmp']);
 
 function addImageMsg(file) {
@@ -793,103 +1033,69 @@ document.getElementById('file-input').addEventListener('change', async (e) => {
   const ext = '.' + file.name.split('.').pop().toLowerCase();
   const isImage = IMAGE_EXTS.has(ext);
 
-  if (isImage) {
-    // show preview in input area — Om hits send to dispatch
-    const status = addStatus();
-    status.querySelector('.status-text').textContent = `reading ${file.name}...`;
-    try {
-      const fd = new FormData();
-      fd.append('file', file);
-      const r = await fetch('/api/upload', {method:'POST', body: fd});
-      const d = await r.json();
-      status.remove();
-      if (d.error) { addMsg('truman', 'vision error: ' + d.error, null); return; }
-      _pendingFile = {filename: d.filename, text: d.text, isImage: true, file};
-      input.value = `📎 ${d.filename}`;
-      input.style.height = 'auto';
-      input.style.height = Math.min(input.scrollHeight, 120) + 'px';
-      input.focus();
-    } catch(err) {
-      status.remove();
-      addMsg('truman', 'image upload failed', null);
-    }
-  } else {
-    // non-image: show pill in input, Om hits send
-    const status = addStatus();
-    status.querySelector('.status-text').textContent = `reading ${file.name}...`;
-    try {
-      const fd = new FormData();
-      fd.append('file', file);
-      const r = await fetch('/api/upload', {method:'POST', body: fd});
-      const d = await r.json();
-      status.remove();
-      if (d.error) { addMsg('truman', 'upload error: ' + d.error, null); return; }
-      _pendingFile = {filename: d.filename, text: d.text};
-      input.value = `📎 ${d.filename}`;
-      input.style.height = 'auto';
-      input.style.height = Math.min(input.scrollHeight, 120) + 'px';
-      input.focus();
-    } catch(err) {
-      status.remove();
-      addMsg('truman', 'upload failed', null);
-    }
+  const status = addStatus();
+  status.querySelector('.status-text').textContent = `reading ${file.name}...`;
+  try {
+    const fd = new FormData();
+    fd.append('file', file);
+    const r = await fetch('/api/upload', {method:'POST', body: fd});
+    const d = await r.json();
+    status.remove();
+    if (d.error) { addMsg('truman', (isImage ? 'vision' : 'upload') + ' error: ' + d.error, null); return; }
+    _pendingFile = {filename: d.filename, text: d.text, isImage, file};
+    input.value = `📎 ${d.filename}`;
+    input.style.height = 'auto';
+    input.style.height = Math.min(input.scrollHeight, 120) + 'px';
+    input.focus();
+  } catch(err) {
+    status.remove();
+    addMsg('truman', 'upload failed', null);
   }
 });
 
 let _pendingFile = null;
 
-// ── Voice — /audio WebSocket → OpenAI Realtime (ash voice) ────────────────
+// ── Voice ─────────────────────────────────────────────────────────────────────
 let audioWs = null, audioCtx = null, micStream = null, processor = null;
-let isVoiceActive = false;
-let reconnecting = false;
-
-// How far ahead to schedule audio — bigger = fewer gaps on variable-latency Railway proxy
-const PLAYBACK_BUFFER_SEC = 0.20;  // 200ms jitter buffer
+let isVoiceActive = false, reconnecting = false;
+const PLAYBACK_BUFFER_SEC = 0.20;
 
 async function startVoice() {
   if (isVoiceActive || reconnecting) return;
   try {
-    // Let AudioContext pick native sample rate (Safari iOS may not support forced 48kHz)
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     await audioCtx.resume();
-    const nativeRate = audioCtx.sampleRate;  // e.g. 48000 on Chrome, 44100 on some Safari
-    const downsampleRatio = nativeRate / 24000;  // exact ratio for correct pitch
-
+    const nativeRate = audioCtx.sampleRate;
+    const downsampleRatio = nativeRate / 24000;
     micStream = await navigator.mediaDevices.getUserMedia({
       audio: { echoCancellation: true, noiseSuppression: true, sampleRate: nativeRate }
     });
     const wsUrl = (location.protocol==='https:'?'wss':'ws') + '://' + location.host + '/audio';
     audioWs = new WebSocket(wsUrl);
     audioWs.binaryType = 'arraybuffer';
-
     audioWs.onopen = () => {
       isVoiceActive = true;
       voiceBtn.classList.add('listening');
       voiceBtn.title = 'tap to disconnect';
       setStatus('listen', 'listening');
       const src = audioCtx.createMediaStreamSource(micStream);
-      // 4096 frames @ native rate → chunk every ~85ms — good balance of latency vs CPU
       processor = audioCtx.createScriptProcessor(4096, 1, 1);
       processor.onaudioprocess = ev => {
         if (!audioWs || audioWs.readyState !== 1) return;
         const f32 = ev.inputBuffer.getChannelData(0);
-        // Downsample to 24kHz using 2-tap average (anti-aliasing) instead of naive skip
         const outLen = Math.floor(f32.length / downsampleRatio);
         const out = new Int16Array(outLen);
-        const step = downsampleRatio;
         for (let i = 0; i < outLen; i++) {
-          const pos = i * step;
+          const pos = i * downsampleRatio;
           const lo = Math.floor(pos), hi = Math.min(lo + 1, f32.length - 1);
           const frac = pos - lo;
-          const sample = f32[lo] * (1 - frac) + f32[hi] * frac;  // linear interpolation
+          const sample = f32[lo] * (1 - frac) + f32[hi] * frac;
           out[i] = Math.max(-32768, Math.min(32767, sample * 32768));
         }
         audioWs.send(out.buffer);
       };
       src.connect(processor); processor.connect(audioCtx.destination);
     };
-
-    // Playback: schedule ahead by PLAYBACK_BUFFER_SEC to absorb Railway jitter
     let nextPlay = 0;
     audioWs.onmessage = e => {
       if (typeof e.data === 'string') {
@@ -898,7 +1104,6 @@ async function startVoice() {
           if (m.type === 'flush') nextPlay = 0;
           if (m.type === 'evicted') { stopVoice(); return; }
           if (m.type === 'transcript') {
-            // Voice turn completed — show in chat just like text chat
             const role = m.role === 'user' ? 'user' : 'truman';
             addMsg(role, m.text, role === 'truman' ? {model: 'realtime/ash', pool: 'voice'} : null);
           }
@@ -914,32 +1119,22 @@ async function startVoice() {
       node.buffer = buf;
       node.connect(audioCtx.destination);
       const now = audioCtx.currentTime;
-      // Reset ahead of now if we've fallen behind (e.g. after flush or long gap)
       if (nextPlay < now + 0.01) nextPlay = now + PLAYBACK_BUFFER_SEC;
       node.start(nextPlay);
       nextPlay += buf.duration;
     };
-
-    audioWs.onerror = () => {
-      // onclose will fire right after — let it handle reconnect
-    };
+    audioWs.onerror = () => {};
     audioWs.onclose = () => {
-      if (!isVoiceActive) return;  // already cleaned up (user tapped stop)
+      if (!isVoiceActive) return;
       stopVoice();
-      // Reconnect after brief delay — give Railway time to release the old socket
       reconnecting = true;
       setTimeout(() => { reconnecting = false; startVoice(); }, 2000);
     };
-
-  } catch(e) {
-    console.error('voice error', e);
-    stopVoice();
-  }
+  } catch(e) { stopVoice(); }
 }
 
 function stopVoice() {
-  isVoiceActive = false;
-  reconnecting = false;
+  isVoiceActive = false; reconnecting = false;
   voiceBtn.classList.remove('listening');
   setStatus('idle', 'idle');
   voiceBtn.title = 'tap to talk';
@@ -952,7 +1147,7 @@ function stopVoice() {
 
 voiceBtn.addEventListener('click', () => { isVoiceActive ? stopVoice() : startVoice(); });
 
-// ── Status pill ──────────────────────────────────────────────────────────────
+// ── Status pill ───────────────────────────────────────────────────────────────
 const statusDot   = document.getElementById('status-dot');
 const statusLabel = document.getElementById('status-label');
 
@@ -961,9 +1156,8 @@ function setStatus(state, label) {
   statusLabel.textContent = label;
 }
 
-// ── Events drawer ────────────────────────────────────────────────────────────
-let drawerOpen = false;
-let drawerPoll = null;
+// ── Events drawer ─────────────────────────────────────────────────────────────
+let drawerOpen = false, drawerPoll = null;
 
 function toggleDrawer() { drawerOpen ? closeDrawer() : openDrawer(); }
 
@@ -983,7 +1177,6 @@ function closeDrawer() {
 async function refreshDrawer() {
   const body = document.getElementById('drawer-body');
   try {
-    // try DB events first, fall back to in-memory log
     let events = [];
     try {
       const r = await fetch('/api/events');
@@ -999,7 +1192,7 @@ async function refreshDrawer() {
       }));
     }
     if (!events.length) {
-      body.innerHTML = '<div style="color:#555570;padding:20px;text-align:center;font-size:12px">no events yet</div>';
+      body.innerHTML = '<div style="color:var(--text3);padding:20px;text-align:center;font-size:12px">no events yet</div>';
       return;
     }
     body.innerHTML = '';
@@ -1029,8 +1222,7 @@ async function refreshDrawer() {
           <div class="log-meta">${kindBadge}${modelBadge}${poolBadge}${tools}</div>
           ${errHtml}
         </div>
-        <div class="log-secs ${e.status||'ok'}">${secs}</div>
-      `;
+        <div class="log-secs ${e.status||'ok'}">${secs}</div>`;
       body.appendChild(row);
     });
   } catch(err) {
@@ -1038,7 +1230,7 @@ async function refreshDrawer() {
   }
 }
 
-// ── Activity panel ────────────────────────────────────────────────────────────
+// ── Activity panel (floating) ─────────────────────────────────────────────────
 let apPanel, apHandle;
 let apDragging = false, apDX = 0, apDY = 0;
 
@@ -1046,7 +1238,6 @@ document.addEventListener('DOMContentLoaded', () => {
   apPanel  = document.getElementById('activity-panel');
   apHandle = document.getElementById('ap-drag-handle');
   if (!apPanel || !apHandle) return;
-
   apHandle.addEventListener('mousedown', e => {
     apDragging = true;
     apDX = e.clientX - apPanel.getBoundingClientRect().left;
@@ -1060,21 +1251,6 @@ document.addEventListener('DOMContentLoaded', () => {
     apPanel.style.right = 'auto';
   });
   document.addEventListener('mouseup', () => { apDragging = false; });
-
-  apHandle.addEventListener('touchstart', e => {
-    const t = e.touches[0];
-    apDragging = true;
-    apDX = t.clientX - apPanel.getBoundingClientRect().left;
-    apDY = t.clientY - apPanel.getBoundingClientRect().top;
-  });
-  document.addEventListener('touchmove', e => {
-    if (!apDragging) return;
-    const t = e.touches[0];
-    apPanel.style.left  = (t.clientX - apDX) + 'px';
-    apPanel.style.top   = (t.clientY - apDY) + 'px';
-    apPanel.style.right = 'auto';
-  });
-  document.addEventListener('touchend', () => { apDragging = false; });
 });
 
 function toggleActivityPanel() {
@@ -1119,15 +1295,12 @@ function updateActivityPanel({ model, pool, inputChars, outputChars, error, task
     document.getElementById('ap-task-fill').style.width = pct + '%';
     document.getElementById('ap-status-dot').className = 'ap-dot busy';
     if (task.status === 'done' || task.status === 'failed') {
-      setTimeout(() => {
-        row.style.display = 'none';
-        document.getElementById('ap-status-dot').className = 'ap-dot';
-      }, 5000);
+      setTimeout(() => { row.style.display = 'none'; document.getElementById('ap-status-dot').className = 'ap-dot'; }, 5000);
     }
   }
 }
 
-// ── Memory panel ─────────────────────────────────────────────────────────────
+// ── Memory panel ──────────────────────────────────────────────────────────────
 let memoryOpen = false;
 
 function toggleMemory() { memoryOpen ? closeMemory() : openMemory(); }
@@ -1156,7 +1329,7 @@ async function refreshFacts() {
 function renderFacts(facts) {
   const body = document.getElementById('mem-body');
   if (!facts.length) {
-    body.innerHTML = '<div id="mem-placeholder" style="color:#444460;padding:24px;text-align:center;font-size:12px">no pinned facts yet — pin a message to remember it</div>';
+    body.innerHTML = '<div id="mem-placeholder" style="color:var(--text3);padding:24px;text-align:center;font-size:12px">no pinned facts yet — pin a message to remember it</div>';
     return;
   }
   body.innerHTML = '';
@@ -1167,7 +1340,7 @@ function renderFacts(facts) {
     const stars = '★'.repeat(f.importance) + '☆'.repeat(5 - f.importance);
     row.innerHTML = `
       <div style="flex:1">
-        <div class="mem-fact-text">${f.fact}</div>
+        <div class="mem-fact-text">${f.fact.replace(/&/g,'&amp;').replace(/</g,'&lt;')}</div>
         <div class="mem-imp">${stars} · ${f.source}</div>
       </div>
       <button class="mem-fact-del" onclick="deleteFact(${f.id})" title="delete">✕</button>`;
@@ -1176,7 +1349,6 @@ function renderFacts(facts) {
 }
 
 async function pinMessage(text) {
-  // strip html tags, trim to 280 chars
   const clean = text.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim().slice(0, 280);
   if (!clean) return;
   try {
@@ -1191,8 +1363,8 @@ async function pinMessage(text) {
 }
 
 async function addFactManual() {
-  const input = document.getElementById('mem-input');
-  const fact = input.value.trim();
+  const inp = document.getElementById('mem-input');
+  const fact = inp.value.trim();
   if (!fact) return;
   try {
     await fetch('/api/facts', {
@@ -1200,7 +1372,7 @@ async function addFactManual() {
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({fact, importance: 5, source: 'manual'})
     });
-    input.value = '';
+    inp.value = '';
     showToast('📌 saved to memory');
     await refreshFacts();
   } catch(e) {}
@@ -1215,29 +1387,24 @@ async function deleteFact(id) {
   } catch(e) {}
 }
 
-// enter key on mem input
 document.getElementById('mem-input')?.addEventListener('keydown', e => {
   if (e.key === 'Enter') addFactManual();
 });
 
-// Hook into addMsg to update panel on truman responses
-const _origAddMsg = addMsg;
-// update from API response metadata captured in sendMsg
 function updatePanelFromResponse(d, userMsg, respText) {
   const poolDisplay = d.skill ? ('★ ' + d.skill) : (d.pool || null);
   updateActivityPanel({
-    model:       d.model || null,
-    pool:        poolDisplay,
-    inputChars:  (userMsg || '').length + 6000,
+    model: d.model || null,
+    pool: poolDisplay,
+    inputChars: (userMsg || '').length + 6000,
     outputChars: (respText || '').length,
-    error:       d.error || null,
+    error: d.error || null,
   });
 }
 
-
 </script>
 
-<!-- Activity panel -->
+<!-- Activity panel (floating) -->
 <div class="activity-panel" id="activity-panel">
   <div class="ap-hdr" id="ap-drag-handle">
     <div class="ap-hdr-left">
@@ -1264,7 +1431,7 @@ function updatePanelFromResponse(d, userMsg, respText) {
       <span class="ap-label">TASK</span>
       <div style="display:flex;flex-direction:column;gap:2px;">
         <span class="ap-val" id="ap-task-name">—</span>
-        <span style="font-size:9px;color:#7c7caa;" id="ap-task-stage"></span>
+        <span style="font-size:9px;color:var(--text2);" id="ap-task-stage"></span>
         <div class="ap-task-bar"><div class="ap-task-fill" id="ap-task-fill" style="width:0%"></div></div>
       </div>
     </div>
@@ -1275,14 +1442,12 @@ function updatePanelFromResponse(d, userMsg, respText) {
   </div>
 </div>
 
-
 <script>
 // ── Activity Sidebar ──────────────────────────────────────────────────────────
-// Only show meaningful events: tool calls, skill runs, LLM calls, errors
 const _VISIBLE_NODES = new Set(['execute_tool', 'route_skill', 'call_llm']);
 let activityOpen = false;
-const _traceTurns = {};   // turn_id → { ts, input, rows: [] }
-const _turnOrder  = [];   // ordered list of turn_ids
+const _traceTurns = {};
+const _turnOrder  = [];
 
 function toggleActivity() { activityOpen ? closeActivity() : openActivity(); }
 
@@ -1295,7 +1460,7 @@ async function openActivity() {
     const rows = await r.json();
     if (Array.isArray(rows)) rows.forEach(row => _ingestRow(row));
     _renderAll();
-  } catch(e) { console.error('[Activity] load error:', e); }
+  } catch(e) {}
 }
 
 function closeActivity() {
@@ -1304,60 +1469,37 @@ function closeActivity() {
   document.getElementById('activity-btn').classList.remove('active');
 }
 
-// ── Resize handle ─────────────────────────────────────────────────────────────
 (function initResize() {
   const handle  = document.getElementById('asb-resize');
   const sidebar = document.getElementById('activity-sidebar');
   if (!handle || !sidebar) return;
   let dragging = false, startX = 0, startW = 0;
-
-  function applyWidth(w) {
-    w = Math.max(280, Math.min(700, w));
-    sidebar.style.width = w + 'px';
-  }
-
+  function applyWidth(w) { sidebar.style.width = Math.max(280, Math.min(700, w)) + 'px'; }
   handle.addEventListener('mousedown', e => {
-    dragging = true;
-    startX = e.clientX;
-    startW = sidebar.offsetWidth;
-    document.body.style.userSelect = 'none';
-    e.preventDefault();
+    dragging = true; startX = e.clientX; startW = sidebar.offsetWidth;
+    document.body.style.userSelect = 'none'; e.preventDefault();
   });
-  document.addEventListener('mousemove', e => {
-    if (!dragging) return;
-    applyWidth(startW + (startX - e.clientX));  // drag left = wider
-  });
-  document.addEventListener('mouseup', () => {
-    if (dragging) { dragging = false; document.body.style.userSelect = ''; }
-  });
+  document.addEventListener('mousemove', e => { if (dragging) applyWidth(startW + (startX - e.clientX)); });
+  document.addEventListener('mouseup', () => { if (dragging) { dragging = false; document.body.style.userSelect = ''; } });
 })();
 
-// ── Data ingestion ─────────────────────────────────────────────────────────────
 function _ingestRow(row) {
   const tid = row.turn_id || 'unknown';
-
-  if (!_traceTurns[tid]) {
-    _traceTurns[tid] = { ts: row.ts, input: '', rows: [] };
-    _turnOrder.push(tid);
-  }
-  // capture user input from classify_mood start
+  if (!_traceTurns[tid]) { _traceTurns[tid] = { ts: row.ts, input: '', rows: [] }; _turnOrder.push(tid); }
   if (row.node === 'classify_mood' && row.status === 'start') {
     _traceTurns[tid].ts    = row.ts;
     _traceTurns[tid].input = (row.summary || '').replace(/^"(.*)"$/, '$1');
   }
-
   const isVisible = _VISIBLE_NODES.has(row.node);
   const isError   = row.status === 'error';
   const isEnd     = row.status === 'end' && !(row.summary || '').startsWith('skipped');
   if ((!isVisible && !isError) || (!isEnd && !isError)) return;
-
   const already = _traceTurns[tid].rows.some(r => r.id && r.id === row.id);
   if (!already) _traceTurns[tid].rows.push(row);
 }
 
-// ── Row metadata helpers ──────────────────────────────────────────────────────
 function _rowMeta(ev) {
-  if (ev.status === 'error')    return { icon: '✕', cls: 'error', label: ev.node };
+  if (ev.status === 'error') return { icon: '✕', cls: 'error', label: ev.node };
   if (ev.node === 'execute_tool') {
     let name = 'tool';
     try { name = JSON.parse(ev.args_json || '{}').tool_name || 'tool'; } catch(_) {}
@@ -1387,33 +1529,26 @@ function _rowSub(ev) {
   return ev.summary || '';
 }
 
-// ── Build DOM ─────────────────────────────────────────────────────────────────
 function _renderAll() {
   const body = document.getElementById('activity-body');
   body.innerHTML = '';
   if (_turnOrder.length === 0) {
-    body.innerHTML = '<div id="activity-placeholder" style="color:#444460;padding:24px;text-align:center;font-size:12px">no activity yet — send a message</div>';
+    body.innerHTML = '<div id="activity-placeholder" style="color:var(--text3);padding:24px;text-align:center;font-size:12px">no activity yet — send a message</div>';
     return;
   }
-  _turnOrder.forEach(tid => {
-    const block = _buildTurnBlock(tid);
-    if (block) body.appendChild(block);
-  });
+  _turnOrder.forEach(tid => { const block = _buildTurnBlock(tid); if (block) body.appendChild(block); });
   body.scrollTop = body.scrollHeight;
 }
 
 function _buildTurnBlock(tid) {
   const turn = _traceTurns[tid];
   if (!turn || turn.rows.length === 0) return null;
-
   const wrap = document.createElement('div');
   wrap.className = 'aturn';
   wrap.id = 'aturn-' + tid;
-
   const ts  = turn.ts ? new Date(turn.ts * 1000).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}) : '';
   const inp = (turn.input || tid).slice(0, 48);
   wrap.innerHTML = `<div class="aturn-hdr"><span class="aturn-ts">${ts}</span><span class="aturn-input">"${inp}"</span></div>`;
-
   turn.rows.forEach((ev, i) => wrap.appendChild(_buildActionRow(ev, tid + '-' + i)));
   return wrap;
 }
@@ -1422,12 +1557,10 @@ function _buildActionRow(ev, rowId) {
   const meta = _rowMeta(ev);
   const sub  = _rowSub(ev);
   const dur  = ev.duration_ms != null ? ev.duration_ms + 'ms' : '';
-
   let detailHtml = '';
   if (ev.args_json) {
-    try {
-      detailHtml += `<div class="arow-detail-lbl">args</div><div class="arow-detail-val">${JSON.stringify(JSON.parse(ev.args_json), null, 2)}</div>`;
-    } catch(_) { detailHtml += `<div class="arow-detail-lbl">args</div><div class="arow-detail-val">${ev.args_json}</div>`; }
+    try { detailHtml += `<div class="arow-detail-lbl">args</div><div class="arow-detail-val">${JSON.stringify(JSON.parse(ev.args_json), null, 2)}</div>`; }
+    catch(_) { detailHtml += `<div class="arow-detail-lbl">args</div><div class="arow-detail-val">${ev.args_json}</div>`; }
   }
   if (ev.result_json) {
     try {
@@ -1436,8 +1569,6 @@ function _buildActionRow(ev, rowId) {
       detailHtml += `<div class="arow-detail-lbl">result</div><div class="arow-detail-val">${s}</div>`;
     } catch(_) { detailHtml += `<div class="arow-detail-lbl">result</div><div class="arow-detail-val">${ev.result_json}</div>`; }
   }
-  const hasDetail = !!detailHtml;
-
   const row = document.createElement('div');
   row.className = 'arow';
   row.id = 'arow-' + rowId;
@@ -1446,31 +1577,26 @@ function _buildActionRow(ev, rowId) {
     <div class="arow-main">
       <span class="arow-name ${meta.cls}">${meta.label}</span>
       ${sub ? `<span class="arow-sub">${sub}</span>` : ''}
-      ${hasDetail ? `<div class="arow-detail">${detailHtml}</div>` : ''}
+      ${detailHtml ? `<div class="arow-detail">${detailHtml}</div>` : ''}
     </div>
     <span class="arow-dur">${dur}</span>`;
-  if (hasDetail) {
+  if (detailHtml) {
     row.style.cursor = 'pointer';
     row.addEventListener('click', () => row.classList.toggle('expanded'));
   }
   return row;
 }
 
-// ── Live SSE push ─────────────────────────────────────────────────────────────
 window._sseTraceHandler = function(data) {
   if (data.kind !== 'trace') return;
   _ingestRow(data);
   if (!activityOpen) return;
-
   const tid   = data.turn_id || 'unknown';
   const turn  = _traceTurns[tid];
-
-  // only re-render for rows we actually stored
   const isVisible = _VISIBLE_NODES.has(data.node);
   const isError   = data.status === 'error';
   const isEnd     = data.status === 'end' && !(data.summary || '').startsWith('skipped');
   if ((!isVisible && !isError) || (!isEnd && !isError)) return;
-
   const body  = document.getElementById('activity-body');
   let block = document.getElementById('aturn-' + tid);
   if (!block) {
@@ -1479,7 +1605,6 @@ window._sseTraceHandler = function(data) {
     block = _buildTurnBlock(tid);
     if (block) body.appendChild(block);
   } else {
-    // append only the newest row
     const idx = (turn.rows.length - 1);
     block.appendChild(_buildActionRow(data, tid + '-' + idx));
   }
