@@ -117,7 +117,7 @@ _EMOTIONAL_KW = {"i feel","i'm","im ","i am","i can't","i cant","she ","he ","my
 def _auto_extract_facts(user_input: str) -> None:
     """Background: if message is personal/emotional, extract facts via fast LLM and save."""
     try:
-        if len(user_input) < 80:
+        if len(user_input) < 60:
             return
         lower = user_input.lower()
         if not any(kw in lower for kw in _EMOTIONAL_KW):

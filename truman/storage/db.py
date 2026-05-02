@@ -811,10 +811,11 @@ def log_trace(session_id: str, turn_id: str, node: str, status: str,
 
 def save_fact(fact: str, importance: int = 3, source: str = "manual") -> int:
     """Save a user fact. Returns new row id."""
+    import time as _t
     with _conn() as c:
         cur = c.execute(
             "INSERT INTO user_facts (fact, importance, source, created_at) VALUES (?, ?, ?, ?)",
-            (fact.strip(), max(1, min(5, importance)), source, _time.time()),
+            (fact.strip(), max(1, min(5, importance)), source, _t.time()),
         )
         return cur.lastrowid
 
