@@ -516,3 +516,57 @@ truman/voice/static/dashboard.html  activity sidebar HTML/CSS/JS, resize handle,
 - Sticky model: pin model across turns when Om says "use nemotron" (currently resets per-process)
 - Fix "can you see my desktop?" keyword not always triggering `list_mac_dir`
 - Fix LLM leaking persona narration `"(Maintaining a flat tone...)"` in responses
+
+---
+
+## 2026-05-02 — Phase 8A-8C + 8E: Sessions + Memory + Multi-device Sync
+
+**Commits: `ed859d7`, `1d1e76e`, `bd06cac`, `e7ea002`, `ced3232`, `8d20144`, `a69ea69`**
+
+### Phase 8A — Session persistence (refresh-safe)
+- Sessions array + session IDs saved to `localStorage` (`truman_sessions_v1`) on every message, tab switch, new chat
+- Page load: reads localStorage first, restores all tabs + active chat instantly
+- Cap: 60k chars per session to stay well under 5MB localStorage limit
+- On fresh install (no localStorage): falls back to SQLite `recent_turns(30)`
+
+### Phase 8B — Per-session history load
+- `/api/history?session_id=X` wired up — each tab fetches only its own turns from SQLite
+- `switchSession()` loads from SQLite if tab has no cached messages yet
+- Fresh page load (no localStorage) uses global recent turns fallback — no filter
+
+### Phase 8C — Cross-chat user memory
+- New `user_facts` SQLite table: `id, fact, importance(1-5), source, created_at`
+- 4 db helpers: `save_fact`, `get_top_facts`, `get_all_facts`, `delete_fact`
+- `/api/facts` GET + POST + DELETE endpoints in `orb.py`
+- Top 10 facts injected into system prompt as `WHAT YOU KNOW ABOUT OM:` block every turn — every new chat starts knowing Om
+- 📌 pin button on every Truman message bubble (hover to reveal) → saves with importance 4
+- **Memory panel** — "memory" button in header → slide-out panel showing all facts, importance stars, edit/delete, manual add
+- **Auto-extract** — messages >60 chars with emotional/personal keywords → background thread → fast 8B LLM call → extracts 1-3 facts → saves with importance 3. Zero user-facing latency.
+- Duplicate check: skips facts too similar to existing ones
+
+### Phase 8E — Multi-device live sync
+- `push_turn()` in `notifications.py` — broadcasts new turns via SSE to all connected clients
+- Called in `orb.py` after every chat response (both user + assistant turns)
+- Frontend SSE handler: receives `kind=turn` → appends message if it's for the active session + came from another device
+- `_localTurnInFlight` flag prevents same-device double-render
+
+### Known issue (Railway ephemeral filesystem)
+- Railway wipes SQLite on every redeploy — Om lost his chat history on the 2026-05-02 deploy
+- Fix needed: Railway volume mount to persist `truman.db` across deploys
+
+### Files touched
+```
+truman/storage/db.py                user_facts table + 4 helpers, _time import fix
+truman/storage/notifications.py     push_turn()
+truman/voice/orb.py                 /api/facts endpoints, push_turn calls, _auto_extract_facts()
+truman/brain/nodes.py               user_facts injection into system prompt in call_llm
+truman/voice/static/dashboard.html  localStorage session persistence, per-session history, memory panel UI, pin button, SSE turn handler, _localTurnInFlight flag
+```
+
+### Next — Phase 9 — UI overhaul + Railway volume mount
+- Theme picker (presets + custom color + light/dark toggle)
+- Better chat bubbles (timestamps, pool-colored border, copy button, markdown rendering)
+- Tab rename + delete + auto-name
+- Typing indicator (iMessage style)
+- Scroll-to-bottom button
+- Railway persistent volume for SQLite
