@@ -121,6 +121,234 @@
 
 ---
 
+### 2026-05-02 — Phase 10: Proactive Push + Sleep Tracking
+
+**Commit: `c9bfe76`**
+
+#### What shipped
+
+**DB additions (`truman/storage/db.py`):**
+- `user_prefs` table: key TEXT PK, value TEXT, updated_at. Changeable via natural language.
+- `sleep_log` table: date (unique), sleep_start HH:MM, sleep_end HH:MM, duration_min, raw_input, created_at.
+- Helpers: `get_pref`, `set_pref`, `get_all_prefs`, `log_sleep`, `get_sleep_stats(days=7)`
+
+**New tools (`truman/tools/all_tools.py`)** — 23 total (was 21):
+- `log_sleep(sleep_start, sleep_end, raw_input)`: parses "4am"/"8:50"/"16:30" → HH:MM 24h, computes duration, logs to sleep_log, returns 7-day rolling avg + typical wake-up time
+- `update_pref(key, value)`: supports keys `morning_brief_hour` (converts "9am" → "09:00" + int stored separately), `quiet_start__end` (pipe-separated, splits into quiet_start + quiet_end prefs), and arbitrary keys. Converts "4am"-style to HH:MM internally.
+
+**Risk tier updates (`truman/core/risk.py`):**
+- `update_pref`, `log_sleep` added to caution tier
+- `read_mac_file` moved to safe tier (was missing — read-only, no risk)
+
+**Keyword detection (`truman/text/agent.py`):**
+- "gonna sleep / going to sleep / slept from / sleeping from / sleep from / waking up at" → `log_sleep`
+- "change brief / set brief / morning brief time / quiet hours / sleep window / update pref / my sleep is now" → `update_pref`
+- `_extract_arg` branches for both tools: parses times from natural language
+
+**Proactive scheduler (`truman/scheduling/proactive.py`):**
+- New `start_proactive_push(agent_fn)` — 60s daemon thread, 3 triggers:
+  a. Morning brief: fires at `morning_brief_hour_int` ET (default 9), once/day. Tries email first, SSE fallback.
+  b. Idle nudge: 4hr silence → SSE push, skips quiet hours, max once per 4hr window.
+  c. Goal nudge: noon ET, once/day, only if any goal is stalled 7 days OR deadline <24hrs.
+- `_in_quiet_hours(now)`: reads quiet_start/quiet_end from user_prefs. Default 03:00–08:50 ET.
+- `start_all()` now also calls `start_proactive_push()`
+
+**Notifications (`truman/storage/notifications.py`):**
+- `push_proactive(content)`: pushes `push_turn(role="assistant", content="💡 {content}", session_id="proactive")`
+
+**Dashboard (`truman/voice/static/dashboard.html`):**
+- SSE handler: `session_id === 'proactive'` always renders regardless of active session
+- `.proactive` CSS class on message div: accent left border + tinted background
+- `addMsg()`: detects `meta.proactive` → adds CSS class
+
+**Config (`truman/core/config.py`):**
+- `ENABLE_PROACTIVE=1` default added
+
+**Verified:** DB init OK, 23 tools load, 12-node graph compiles, `log_sleep` tool parses "4 to 8:50" → "04:00–08:50 (4.8h). 7-day avg: 4h 50m/night", `update_pref` "9am" → "09:00 ET", quiet hours 6am → True, 10am → False.
+
+---
+
+### 2026-05-02 — Phase 11: Gmail HTML Morning Brief
+
+**Commit: `d3d43a7`**
+
+#### What shipped
+
+**New file: `truman/voice/email_digest.py`**
+- `build_html(now)`: pulls sleep_stats + active goals from DB, generates dark-themed HTML email
+  - Sleep card: last night times + duration + red/green diff badge vs 7-day avg
+  - Goals card: active goals, stale ones (7+ days no update) highlighted red with ⚠️
+  - Focus card: auto-generated from data — surfaces stalled goal + low-sleep warning, "No blockers. Ship something." fallback
+  - Inline CSS only (Mail.app safe), responsive, dark theme (#0f172a), mobile layout
+- `send_morning_brief()`: Gmail SMTP SSL (smtp.gmail.com:465), MIMEMultipart HTML email, subject "Truman Brief — Day, Date"
+
+**Proactive scheduler (`truman/scheduling/proactive.py`):**
+- 9am morning brief trigger now: tries `send_morning_brief()` first → SSE push if email fails or env not set
+
+**Config (`truman/core/config.py`):**
+- `ENABLE_MORNING_EMAIL=1` default
+- `GMAIL_APP_PASSWORD`, `MORNING_EMAIL_FROM`, `MORNING_EMAIL_TO` env var reads added with comment
+
+**ENV vars to fill (`.env` — never committed):**
+```
+GMAIL_APP_PASSWORD=   # Google Account → Security → 2-Step → App Passwords → 16-char code
+MORNING_EMAIL_FROM=   # your gmail address (sender)
+MORNING_EMAIL_TO=     # receiving email (usually same)
+```
+
+**Verified:** 23 tools, 12 nodes, `build_html()` generates 2946-char valid HTML, all imports clean.
+
+---
+
+## PENDING PHASES (read this before starting work in a new session)
+
+### Phase 12 — Telegram Bot + macOS Native Banner
+
+**Why:** Current proactive push only hits the dashboard (SSE). Telegram = cross-device delivery (Mac + iPhone), inline `[Approve] [Edit] [Skip]` buttons for approval flows, works when Mac is off. macOS native banner = lock-screen notification for in-flow nudges while Mac is on.
+
+**Telegram bot setup (Om does once):**
+1. Message @BotFather on Telegram → `/newbot` → get token
+2. Message the bot once to get Om's chat_id
+3. Add to `.env`: `TELEGRAM_BOT_TOKEN=`, `TELEGRAM_CHAT_ID=`
+
+**New files:**
+- `truman/delivery/telegram.py` — `send_message(text, buttons=None)`, `send_photo(path, caption)`, `poll_updates()` (for inline button callbacks)
+- `truman/delivery/mac_banner.py` — `notify(title, body, subtitle)` via `pync` or `osascript` UNUserNotification
+
+**Wire into proactive:**
+- Morning brief: send to Telegram (same format as email, markdown version)
+- Idle nudge: macOS banner → click opens dashboard
+- Goal nudge: Telegram with `[View Goals]` button → opens dashboard/goals
+- If voice session active: call `speak()` instead of Telegram/banner
+
+**ENV vars to add:**
+```
+TELEGRAM_BOT_TOKEN=
+TELEGRAM_CHAT_ID=
+ENABLE_TELEGRAM=1
+ENABLE_MAC_BANNER=1
+```
+
+**Kill switches:** `ENABLE_TELEGRAM=1`, `ENABLE_MAC_BANNER=1`
+
+---
+
+### Phase 13 — Self-Correcting Persona
+
+**Why:** When Om says "stop doing X" / "you're wrong about Y" / "never say Z", that correction disappears after the session. Should be permanent.
+
+**Architecture:**
+- After `save_memory` node (or in `save_memory`): scan assistant response + user reaction for correction signals
+- Correction signals: "stop saying", "never say", "you're wrong", "don't do that", "that's not right", "I told you"
+- If detected: extract the rule → store in `user_prefs` with key `persona_rule_N`
+- `truman/core/persona.py`: at boot, load all `persona_rule_*` prefs from DB → append to SYSTEM prompt
+
+**New files/changes:**
+- `truman/brain/nodes.py` — in `save_memory` node: add correction-detection regex, write to user_prefs if triggered
+- `truman/storage/db.py` — already has `user_prefs` table from Phase 10 ✓
+- `truman/core/persona.py` — load `persona_rule_*` keys from DB at import, inject into SYSTEM
+
+**Kill switch:** `ENABLE_SELF_CORRECT=1`
+
+---
+
+### Phase 14 — Ambient Awareness Layer (Mac + iPhone passive watching)
+
+**Why:** Truman should know what Om is working on WITHOUT Om telling him. No screenshots. Activity log feeds morning brief, sleep correlation, productivity patterns, and brain loop context.
+
+**Architecture:**
+
+Mac watcher (daemon thread in Truman process):
+- Every 60s: active app + window title via `osascript` → `activity_log` table
+- Every 60s: idle time via `CGEventSourceSecondsSinceLastEventType` → AFK detection
+- Every 30min: keyboard intensity (keystroke count, NOT content) → focus mode detection
+- FSEvents watcher (`watchdog` lib): file save events in `~/Desktop/friday/` → log changed files
+- Git post-commit hook: installed into Om's repos, POSTs diff stats to local Truman API
+- Battery + AirPods state: every 5min via `pmset` + `system_profiler`
+- Music playing: AppleScript → Music.app/Spotify every 60s
+
+iPhone signals (Apple Shortcuts — Om installs 7 shortcuts once):
+- Alarm dismissed → POST to Truman `/api/awareness` (wake time)
+- Focus mode toggle → POST (DnD on/off)
+- Location geofence (office/home) → POST
+- CarPlay connect → POST (driving mode)
+- HealthKit sleep data → "Health Auto Export" free app → webhook
+- Battery low (20%) → POST
+- Screen Time weekly → POST
+
+New files:
+- `truman/awareness/__init__.py`
+- `truman/awareness/mac_watcher.py` — daemon thread, all Mac signals
+- `truman/awareness/iphone_routes.py` — Flask routes for Shortcut webhooks (`/api/awareness`)
+- `truman/awareness/digestor.py` — every 30min, compresses last 30min activity → 1-line summary → Mem0
+- `truman/awareness/context.py` — `get_current_context()` → last-hour activity string for brain loop
+
+DB addition:
+- `activity_log` table: (id, ts, source [mac/iphone], kind [app/file/git/health/etc], value, meta_json)
+
+Brain loop change:
+- Add `load_context` node between `load_goals` and `curiosity` — pulls last-hour activity summary and injects into system prompt
+
+**ENV vars:** `ENABLE_AWARENESS=1`
+**Kill switch:** `ENABLE_AWARENESS=1`
+
+---
+
+### Phase 15 — Boss Flow (WhatsApp + Gmail + Calendar + Approval)
+
+**Why:** Om's boss Adam texts on WhatsApp (text, Excel, PDF, images). Truman should summarize → draft reply/action plan → ask Om for approval via Telegram → execute if approved.
+
+**Architecture:**
+
+WhatsApp (iPhone Shortcut method — no ToS risk):
+1. Adam texts Om on WhatsApp
+2. iPhone Shortcut detects message from "Adam" → auto-forwards to `POST /api/boss_message`
+3. Truman receives: message text + attachment (if any)
+4. Attachment handling:
+   - Excel → llama-4-maverick (vision pool) reads table → summary
+   - PDF → docs pool (maverick) → summary
+   - Image → vision pool → description
+   - Text → fast pool
+5. Truman generates: summary of what Adam said + proposed reply OR action plan
+6. Sends to Telegram:
+   ```
+   📨 Adam (10:14am)
+   "Need the SeaCap deck by EOD"
+   Attached: pipeline.xlsx — 12 leads, 3 hot (X, Y, Z)
+   Draft reply: "On it, sending by 5pm. Top 3 are X, Y, Z."
+   [Approve & Send] [Edit] [Skip]
+   ```
+7. If Approve: iPhone Shortcut sends the WhatsApp reply back (Om can set this up as a return webhook)
+8. If Edit: opens Truman dashboard with the draft pre-loaded
+
+Gmail API:
+- OAuth once (offline token stored in DB as user_pref)
+- Poll every 15min for unread from known contacts (Adam, etc.)
+- Same summarize + Telegram approval flow
+- Kill switch: `ENABLE_GMAIL_POLLING=1`
+
+Google Calendar API:
+- OAuth same token
+- Pull today's events → inject into morning brief
+- Reminder 30min before meetings: Telegram push
+- Kill switch: `ENABLE_CALENDAR=1`
+
+New files:
+- `truman/integrations/__init__.py`
+- `truman/integrations/gmail.py` — fetch_unread(), send_reply()
+- `truman/integrations/gcal.py` — get_today_events(), get_upcoming_meeting()
+- `truman/integrations/boss_handler.py` — parse_boss_message(), draft_response(), send_approval_request()
+- `truman/voice/orb.py` — add `/api/boss_message` route
+
+**ENV vars:**
+```
+ENABLE_GMAIL_POLLING=1
+ENABLE_CALENDAR=1
+GOOGLE_OAUTH_TOKEN=    # stored after first OAuth flow
+```
+
+---
+
 ### 2026-04-11
 
 #### Planning & Setup
@@ -552,7 +780,7 @@ truman/voice/static/dashboard.html  activity sidebar HTML/CSS/JS, resize handle,
 
 ### Known issue (Railway ephemeral filesystem)
 - Railway wipes SQLite on every redeploy — Om lost his chat history on the 2026-05-02 deploy
-- Fix needed: Railway volume mount to persist `truman.db` across deploys
+- FIXED (2026-05-02): Railway volume `truman-volume` mounted at `/data` — SQLite persists across deploys
 
 ### Files touched
 ```
@@ -563,10 +791,110 @@ truman/brain/nodes.py               user_facts injection into system prompt in c
 truman/voice/static/dashboard.html  localStorage session persistence, per-session history, memory panel UI, pin button, SSE turn handler, _localTurnInFlight flag
 ```
 
-### Next — Phase 9 — UI overhaul + Railway volume mount
-- Theme picker (presets + custom color + light/dark toggle)
-- Better chat bubbles (timestamps, pool-colored border, copy button, markdown rendering)
-- Tab rename + delete + auto-name
-- Typing indicator (iMessage style)
-- Scroll-to-bottom button
-- Railway persistent volume for SQLite
+---
+
+## 2026-05-02 (cont.) — Phase 8D-8F + Phase 9: UI Overhaul + Mac-Master Storage + Multi-Device Sync
+
+**Commits: `bd06cac` (phase 8C already), + session work below**
+
+### Phase 8 — UI Overhaul (dashboard.html complete rewrite)
+
+**Theme system:**
+- 5 presets: midnight (default), ocean, forest, sunset, minimal
+- CSS custom properties `--bg`, `--surface`, `--surface2`, `--accent`, `--text`, `--text2`, `--border`, `--accent-glow`
+- Theme picker in header, persists to localStorage
+
+**Model picker dropdown:**
+- Replaced plain input with `<select>` showing all known models (nemotron-49b, kimi-k2, llama-3.1-8b, step-flash, qwen3-coder, llama-4-maverick, devstral)
+- Sends `model` field in chat POST body
+- `_currentModel` state var — only one declaration (bug fixed: was declared twice)
+
+**Markdown rendering (`renderMarkdown()`):**
+- Bold (`**`), italic (`*`), inline code (`` ` ``), fenced code blocks (` ``` `)
+- Bullet lists (lines starting with `-` / `*`)
+- Auto-link URLs → `<a>` tags
+- `\n` → `<br>` for newline preservation
+
+**Chat bubble improvements:**
+- Timestamps on every message (HH:MM)
+- Copy button (hover → clipboard)
+- Scroll-to-bottom button (appears when scrolled up)
+
+**Auto tab-name:**
+- First user message → sent to LLM as session title, tab renamed automatically
+
+**Export / Import JSON:**
+- Export: downloads all sessions as `truman-export-YYYY-MM-DD.json`
+- Import: drag-drop or file picker, merges into localStorage
+
+**Keyword fix:**
+- Removed `see.*desktop` from `list_mac_dir` pattern — was matching "can you see my desktop?" casually
+- New pattern: `show.*desktop|what.*desktop|list.*desktop|desktop.*files|files.*desktop`
+
+**Strip markdown for TTS (`agent.py`):**
+- Only strips persona narrations (`*smiles*`, `*maintains flat tone*`) and excess newlines
+- Keeps markdown for browser rendering (no longer strips `**bold**`, `# headers`, `- bullets`)
+
+### Phase 9 — Mac-Master Storage + Session Sidebar + Multi-Device Sync
+
+**SQLite schema additions (`db.py`):**
+- `sessions` table: added `browser_id TEXT UNIQUE`, `label TEXT`, `first_message TEXT` columns via migration
+- `get_or_create_session(browser_id, label=None)` → int sid — maps frontend UUID → SQLite row
+- `update_session_label(browser_id, label)` — rename
+- `delete_session(browser_id)` — delete session + its turns
+- `get_sessions_by_day()` → grouped list with Today/Yesterday/date headers
+- `set_session_first_message(browser_id, msg)` — stores first message for sidebar preview
+- `session_turns(session_id)` — now accepts str browser_id or int sid
+- DB_PATH: checks `os.path.isdir("/data")` first → uses `/data/truman.db` on Railway volume, else local `truman/truman.db`
+
+**orb.py session fixes:**
+- `/api/chat`: proper `get_or_create_session(session_id)` → `log_turn()` flow (was broken, turns weren't logged)
+- `set_session_first_message()` called on first user message per session
+- `GET /api/sessions` — returns day-grouped session list
+- `PATCH /api/sessions/<browser_id>` — rename
+- `DELETE /api/sessions/<browser_id>` — delete
+
+**New file: `truman/storage/sync.py`:**
+- `start_sync()` — starts two daemon background threads
+- `_pull_from_railway()` — every 60s: pulls all sessions+turns from Railway `/api/sessions` + `/api/history` → merges into local Mac SQLite (dedup by role+content)
+- `_do_backup()` — dumps all sessions+turns to `~/Desktop/friday/backups/truman-YYYY-MM-DD.json`, keeps last 30 days
+- `_backup_loop()` — runs `_do_backup()` daily at 2am
+
+**main.py:** added `start_sync()` call (Mac-only — not in main_cloud.py)
+
+**.env:** added `RAILWAY_SYNC_URL=https://truman-production.up.railway.app`
+
+**dashboard.html — Left session sidebar:**
+- Replaced horizontal session-bar with `#sessions-sidebar` (220px, fixed left)
+- Layout: `body-wrap` (flex row) → sidebar + `main-area` (flex:1)
+- `loadSidebar()` fetches from `/api/sessions`, groups by day, hover → preview popup with first_message
+- Right-click context menu: Rename / Delete
+- `_msgCache` dict (keyed by browser_id) replaces old `sessions[]` array
+- `openSession(bid)` — loads session from cache or fetches from `/api/history?session_id=bid`
+- localStorage key `truman_sessions_v1` updated to dict format
+
+### Deployment
+
+- `railway up --service Truman` — deployed successfully
+- `/api/sessions` confirmed live at `https://truman-production.up.railway.app/api/sessions`
+
+### Architecture: Mac = Master
+
+```
+Phone/Browser → Railway (live chat) → Mac syncs every 60s → local SQLite
+                                     → daily 2am backup → ~/Desktop/friday/backups/
+```
+- Data safe even if Railway dies — Mac always has the full copy
+- Om's phone, Mac, sister's phone all write to Railway, Mac pulls it all down
+
+### Railway Volume Mount — DONE (2026-05-02)
+
+- `railway volume add --mount-path /data` — volume `truman-volume` (5GB) attached to Truman service
+- Verified: test chat written, `/api/sessions` returned session from `/data/truman.db`
+- SQLite now persists across all redeploys
+
+### Pending
+
+- End-to-end multi-device sync test (phone → Railway → Mac pull)
+
+### Next — Phase 9B / 10 — Agent activity trace + deeper proactivity
