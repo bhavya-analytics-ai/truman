@@ -112,6 +112,41 @@ a{{color:#a78bfa;text-decoration:none;}}
         return f"<pre>error: {e}</pre>", 500
 
 
+_EMOTIONAL_KW = {"i feel","i'm","im ","i am","i can't","i cant","she ","he ","my ","i've","ive ","i was","i don't","i dont","i need","i want","i hate","i love","honestly","tbh","ngl","bro","man ","struggling","hard","frustrated","anxious","stressed","worried","distracted","sad","lonely","angry","pissed","hurt","confused","lost","scared"}
+
+def _auto_extract_facts(user_input: str) -> None:
+    """Background: if message is personal/emotional, extract facts via fast LLM and save."""
+    try:
+        if len(user_input) < 80:
+            return
+        lower = user_input.lower()
+        if not any(kw in lower for kw in _EMOTIONAL_KW):
+            return
+        from langchain_core.messages import HumanMessage as _HM
+        from truman.core.model_router import run_with_pool
+        from truman.storage.db import save_fact, get_all_facts
+        existing = [f["fact"].lower() for f in get_all_facts()]
+        prompt = (
+            "Extract 1-3 short factual statements about the person from this message. "
+            "Only extract clear personal facts (feelings, situations, relationships, struggles). "
+            "Return ONLY a plain list, one fact per line, no bullets, no numbers, no extra text.\n\n"
+            f"Message: {user_input[:600]}"
+        )
+        result = run_with_pool([_HM(content=prompt)], pool="fast")
+        if not result or not result.get("content"):
+            return
+        for line in result["content"].strip().split("\n"):
+            fact = line.strip().lstrip("-•·123456789. ").strip()
+            if len(fact) < 10 or len(fact) > 250:
+                continue
+            # skip if too similar to existing
+            if any(fact.lower()[:40] in ex for ex in existing):
+                continue
+            save_fact(fact, importance=3, source="auto")
+    except Exception:
+        pass
+
+
 @app.route("/api/chat", methods=["POST"])
 def api_chat():
     from flask import request
@@ -141,6 +176,13 @@ def api_chat():
             _db.log_turn(sid, "assistant", result["response"])
         except Exception:
             pass
+
+        # auto-extract personal facts in background (zero latency impact)
+        threading.Thread(
+            target=_auto_extract_facts,
+            args=(user_input,),
+            daemon=True
+        ).start()
 
         mac_status = "connected" if _mac_ws else "disconnected"
         return jsonify({
