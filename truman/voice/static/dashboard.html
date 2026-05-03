@@ -767,10 +767,15 @@ async function loadSidebar() {
     _sidebarGroups = cached.length ? [{day: 'Today', sessions: cached}] : [];
   }
   renderSidebar();
-  // if no active session yet, open first one
-  if (!_activeId && _sidebarGroups.length && _sidebarGroups[0].sessions.length) {
-    openSession(_sidebarGroups[0].sessions[0].browser_id);
-  } else if (!_activeId) {
+  // always open the correct session:
+  // — if _activeId is set AND exists on server → load it (fixes refresh showing wrong session)
+  // — if _activeId is stale/missing → fall back to first available
+  const _allServerIds = new Set(_sidebarGroups.flatMap(g => g.sessions.map(s => s.browser_id)));
+  if (_activeId && _allServerIds.has(_activeId)) {
+    await openSession(_activeId);
+  } else if (_sidebarGroups.length && _sidebarGroups[0].sessions.length) {
+    await openSession(_sidebarGroups[0].sessions[0].browser_id);
+  } else {
     newSession();
   }
 }
@@ -997,7 +1002,7 @@ async function loadHistory(sessionId) {
     messages.innerHTML = '<div class="msg truman"><div class="bubble">yo. what\'s up?</div></div>';
   }
 }
-loadHistory();
+// history loaded by loadSidebar() → openSession() — no naked loadHistory() call needed
 
 // ── Scroll to bottom ──────────────────────────────────────────────────────────
 const scrollBtn = document.getElementById('scroll-btn');
