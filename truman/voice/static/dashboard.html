@@ -656,7 +656,6 @@ startTasksPoll();
           const role = d.role === 'user' ? 'user' : 'truman';
           const meta = Object.assign({}, d.role === 'truman' ? (d.meta || {}) : {}, isProactive ? {proactive: true} : {});
           addMsg(role, d.content, meta);
-          if (!isProactive && _activeId) { (_msgCache[_activeId] = _msgCache[_activeId]||{}).msgs = messages.innerHTML; _saveCache(); }
         }
         return;
       }
@@ -896,7 +895,6 @@ function hidePopup() { if (_ssbPopup) { _ssbPopup.remove(); _ssbPopup = null; } 
 
 // ── Export / Import ───────────────────────────────────────────────────────────
 function exportChats() {
-  if (_activeId) { (_msgCache[_activeId] = _msgCache[_activeId] || {}).msgs = messages.innerHTML; _saveCache(); }
   const data = JSON.stringify({sessions: _msgCache, exported: new Date().toISOString()}, null, 2);
   const blob = new Blob([data], {type: 'application/json'});
   const a = document.createElement('a');
@@ -1211,7 +1209,6 @@ async function send() {
     if (!respText) { setStatus('idle','idle'); addMsg('truman', '(no response — try again)', null); _localTurnInFlight = false; return; }
     addMsg('truman', respText, {model: d.model || 'deepseek-v3.2', pool: d.pool || 'general', tool_calls: d.tool_calls});
     updatePanelFromResponse(d, sendText || text, respText);
-    if (_activeId) { (_msgCache[_activeId]=_msgCache[_activeId]||{}).msgs = messages.innerHTML; _saveCache(); }
     _localTurnInFlight = false;
     setStatus('idle', 'idle');
     macDot.className = 'mac-dot' + (d.mac === 'connected' ? ' on' : '');
