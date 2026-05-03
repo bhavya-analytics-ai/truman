@@ -46,6 +46,43 @@ function startClient() {
     console.log("[WA Bridge] ✅ WhatsApp connected. Bridge ready on port", PORT);
   });
 
+  // ── Incoming messages → forward to Railway for triage ──────────────────────
+  _client.on("message", async (msg) => {
+    try {
+      // Skip messages sent by us, broadcasts, status updates
+      if (msg.fromMe) return;
+      if (msg.from === "status@broadcast") return;
+
+      const body    = msg.body || "";
+      const from    = msg.from;       // e.g. "12223334444@c.us"
+      const contact = await msg.getContact();
+      const name    = contact.pushname || contact.name || from.replace("@c.us", "");
+      const isGroup = msg.from.endsWith("@g.us");
+
+      if (!body.trim()) return;
+
+      console.log(`[WA Bridge] Incoming from ${name}: ${body.slice(0, 80)}`);
+
+      // POST to Railway (or local Truman) — RAILWAY_URL env var, fallback localhost
+      const railwayUrl = process.env.RAILWAY_URL || "http://127.0.0.1:5000";
+      const res = await fetch(`${railwayUrl}/api/boss_message`, {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({
+          from:   name,
+          text:   body,
+          source: "whatsapp",
+          extra:  { phone: from.replace("@c.us", ""), is_group: isGroup },
+        }),
+      });
+      if (!res.ok) {
+        console.warn(`[WA Bridge] Forward failed: ${res.status}`);
+      }
+    } catch (e) {
+      console.error("[WA Bridge] Incoming handler error:", e.message);
+    }
+  });
+
   _client.on("auth_failure", (msg) => {
     _state = "DOWN";
     console.error("[WA Bridge] Auth failure:", msg);
