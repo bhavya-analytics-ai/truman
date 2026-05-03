@@ -1654,7 +1654,7 @@ document.addEventListener('DOMContentLoaded', function() {
   const panel = document.querySelector('.activity-panel');
   if (!panel) return;
   panel.addEventListener('touchstart', e => {
-    if (!e.target.closest('.ap-hdr')) return;
+    if (!e.target.closest('.ap-hdr') || e.target.closest('.ap-min')) return;
     const t = e.touches[0];
     _tx = t.clientX; _ty = t.clientY;
     const r = panel.getBoundingClientRect();
