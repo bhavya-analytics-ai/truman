@@ -1,7 +1,8 @@
-// sw.js — Truman service worker (Phase 14)
+// sw.js — Truman service worker (Phase 14.2)
 // Handles: offline shell cache, push notifications, notification clicks
+// v2: bumped cache name so old stale cache is deleted on update
 
-const CACHE_NAME = 'truman-shell-v1';
+const CACHE_NAME = 'truman-shell-v2';
 const SHELL_URLS = ['/dashboard'];
 
 // ── Install: cache dashboard shell ────────────────────────────────────────────
@@ -14,9 +15,8 @@ self.addEventListener('install', e => {
   self.skipWaiting();
 });
 
-// ── Activate: claim all clients ───────────────────────────────────────────────
+// ── Activate: delete old caches, claim all clients ────────────────────────────
 self.addEventListener('activate', e => {
-  // clean up old caches
   e.waitUntil(
     caches.keys().then(keys =>
       Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)))
@@ -24,13 +24,24 @@ self.addEventListener('activate', e => {
   );
 });
 
-// ── Fetch: network-first, fallback to cache for shell only ────────────────────
+// ── Fetch: always network-first for HTML, cache fallback only if offline ──────
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;
-  // API + SSE calls: always go to network — never cache
   const url = e.request.url;
+
+  // API + SSE + audio: always bypass SW entirely
   if (url.includes('/api/') || url.includes('/stream') || url.includes('/audio')) return;
 
+  // Dashboard HTML: force network, bypass HTTP cache — only fall back if offline
+  if (url.includes('/dashboard') || url.endsWith('/')) {
+    e.respondWith(
+      fetch(e.request, {cache: 'no-store'})
+        .catch(() => caches.match(e.request))
+    );
+    return;
+  }
+
+  // All other assets (icons, manifest, js): network with cache fallback
   e.respondWith(
     fetch(e.request).catch(() => caches.match(e.request))
   );
@@ -49,7 +60,7 @@ self.addEventListener('push', e => {
       badge:   '/static/icon-192.png',
       data:    { url: payload.url },
       vibrate: [200, 100, 200],
-      tag:     'truman-push',          // replaces previous notification of same tag
+      tag:     'truman-push',
       renotify: true,
     })
   );

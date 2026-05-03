@@ -239,23 +239,37 @@
   .ap-minimized .ap-hdr { border-radius:12px; border-bottom:none; }
 
   /* ── Mobile overrides ──────────────────────────────────────────────────────── */
+  /* Sidebar overlay — behind slide-in sidebar on mobile */
+  .sidebar-overlay { display:none; position:fixed; inset:0; z-index:199; background:rgba(0,0,0,0.55); }
+  .sidebar-overlay.visible { display:block; }
+  /* Mobile sidebar toggle — only shown on small screens */
+  .mobile-sidebar-btn { display:none; background:none; border:1px solid var(--border2); border-radius:7px; color:var(--text2); font-size:15px; padding:3px 9px; cursor:pointer; line-height:1.4; }
+  .mobile-sidebar-btn:hover { border-color:var(--accent); color:var(--accent2); }
+
   @media (max-width: 600px) {
-    /* LIVE widget: smaller, pinned top-right, tap minimize to hide */
+    /* LIVE widget: smaller, pinned top-right */
     .activity-panel { width:160px; top:60px; right:8px; font-size:10px; }
     .ap-body { padding:8px 10px; gap:5px; }
     .ap-row { grid-template-columns:44px 1fr; }
-    /* sessions sidebar: hidden by default on mobile */
-    .sessions-sidebar { display:none; }
+    /* sessions sidebar: slide-in from left */
+    .sessions-sidebar {
+      position:fixed; left:-250px; top:0; bottom:0; width:240px; z-index:200;
+      background:var(--bg2); border-right:1px solid var(--border);
+      transition:left 0.22s ease; flex-direction:column; overflow:hidden;
+    }
+    .sessions-sidebar.mobile-open { left:0; }
     /* memory panel: full width on mobile */
     .memory-sidebar { width:100vw; right:-100vw; }
     .memory-sidebar.open { right:0; }
-    /* input area: taller tap target */
-    .input-row textarea { font-size:15px; }
     /* header: tighter */
     .header { padding:0 10px; }
     .hdr-right { gap:4px; }
     .hdr-btn { padding:4px 8px; font-size:10px; }
     .activity-btn { padding:4px 8px; font-size:10px; }
+    /* show mobile sidebar toggle */
+    .mobile-sidebar-btn { display:inline-block; }
+    /* hide less-essential header items on very small screens */
+    .hdr-desktop-only { display:none !important; }
   }
 
   /* Power button */
@@ -436,6 +450,8 @@
 <div class="header">
   <h1>TRUMAN</h1>
   <div class="hdr-right">
+    <button class="mobile-sidebar-btn" onclick="toggleMobileSidebar()" title="chats">☰</button>
+    <button class="hdr-btn" onclick="location.reload(true)" title="force reload from server">🔄</button>
     <div class="status-pill" id="status-pill" onclick="toggleDrawer()" title="click to see events">
       <div class="status-dot idle" id="status-dot"></div>
       <span class="status-pill-label" id="status-label">idle</span>
@@ -521,8 +537,19 @@
 </div>
 </div><!-- /main-area -->
 </div><!-- /body-wrap -->
+<div class="sidebar-overlay" id="sidebar-overlay" onclick="toggleMobileSidebar()"></div>
 
 <script>
+// ── Version gate: wipe stale localStorage once on new deploy (Phase 14.2) ─────
+(function(){
+  if (localStorage.getItem('truman_v') !== '14.2') {
+    const theme = localStorage.getItem('truman_theme');
+    localStorage.clear();
+    if (theme) localStorage.setItem('truman_theme', theme);
+    localStorage.setItem('truman_v', '14.2');
+  }
+})();
+
 const messages   = document.getElementById('messages');
 const input      = document.getElementById('input');
 const sendBtn    = document.getElementById('send-btn');
@@ -790,6 +817,7 @@ function _buildSessRow(s) {
 async function openSession(bid) {
   _activeId = bid;
   localStorage.setItem(_LS_CUR, bid);
+  _closeMobileSidebarIfOpen();
 
   // restore model preference
   const m = _msgCache[bid]?.model || '';
@@ -1516,6 +1544,49 @@ function updateActivityPanel({ model, pool, inputChars, outputChars, error, task
 let memoryOpen = false;
 
 function toggleMemory() { memoryOpen ? closeMemory() : openMemory(); }
+
+// ── Mobile sidebar slide-in ───────────────────────────────────────────────────
+function toggleMobileSidebar() {
+  const sb = document.getElementById('sessions-sidebar');
+  const ov = document.getElementById('sidebar-overlay');
+  const isOpen = sb.classList.contains('mobile-open');
+  sb.classList.toggle('mobile-open', !isOpen);
+  ov.classList.toggle('visible', !isOpen);
+}
+
+// Close mobile sidebar when a session is clicked (wire into openSession)
+function _closeMobileSidebarIfOpen() {
+  const sb = document.getElementById('sessions-sidebar');
+  const ov = document.getElementById('sidebar-overlay');
+  if (sb.classList.contains('mobile-open')) {
+    sb.classList.remove('mobile-open');
+    ov.classList.remove('visible');
+  }
+}
+
+// ── Touch drag for activity panel (iPhone) ───────────────────────────────────
+(function() {
+  let _tx, _ty, _ax, _ay;
+  const panel = document.querySelector('.activity-panel');
+  if (!panel) return;
+  panel.addEventListener('touchstart', e => {
+    if (!e.target.closest('.ap-hdr')) return;
+    const t = e.touches[0];
+    _tx = t.clientX; _ty = t.clientY;
+    const r = panel.getBoundingClientRect();
+    _ax = r.left; _ay = r.top;
+    e.preventDefault();
+  }, {passive: false});
+  panel.addEventListener('touchmove', e => {
+    if (_tx === undefined) return;
+    const t = e.touches[0];
+    const nx = Math.max(0, Math.min(window.innerWidth  - panel.offsetWidth,  _ax + t.clientX - _tx));
+    const ny = Math.max(0, Math.min(window.innerHeight - panel.offsetHeight, _ay + t.clientY - _ty));
+    panel.style.left = nx + 'px'; panel.style.top = ny + 'px'; panel.style.right = 'auto';
+    e.preventDefault();
+  }, {passive: false});
+  panel.addEventListener('touchend', () => { _tx = undefined; });
+})();
 
 let _activeMemTab = 'facts';
 
