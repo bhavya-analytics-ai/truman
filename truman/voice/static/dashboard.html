@@ -813,7 +813,8 @@ function _buildSessRow(s) {
   row.dataset.bid = s.browser_id;
 
   const label = _msgCache[s.browser_id]?.label || s.label || 'chat';
-  const preview = s.first_message || '';
+  const _rawPreview = s.first_message || '';
+  const preview = _rawPreview.replace(/\[Image:\s*([^|\]]+)\|attach:[^\]]*\][\s\S]*/i, '🖼 $1').replace(/\[File:\s*([^|\]]+)\|attach:[^\]]*\][\s\S]*/i, '📄 $1').trim();
   const count = s.turn_count || 0;
 
   row.innerHTML = `
@@ -925,7 +926,8 @@ function showPopup(e, s) {
   p.className = 'ssb-popup';
   p.style.top = rect.top + 'px';
   const label = _msgCache[s.browser_id]?.label || s.label || 'chat';
-  const preview = s.first_message || '(no messages)';
+  const _rawPrev = s.first_message || '(no messages)';
+  const preview = _rawPrev.replace(/\[Image:\s*([^|\]]+)\|attach:[^\]]*\][\s\S]*/i, '🖼 $1').replace(/\[File:\s*([^|\]]+)\|attach:[^\]]*\][\s\S]*/i, '📄 $1').trim() || '(no messages)';
   const count = s.turn_count || 0;
   const ts = s.started_at ? new Date(s.started_at).toLocaleDateString() : '';
   p.innerHTML = `
@@ -1087,15 +1089,13 @@ function _renderAttachments(text) {
   if (!text) return '';
   // Image with attach_id → show persistent image from server
   text = text.replace(/\[Image:\s*([^|\]]+)\|attach:([a-f0-9]+)\]([\s\S]*?)(?=\[|$)/gi,
-    (_, fname, aid, rest) => {
-      const desc = rest.replace(/^\n+/, '').trim();
-      return `<div style="margin:4px 0"><img src="/api/attachments/${aid}" alt="${fname}" style="max-width:260px;max-height:220px;border-radius:10px;display:block;margin-bottom:4px" loading="lazy"><span style="font-size:11px;color:var(--text3)">🖼 ${fname}</span></div>${desc ? '<div style="margin-top:6px;font-size:13px">' + renderMarkdown(desc) + '</div>' : ''}`;
+    (_, fname, aid) => {
+      return `<div style="margin:4px 0"><img src="/api/attachments/${aid}" alt="${fname}" style="max-width:260px;max-height:220px;border-radius:10px;display:block;margin-bottom:4px" loading="lazy"><span style="font-size:11px;color:var(--text3)">🖼 ${fname}</span></div>`;
     });
   // File with attach_id → show download link
   text = text.replace(/\[File:\s*([^|\]]+)\|attach:([a-f0-9]+)\]([\s\S]*?)(?=\[|$)/gi,
-    (_, fname, aid, rest) => {
-      const desc = rest.replace(/^\n+/, '').trim();
-      return `<div style="margin:4px 0"><a href="/api/attachments/${aid}" download="${fname}" style="color:var(--accent2);font-size:13px;text-decoration:none">📄 ${fname} <span style="font-size:10px;opacity:0.6">(download)</span></a></div>${desc ? '<div style="margin-top:6px;font-size:13px">' + renderMarkdown(desc) + '</div>' : ''}`;
+    (_, fname, aid) => {
+      return `<div style="margin:4px 0"><a href="/api/attachments/${aid}" download="${fname}" style="color:var(--accent2);font-size:13px;text-decoration:none">📄 ${fname} <span style="font-size:10px;opacity:0.6">(download)</span></a></div>`;
     });
   // Legacy — no attach_id (old messages): just show icon + filename
   text = text.replace(/\[Image:\s*([^\]]+)\]/gi, (_, fname) =>
@@ -1649,7 +1649,7 @@ function _closeMobileSidebarIfOpen() {
 }
 
 // ── Touch drag for activity panel (iPhone) ───────────────────────────────────
-(function() {
+document.addEventListener('DOMContentLoaded', function() {
   let _tx, _ty, _ax, _ay;
   const panel = document.querySelector('.activity-panel');
   if (!panel) return;
@@ -1670,7 +1670,7 @@ function _closeMobileSidebarIfOpen() {
     e.preventDefault();
   }, {passive: false});
   panel.addEventListener('touchend', () => { _tx = undefined; });
-})();
+});
 
 let _activeMemTab = 'facts';
 
