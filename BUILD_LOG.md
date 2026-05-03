@@ -233,7 +233,133 @@ ENABLE_MAC_BANNER=1
 
 ---
 
-### Phase 13 — Self-Correcting Persona
+### 2026-05-03 — Phase 13: Self-Correcting Persona
+
+**Commit: `96f0e87`**
+
+**DB (`truman/storage/db.py`):**
+- New `persona_rules` table: id, rule TEXT, active INTEGER (0/1), source TEXT, created_at REAL
+- Migration added to `init()` so existing DBs auto-create the table
+- 5 helpers: `add_rule`, `get_active_rules`, `get_all_rules`, `toggle_rule`, `delete_rule`
+
+**Brain (`truman/brain/nodes.py`):**
+- `call_llm` node: loads active rules from DB, injects `PERSONAL RULES:` block into SYSTEM prompt on every turn
+- ENABLE_SELF_CORRECT=1 kill switch gates the injection
+
+**Tools (`truman/tools/all_tools.py`)** — 23 → 26 tools:
+- `add_rule(rule)`: saves a behavioral constraint. Triggers: "rule: X", "never say X", "from now on X", "always X"
+- `list_rules()`: shows all rules with IDs + on/off status
+- `delete_rule(rule_id)`: removes by ID
+
+**Keyword detection (`truman/text/agent.py`):**
+- 3 new patterns + `_extract_arg` branches for all 3 rule tools
+
+**API (`truman/voice/orb.py`):**
+- `GET /api/rules` — all rules
+- `POST /api/rules` — add rule
+- `PATCH /api/rules/<id>` — toggle on/off
+- `DELETE /api/rules/<id>` — delete
+
+**Dashboard (`truman/voice/static/dashboard.html`):**
+- Memory panel split into Facts / Rules tabs
+- Rules tab: toggle on/off (⏸/▶), delete, manual add via input
+- CSS: `.mem-tabs`, `.mem-tab` with amber active state
+
+**Config (`truman/core/config.py`):** `ENABLE_SELF_CORRECT=1` default added
+
+**Verified:** DB helpers OK, 26 tools, 12-node graph, all 6 keyword patterns match, /api/rules routes registered.
+
+---
+
+### 2026-05-03 — Phase 14: iPhone First-Class — PWA + Web Push + Telegram Media
+
+**Commits: `670ead5`, `d168b57`**
+
+#### A. localStorage corruption fix (permanent)
+
+**Problem:** iPhone refresh would mis-render file attachments as flat text, write that back to localStorage, Mac refreshes and pulls the corrupted state — cross-device corruption.
+
+**Fix (`truman/voice/static/dashboard.html`):**
+- `_msgCache` now stores only `{label, model}` per session — no `msgs` HTML ever
+- `openSession()`: always fetches from server via `loadHistory()`, never reads cached HTML
+- `loadHistory()`: removed cache short-circuit, always network, removed `_saveCache()` call
+- Removed 3 additional `.msgs =` write sites (SSE handler, exportChats, send handler)
+- Server SQLite is the single source of truth for all devices
+
+#### B. PWA setup
+
+**New files:**
+- `truman/voice/static/manifest.json`: name=Truman, display=standalone, start_url=/dashboard, dark theme
+- `truman/voice/static/sw.js`: install/activate/fetch handlers + push event + notificationclick
+- `truman/voice/static/icon-192.png` + `icon-512.png`: amber T on dark bg, programmatically generated
+
+**Routes (`truman/voice/orb.py`):**
+- `GET /sw.js` — served with `Service-Worker-Allowed: /` and `Cache-Control: no-cache`
+- `GET /manifest.json`
+- `GET /static/<path:filename>` — generic static asset serving
+
+**Dashboard head:** manifest link, apple-touch-icon, mobile-web-app-capable, apple-mobile-web-app-capable, theme-color meta tags
+
+**Dashboard JS:** SW registration + push permission request + VAPID key fetch + pushManager subscribe + POST to /api/push/subscribe on every load
+
+#### C. Web push notifications
+
+**New file: `truman/delivery/web_push.py`:**
+- VAPID keys auto-generated on first use, stored in `user_prefs` SQLite (no manual setup)
+- `send_push(title, body, url)`: sends to all subscribed devices, removes dead subs (404/410) automatically
+- `get_public_key()`: returns stored public key for frontend subscription
+
+**DB (`truman/storage/db.py`):**
+- `push_subs` table: id, endpoint UNIQUE, p256dh, auth, created_at
+- 3 helpers: `save_push_sub`, `get_all_push_subs`, `delete_push_sub`
+- Migration in `init()` for existing DBs
+
+**API (`truman/voice/orb.py`):**
+- `GET /api/push/vapid-public-key`
+- `POST /api/push/subscribe`
+- `POST /api/push/unsubscribe`
+
+**Proactive (`truman/scheduling/proactive.py`):**
+- `_web_push()` helper added
+- Wired into all 3 triggers: morning brief + idle nudge + goal nudge
+
+**Kill switch:** `ENABLE_WEB_PUSH=1`
+
+#### D. Telegram media intake
+
+**`truman/delivery/telegram.py`:**
+- `_download_tg_file(file_id)` — downloads via Telegram file API
+- `_handle_photo(photo_list, caption, agent_fn)` — largest size → vision pool → reply
+- `_handle_document(doc, caption, agent_fn)` — download → extract text (PDF/text/code) → agent.run → reply
+- Poller updated: handles `photo` and `document` msg types alongside text
+- Caption forwarded as user prompt for both types
+- `allowed_updates` includes `channel_post`
+- **Kill switch:** `ENABLE_TG_MEDIA=1`
+
+#### E. Mobile CSS
+
+- LIVE widget: 160px wide, top:60px on mobile (was 210px, top:120px — was blocking chat)
+- Sessions sidebar: hidden on mobile (saves full screen for chat)
+- Memory panel: full-width on mobile
+- Input textarea: font-size 15px (prevents iOS auto-zoom on focus)
+
+**Config:** `ENABLE_WEB_PUSH=1`, `ENABLE_TG_MEDIA=1` defaults added
+
+**Dependencies added:** `pywebpush`, `pillow`
+
+**Verified (Flask test client):**
+- All routes 200: /manifest.json, /sw.js, /static/icon-192.png, /static/icon-512.png, /api/push/vapid-public-key, /api/push/subscribe, /api/rules
+- sw.js: correct content-type, Service-Worker-Allowed: / header present, valid JS syntax (node --check)
+- VAPID keys: auto-generated + stored in SQLite on first hit
+- Dashboard: all 8 checks pass (manifest, apple-touch-icon, SW reg, pushManager, zero .msgs writes, server-side loadHistory, mobile CSS, rules tab)
+- Telegram: _handle_photo + _handle_document importable, poller handles photo/document branches
+- Proactive: 3 _web_push() call sites confirmed
+
+**What Om needs to do (see below):** Railway redeploy → open dashboard in Safari iPhone → Add to Home Screen → Allow notifications → done.
+
+---
+
+### Phase 13 — Self-Correcting Persona (SHIPPED — see above)
 
 **Why:** When Om says "stop doing X" / "you're wrong about Y" / "never say Z", that correction disappears after the session. Should be permanent.
 
@@ -249,6 +375,55 @@ ENABLE_MAC_BANNER=1
 - `truman/core/persona.py` — load `persona_rule_*` keys from DB at import, inject into SYSTEM
 
 **Kill switch:** `ENABLE_SELF_CORRECT=1`
+
+---
+
+### 2026-05-03 — Phase 14.2: PWA Cache Fix + Mobile UI + File Staging + Persistent Attachments + Anti-Hallucination Docs
+
+**Bugs fixed:**
+
+**1. Refresh shows wrong session (root cause found)**
+- `loadHistory()` was called on page load with NO session_id → server returned `recent_turns(30)` across ALL sessions → wrong chat displayed
+- `loadSidebar()` saw `_activeId` was set → skipped `openSession()` entirely → correct history never loaded
+- Fix: `loadSidebar()` now always calls `openSession(_activeId)` when session exists on server → correct chat on every refresh, every device
+
+**2. Service worker serving stale HTML**
+- `sw.js` bumped to `truman-shell-v2` — old cache deleted
+- `/dashboard` now fetched with `{cache: 'no-store'}` — always fresh HTML, never stale
+- One-time `localStorage.clear()` on version `'14.2'` mismatch — nukes iPhone's corrupted cache
+
+**3. Mobile sidebar hidden**
+- Was `display:none` on mobile — fixed to slide-in from left (position:fixed, z-index:200)
+- `☰` button in header opens it; overlay tap or session tap closes it
+- Added 🔄 refresh button to header (force reload)
+- Touch drag handlers for activity panel on iPhone
+
+**4. Double reply**
+- `_localTurnInFlight = false` was set before SSE broadcast arrived → SSE added message again
+- Fixed: delay `_localTurnInFlight = false` by 300ms after `addMsg`
+
+**5. Images/files disappear after refresh (root cause + permanent fix)**
+- Files were only stored as blob URLs (temporary) and raw text in turns — gone on refresh
+- Fix: `attachments` SQLite table stores raw bytes permanently
+- `/api/upload` generates `attach_id`, saves bytes to DB, returns `attach_id` in response
+- `attach_id` embedded in turn content as `[Image: name|attach:ID]` marker — stored in DB forever
+- `GET /api/attachments/<id>` serves file bytes with correct mime, 1yr cache header
+- `_renderAttachments()` in JS detects markers in loaded history → renders `<img src="/api/attachments/ID">` (persistent server image) or download link for files
+
+**6. File staging UI**
+- Files now stage as chips above input (📄/🖼 + filename + X to remove)
+- Multiple files supported — select 3 PDFs, get 3 chips, send once
+- Textarea stays clean — user can type question + attach files simultaneously
+- Image chips show thumbnail
+
+**7. Anti-hallucination doc engine**
+- Doc/image messages detected in `/api/chat`, wrapped with grounding template before agent sees them
+- Template: "Use ONLY facts from document. Quote sources. Say 'not in this document' if question not answered."
+- Forces `pool='docs'` (llama4-maverick) for all file messages — no more small model reading docs
+- Truncation bumped 8K → 30K chars (maverick handles 1M context)
+
+**Files changed:** `sw.js`, `dashboard.html`, `orb.py`, `db.py`
+**Commits:** `68422ce`, `7fa3702`, `6221b8d`, `2ef93b3`
 
 ---
 
