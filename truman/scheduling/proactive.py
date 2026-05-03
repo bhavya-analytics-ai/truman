@@ -356,4 +356,10 @@ def start_all(speak_fn, agent_fn, idle_minutes=20):
     start_idle_checkin(speak_fn, agent_fn, idle_minutes=idle_minutes)
     start_reminder_loop(speak_fn, agent_fn)
     start_proactive_push(agent_fn)
+    # Phase 15: Gmail polling (off by default — set ENABLE_GMAIL_POLLING=1 to activate)
+    try:
+        from truman.integrations.gmail_poller import start as start_gmail
+        start_gmail()
+    except Exception as e:
+        print(f"[Proactive] Gmail poller skipped: {e}")
     print(f"[Proactive] All systems active — voice ({idle_minutes}min idle) + SSE push.")

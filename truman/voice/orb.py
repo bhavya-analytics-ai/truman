@@ -678,6 +678,30 @@ def api_attachment(attach_id):
         return jsonify({"error": str(e)}), 500
 
 
+# ── Phase 15: Boss / WhatsApp intake ─────────────────────────────────────────
+
+@app.route("/api/boss_message", methods=["POST"])
+def api_boss_message():
+    """
+    iPhone Shortcut forwards any WhatsApp/iMessage → here.
+    Body: {"from": "Adam", "text": "...", "source": "whatsapp"}
+    Truman drafts reply → Telegram approval flow.
+    """
+    from flask import request as freq
+    data   = freq.get_json(silent=True) or {}
+    sender = (data.get("from") or data.get("sender") or "Unknown").strip()
+    text   = (data.get("text") or data.get("message") or "").strip()
+    source = (data.get("source") or "whatsapp").strip()
+    if not text:
+        return jsonify({"error": "empty message"}), 400
+    try:
+        from truman.integrations.boss_handler import handle_incoming
+        result = handle_incoming(sender, text, source)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 # ── Mac Bridge WebSocket (Railway side) ──────────────────────────────────────
 BRIDGE_SECRET = os.environ.get("BRIDGE_SECRET", "truman-bridge-secret")
 _mac_ws = None

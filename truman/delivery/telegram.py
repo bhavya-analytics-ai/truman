@@ -202,12 +202,31 @@ def _handle_document(doc: dict, caption: str, agent_fn):
 
 
 def _handle_callback(cb: dict):
-    """Inline button click — acknowledge it (removes spinner). Phase 15 adds logic."""
+    """Inline button click — acknowledge + dispatch action."""
     cb_id = cb.get("id", "")
     data  = cb.get("data", "")
     _api("answerCallbackQuery", callback_query_id=cb_id)
-    print(f"[Telegram] Button callback: {data!r}")
-    # Phase 15 will wire view_goals, approve, edit, skip, etc. here
+
+    # Phase 15: WhatsApp / Gmail approve or skip
+    if data.startswith("boss_approve:"):
+        try:
+            msg_id = int(data.split(":", 1)[1])
+            from truman.integrations.boss_handler import execute_approval
+            execute_approval(msg_id)
+        except Exception as e:
+            send_message(f"_(approve error: {e})_")
+
+    elif data.startswith("boss_skip:"):
+        try:
+            msg_id = int(data.split(":", 1)[1])
+            from truman.integrations.boss_handler import execute_skip
+            execute_skip(msg_id)
+            send_message("⏭ Skipped.")
+        except Exception as e:
+            send_message(f"_(skip error: {e})_")
+
+    else:
+        print(f"[Telegram] Unhandled callback: {data!r}")
 
 
 # ── Update poller ─────────────────────────────────────────────────────────────

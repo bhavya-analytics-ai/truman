@@ -78,8 +78,10 @@ _os.environ.setdefault("ENABLE_MORNING_EMAIL", "1")
 _os.environ.setdefault("ENABLE_TELEGRAM",      "1")
 _os.environ.setdefault("ENABLE_MAC_BANNER",    "1")
 _os.environ.setdefault("ENABLE_SELF_CORRECT",  "1")
-_os.environ.setdefault("ENABLE_WEB_PUSH",      "1")
-_os.environ.setdefault("ENABLE_TG_MEDIA",      "1")
+_os.environ.setdefault("ENABLE_WEB_PUSH",       "1")
+_os.environ.setdefault("ENABLE_TG_MEDIA",       "1")
+_os.environ.setdefault("ENABLE_BOSS_FLOW",      "0")   # Phase 15: WhatsApp/any-contact intake
+_os.environ.setdefault("ENABLE_GMAIL_POLLING",  "0")   # Phase 15: Gmail triage + reply
 
 # ── Telegram bot (Phase 12) — fill in .env ───────────────────────────────────
 # TELEGRAM_BOT_TOKEN → @BotFather → /newbot → copy token

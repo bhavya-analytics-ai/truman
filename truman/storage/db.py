@@ -375,6 +375,17 @@ def init():
                     data BLOB NOT NULL,
                     created_at REAL NOT NULL DEFAULT (unixepoch())
                 )""",
+                # Phase 15: boss_messages — WhatsApp + Gmail intake with approval flow
+                """CREATE TABLE IF NOT EXISTS boss_messages (
+                    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                    source      TEXT NOT NULL,
+                    sender      TEXT NOT NULL,
+                    text        TEXT NOT NULL,
+                    draft_reply TEXT,
+                    status      TEXT NOT NULL DEFAULT 'pending',
+                    extra_json  TEXT DEFAULT '{}',
+                    created_at  REAL NOT NULL
+                )""",
             ]:
                 try:
                     c.execute(ddl)
@@ -1141,3 +1152,53 @@ def get_attachment(attach_id: str) -> dict | None:
     if not row:
         return None
     return {"id": row[0], "filename": row[1], "mime_type": row[2], "data": row[3]}
+
+
+# ── Boss messages (Phase 15 — WhatsApp + Gmail intake) ───────────────────────
+
+def save_boss_message(source: str, sender: str, text: str, extra: dict = None) -> int:
+    """Save incoming WhatsApp/Gmail message. Returns row id."""
+    import time as _time
+    extra_json = json.dumps(extra or {})
+    with _conn() as c:
+        cur = c.execute(
+            """INSERT INTO boss_messages (source, sender, text, extra_json, status, created_at)
+               VALUES (?, ?, ?, ?, 'pending', ?)""",
+            (source, sender, text, extra_json, _time.time())
+        )
+        return cur.lastrowid
+
+
+def set_boss_draft(msg_id: int, draft: str) -> None:
+    with _conn() as c:
+        c.execute("UPDATE boss_messages SET draft_reply = ? WHERE id = ?", (draft, msg_id))
+
+
+def get_boss_message(msg_id: int) -> Optional[dict]:
+    with _conn() as c:
+        row = c.execute(
+            "SELECT id, source, sender, text, draft_reply, status, extra_json FROM boss_messages WHERE id = ?",
+            (msg_id,)
+        ).fetchone()
+    if not row:
+        return None
+    return {
+        "id": row[0], "source": row[1], "sender": row[2], "text": row[3],
+        "draft_reply": row[4], "status": row[5],
+        "extra": json.loads(row[6] or "{}"),
+    }
+
+
+def set_boss_status(msg_id: int, status: str) -> None:
+    with _conn() as c:
+        c.execute("UPDATE boss_messages SET status = ? WHERE id = ?", (status, msg_id))
+
+
+def get_approved_boss_replies(limit: int = 5) -> list:
+    """Return draft_reply strings for approved messages — used as tone examples."""
+    with _conn() as c:
+        rows = c.execute(
+            "SELECT draft_reply FROM boss_messages WHERE status = 'approved' AND draft_reply IS NOT NULL ORDER BY id DESC LIMIT ?",
+            (limit,)
+        ).fetchall()
+    return [r[0] for r in rows]
