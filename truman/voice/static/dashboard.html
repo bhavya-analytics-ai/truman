@@ -4,6 +4,14 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <title>Truman</title>
+<!-- PWA (Phase 14) -->
+<link rel="manifest" href="/manifest.json">
+<link rel="apple-touch-icon" href="/static/icon-192.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Truman">
+<meta name="theme-color" content="#0d0d0f">
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -229,6 +237,26 @@
   .ap-minimized .ap-body { display:none; }
   .ap-minimized { border-radius:12px; }
   .ap-minimized .ap-hdr { border-radius:12px; border-bottom:none; }
+
+  /* ── Mobile overrides ──────────────────────────────────────────────────────── */
+  @media (max-width: 600px) {
+    /* LIVE widget: smaller, pinned top-right, tap minimize to hide */
+    .activity-panel { width:160px; top:60px; right:8px; font-size:10px; }
+    .ap-body { padding:8px 10px; gap:5px; }
+    .ap-row { grid-template-columns:44px 1fr; }
+    /* sessions sidebar: hidden by default on mobile */
+    .sessions-sidebar { display:none; }
+    /* memory panel: full width on mobile */
+    .memory-sidebar { width:100vw; right:-100vw; }
+    .memory-sidebar.open { right:0; }
+    /* input area: taller tap target */
+    .input-row textarea { font-size:15px; }
+    /* header: tighter */
+    .header { padding:0 10px; }
+    .hdr-right { gap:4px; }
+    .hdr-btn { padding:4px 8px; font-size:10px; }
+    .activity-btn { padding:4px 8px; font-size:10px; }
+  }
 
   /* Power button */
   .power-btn { width:32px; height:32px; border-radius:50%; border:2px solid #22c55e; background:none; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:all 0.2s; }
@@ -654,9 +682,16 @@ const _LS_KEY  = 'truman_sessions_v1';
 const _LS_CUR  = 'truman_current_v1';
 const _MSG_CAP = 60000;
 
-// _msgCache: browser_id → {label, msgs, model}  (device-local render cache)
+// _msgCache: browser_id → {label, model}  — NO msgs stored here (Phase 14 fix)
+// Chat history is ALWAYS loaded from the server to prevent cross-device corruption.
 let _msgCache = {};
-try { _msgCache = JSON.parse(localStorage.getItem(_LS_KEY) || '{}'); } catch(e) {}
+try {
+  const raw = JSON.parse(localStorage.getItem(_LS_KEY) || '{}');
+  // strip any old 'msgs' blobs from prior versions to free up storage
+  for (const [id, v] of Object.entries(raw)) {
+    _msgCache[id] = { label: v.label || 'chat', model: v.model || '' };
+  }
+} catch(e) {}
 
 function _saveCache() {
   try { localStorage.setItem(_LS_KEY, JSON.stringify(_msgCache)); } catch(e) {}
@@ -754,16 +789,10 @@ function _buildSessRow(s) {
 }
 
 async function openSession(bid) {
-  // save current chat to cache
-  if (_activeId) {
-    _msgCache[_activeId] = _msgCache[_activeId] || {};
-    _msgCache[_activeId].msgs = messages.innerHTML;
-    _saveCache();
-  }
   _activeId = bid;
   localStorage.setItem(_LS_CUR, bid);
 
-  // restore model
+  // restore model preference
   const m = _msgCache[bid]?.model || '';
   _currentModel = m;
   document.getElementById('model-select').value = m;
@@ -773,24 +802,15 @@ async function openSession(bid) {
     el.classList.toggle('active', el.dataset.bid === bid);
   });
 
-  // restore cached HTML or fetch from server
-  const cached = _msgCache[bid]?.msgs;
-  if (cached) {
-    messages.innerHTML = cached;
-  } else {
-    messages.innerHTML = '<div class="msg truman"><div class="bubble">yo. what\'s up?</div></div>';
-    await loadHistory(bid);
-  }
+  // ALWAYS fetch from server — never use cached HTML (Phase 14 corruption fix)
+  messages.innerHTML = '<div class="msg truman"><div class="bubble" style="color:var(--text3);font-size:12px">loading...</div></div>';
+  await loadHistory(bid);
   messages.scrollTop = messages.scrollHeight;
 }
 
 function newSession() {
-  if (_activeId) {
-    _msgCache[_activeId] = _msgCache[_activeId] || {};
-    _msgCache[_activeId].msgs = messages.innerHTML;
-  }
   const bid = genId();
-  _msgCache[bid] = {label: 'new chat', msgs: '', model: ''};
+  _msgCache[bid] = {label: 'new chat', model: ''};
   _saveCache();
   _activeId = bid;
   localStorage.setItem(_LS_CUR, bid);
@@ -809,7 +829,6 @@ function newSession() {
 
 function clearChat() {
   messages.innerHTML = '<div class="msg truman"><div class="bubble">yo. what\'s up?</div></div>';
-  if (_activeId) { (_msgCache[_activeId] = _msgCache[_activeId] || {}).msgs = ''; _saveCache(); }
 }
 
 // ── Context menu (right-click) ────────────────────────────────────────────────
@@ -907,14 +926,8 @@ function importChats(event) {
   event.target.value = '';
 }
 
-// init sidebar + restore last session on load
-loadSidebar().then(() => {
-  // if we had a cached active session, restore it
-  if (_activeId && _msgCache[_activeId]?.msgs) {
-    messages.innerHTML = _msgCache[_activeId].msgs;
-    messages.scrollTop = messages.scrollHeight;
-  }
-});
+// init sidebar + restore last session on load (always from server — Phase 14)
+loadSidebar();
 
 // ── Mac status ────────────────────────────────────────────────────────────────
 async function checkMac() {
@@ -931,7 +944,7 @@ setInterval(checkMac, 10000);
 
 // ── Load history ──────────────────────────────────────────────────────────────
 async function loadHistory(sessionId) {
-  if (sessionId && _msgCache[sessionId]?.msgs) return;
+  // Phase 14: always fetch from server — no local cache for chat HTML
   try {
     const url = sessionId ? `/api/history?session_id=${encodeURIComponent(sessionId)}` : '/api/history';
     const r = await fetch(url);
@@ -939,10 +952,12 @@ async function loadHistory(sessionId) {
     if (d.turns && d.turns.length) {
       messages.innerHTML = '';
       d.turns.forEach(t => addMsg(t.role === 'user' ? 'user' : 'truman', t.content, null));
-      const bid = sessionId || _activeId;
-      if (bid) { (_msgCache[bid] = _msgCache[bid]||{}).msgs = messages.innerHTML; _saveCache(); }
+    } else {
+      messages.innerHTML = '<div class="msg truman"><div class="bubble">yo. what\'s up?</div></div>';
     }
-  } catch(e) {}
+  } catch(e) {
+    messages.innerHTML = '<div class="msg truman"><div class="bubble">yo. what\'s up?</div></div>';
+  }
 }
 loadHistory();
 
@@ -1690,6 +1705,61 @@ function updatePanelFromResponse(d, userMsg, respText) {
     error: d.error || null,
   });
 }
+
+// ── PWA: Service Worker + Web Push (Phase 14) ─────────────────────────────────
+(async function initPWA() {
+  if (!('serviceWorker' in navigator)) return;
+  try {
+    const reg = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+    console.log('[PWA] Service worker registered, scope:', reg.scope);
+
+    // Request push permission + subscribe
+    if (!('PushManager' in window)) return;
+    const perm = await Notification.requestPermission();
+    if (perm !== 'granted') return;
+
+    // Get VAPID public key from server
+    const keyResp = await fetch('/api/push/vapid-public-key');
+    const keyData = await keyResp.json();
+    const vapidKey = keyData.key;
+    if (!vapidKey) return;
+
+    // Convert base64 VAPID key to Uint8Array
+    function _urlB64ToUint8(base64String) {
+      const padding = '='.repeat((4 - base64String.length % 4) % 4);
+      const b64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+      const raw = atob(b64);
+      return Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
+    }
+
+    let sub = await reg.pushManager.getSubscription();
+    if (!sub) {
+      try {
+        sub = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: _urlB64ToUint8(vapidKey),
+        });
+      } catch(e) {
+        console.log('[PWA] Push subscribe failed:', e);
+        return;
+      }
+    }
+
+    // Save subscription to server
+    const subJson = sub.toJSON();
+    await fetch('/api/push/subscribe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        endpoint: subJson.endpoint,
+        keys: { p256dh: subJson.keys.p256dh, auth: subJson.keys.auth },
+      }),
+    });
+    console.log('[PWA] Push subscription active');
+  } catch(e) {
+    console.log('[PWA] init error:', e);
+  }
+})();
 
 </script>
 

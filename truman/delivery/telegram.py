@@ -79,14 +79,13 @@ def send_message(text: str, buttons: list = None) -> bool:
     return ok
 
 
-# ── Incoming message handler ──────────────────────────────────────────────────
+# ── Incoming message handlers ─────────────────────────────────────────────────
 def _handle_text(text: str, agent_fn):
     """Om replied on Telegram → run through agent → send reply back on Telegram."""
     try:
         result = agent_fn(text, mood="", session_id="telegram")
         response = result["response"] if isinstance(result, dict) else str(result)
         send_message(response)
-        # Also push to dashboard via SSE so it syncs to all devices
         try:
             from truman.storage.notifications import push_turn
             push_turn("user",      text,     "telegram")
@@ -95,6 +94,111 @@ def _handle_text(text: str, agent_fn):
             pass
     except Exception as e:
         send_message(f"_(error: {e})_")
+
+
+def _download_tg_file(file_id: str) -> bytes | None:
+    """Download a file from Telegram by file_id. Returns bytes or None."""
+    try:
+        info = _api("getFile", file_id=file_id)
+        file_path = (info.get("result") or {}).get("file_path", "")
+        if not file_path:
+            return None
+        url = f"https://api.telegram.org/file/bot{_TOKEN}/{file_path}"
+        r = requests.get(url, timeout=20)
+        return r.content if r.status_code == 200 else None
+    except Exception as e:
+        print(f"[Telegram] File download failed: {e}")
+        return None
+
+
+def _handle_photo(photo_list: list, caption: str, agent_fn):
+    """Largest photo → vision pool → reply on Telegram."""
+    if os.environ.get("ENABLE_TG_MEDIA", "1") != "1":
+        send_message("_(media support disabled)_")
+        return
+    try:
+        import base64
+        # largest size is last in the list
+        file_id = photo_list[-1]["file_id"]
+        data = _download_tg_file(file_id)
+        if not data:
+            send_message("_(couldn't download that photo)_")
+            return
+        b64 = base64.b64encode(data).decode()
+        prompt = caption or "what's in this image? describe it."
+        # use vision pool via agent
+        vision_prompt = (
+            f"[Image attached as base64 PNG — analyze it]\n"
+            f"User request: {prompt}\n"
+            f"Image data (base64): {b64[:200]}...[truncated for routing, full image attached]"
+        )
+        # Simpler: describe the image using the vision pool directly
+        try:
+            from truman.core.model_router import run_with_pool
+            from langchain_core.messages import HumanMessage
+            msg = HumanMessage(content=[
+                {"type": "text", "text": prompt},
+                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}},
+            ])
+            result = run_with_pool([msg], pool="vision", user_message=prompt)
+            response = result["content"]
+        except Exception as e:
+            response = f"_(vision error: {e})_"
+        send_message(response[:4096])
+        try:
+            from truman.storage.notifications import push_turn
+            push_turn("user",      f"[photo] {caption}" if caption else "[photo]", "telegram")
+            push_turn("assistant", response, "telegram")
+        except Exception:
+            pass
+    except Exception as e:
+        send_message(f"_(photo error: {e})_")
+
+
+def _handle_document(doc: dict, caption: str, agent_fn):
+    """Doc/PDF → extract text → run through agent → reply on Telegram."""
+    if os.environ.get("ENABLE_TG_MEDIA", "1") != "1":
+        send_message("_(media support disabled)_")
+        return
+    try:
+        import io
+        file_id   = doc.get("file_id", "")
+        mime_type = doc.get("mime_type", "")
+        file_name = doc.get("file_name", "file")
+        data = _download_tg_file(file_id)
+        if not data:
+            send_message("_(couldn't download that file)_")
+            return
+        # extract text based on mime type
+        text = ""
+        if "pdf" in mime_type:
+            try:
+                import pdfplumber
+                with pdfplumber.open(io.BytesIO(data)) as pdf:
+                    text = "\n".join(p.extract_text() or "" for p in pdf.pages)
+            except Exception:
+                text = data.decode("utf-8", errors="replace")
+        elif "text" in mime_type or file_name.endswith((".txt", ".md", ".py", ".js", ".json", ".csv")):
+            text = data.decode("utf-8", errors="replace")
+        else:
+            text = data.decode("utf-8", errors="replace")
+
+        if not text.strip():
+            send_message("_(couldn't extract text from that file)_")
+            return
+
+        prompt = f"{caption or 'summarize this document'}:\n\n{text[:8000]}"
+        result = agent_fn(prompt, mood="", session_id="telegram")
+        response = result["response"] if isinstance(result, dict) else str(result)
+        send_message(response[:4096])
+        try:
+            from truman.storage.notifications import push_turn
+            push_turn("user",      f"[doc: {file_name}] {caption}" if caption else f"[doc: {file_name}]", "telegram")
+            push_turn("assistant", response, "telegram")
+        except Exception:
+            pass
+    except Exception as e:
+        send_message(f"_(doc error: {e})_")
 
 
 def _handle_callback(cb: dict):
@@ -128,20 +232,33 @@ def start_poller(agent_fn):
             try:
                 resp = _api("getUpdates", timeout=35,
                             offset=_last_update_id + 1,
-                            allowed_updates=["message", "callback_query"])
+                            allowed_updates=["message", "callback_query", "channel_post"])
                 updates = resp.get("result") or []
                 for u in updates:
                     _last_update_id = u["update_id"]
 
-                    # Incoming text message
+                    # Incoming message
                     msg     = u.get("message") or {}
-                    text    = (msg.get("text") or "").strip()
                     chat_id = str((msg.get("chat") or {}).get("id", ""))
-                    if text and chat_id == str(_CHAT_ID):
+                    if chat_id != str(_CHAT_ID):
+                        continue
+
+                    caption = (msg.get("caption") or "").strip()
+                    text    = (msg.get("text") or "").strip()
+                    photo   = msg.get("photo")     # list of sizes or None
+                    doc     = msg.get("document")  # dict or None
+
+                    if text:
                         threading.Thread(
-                            target=_handle_text,
-                            args=(text, agent_fn),
-                            daemon=True,
+                            target=_handle_text, args=(text, agent_fn), daemon=True
+                        ).start()
+                    elif photo:
+                        threading.Thread(
+                            target=_handle_photo, args=(photo, caption, agent_fn), daemon=True
+                        ).start()
+                    elif doc:
+                        threading.Thread(
+                            target=_handle_document, args=(doc, caption, agent_fn), daemon=True
                         ).start()
 
                     # Inline button callback

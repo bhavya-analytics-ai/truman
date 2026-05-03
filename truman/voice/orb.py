@@ -78,6 +78,28 @@ def dashboard():
     return send_from_directory(STATIC_DIR, "dashboard.html")
 
 
+# ── PWA static assets (Phase 14) ─────────────────────────────────────────────
+@app.route("/static/<path:filename>")
+def static_files(filename):
+    """Serve static assets: icons, manifest, etc."""
+    return send_from_directory(STATIC_DIR, filename)
+
+
+@app.route("/sw.js")
+def service_worker():
+    """Service worker must be served from root scope to control /dashboard."""
+    resp = send_from_directory(STATIC_DIR, "sw.js")
+    resp.headers["Service-Worker-Allowed"] = "/"
+    resp.headers["Content-Type"] = "application/javascript"
+    resp.headers["Cache-Control"] = "no-cache"
+    return resp
+
+
+@app.route("/manifest.json")
+def manifest():
+    return send_from_directory(STATIC_DIR, "manifest.json")
+
+
 @app.route("/logs")
 def logs_page():
     try:
@@ -448,6 +470,45 @@ def api_rules_delete(rule_id):
     try:
         from truman.storage import db
         db.delete_rule(rule_id)
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ── Web Push (Phase 14) ───────────────────────────────────────────────────────
+@app.route("/api/push/vapid-public-key", methods=["GET"])
+def api_push_vapid_key():
+    """Return VAPID public key so frontend can subscribe."""
+    try:
+        from truman.delivery.web_push import get_public_key
+        return jsonify({"key": get_public_key()})
+    except Exception as e:
+        return jsonify({"key": "", "error": str(e)})
+
+@app.route("/api/push/subscribe", methods=["POST"])
+def api_push_subscribe():
+    """Save a push subscription from the browser."""
+    try:
+        from truman.storage import db
+        data = request.get_json(force=True)
+        endpoint = data.get("endpoint", "").strip()
+        p256dh   = (data.get("keys") or {}).get("p256dh", "").strip()
+        auth     = (data.get("keys") or {}).get("auth", "").strip()
+        if not endpoint or not p256dh or not auth:
+            return jsonify({"error": "missing subscription fields"}), 400
+        db.save_push_sub(endpoint, p256dh, auth)
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/push/unsubscribe", methods=["POST"])
+def api_push_unsubscribe():
+    try:
+        from truman.storage import db
+        data = request.get_json(force=True)
+        endpoint = (data.get("endpoint") or "").strip()
+        if endpoint:
+            db.delete_push_sub(endpoint)
         return jsonify({"ok": True})
     except Exception as e:
         return jsonify({"error": str(e)}), 500

@@ -268,6 +268,15 @@ CREATE TABLE IF NOT EXISTS memory_repos (
     error       TEXT
 );
 
+-- ── Web push subscriptions (Phase 14 — iPhone PWA notifications) ────────────
+CREATE TABLE IF NOT EXISTS push_subs (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    endpoint   TEXT NOT NULL UNIQUE,
+    p256dh     TEXT NOT NULL,
+    auth       TEXT NOT NULL,
+    created_at REAL NOT NULL
+);
+
 -- ── Persona rules (Phase 13 — self-correcting persona) ──────────────────────
 CREATE TABLE IF NOT EXISTS persona_rules (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -342,6 +351,14 @@ def init():
                 "ALTER TABLE sessions ADD COLUMN label         TEXT",
                 "ALTER TABLE sessions ADD COLUMN first_message TEXT",
                 "CREATE UNIQUE INDEX IF NOT EXISTS idx_sessions_browser ON sessions(browser_id)",
+                # Phase 14: push_subs table
+                """CREATE TABLE IF NOT EXISTS push_subs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    endpoint TEXT NOT NULL UNIQUE,
+                    p256dh TEXT NOT NULL,
+                    auth TEXT NOT NULL,
+                    created_at REAL NOT NULL
+                )""",
                 # Phase 13: persona_rules table (add_rule creates it, but ensure it exists on old DBs)
                 """CREATE TABLE IF NOT EXISTS persona_rules (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1000,6 +1017,31 @@ def get_sleep_stats(days: int = 7) -> list[dict]:
             (days,),
         ).fetchall()
     return [dict(r) for r in rows]
+
+
+# ── Web push subscriptions (Phase 14) ────────────────────────────────────────
+
+def save_push_sub(endpoint: str, p256dh: str, auth: str) -> None:
+    """Upsert a push subscription (endpoint is unique key)."""
+    import time as _t
+    with _conn() as c:
+        c.execute(
+            """INSERT INTO push_subs (endpoint, p256dh, auth, created_at)
+               VALUES (?, ?, ?, ?)
+               ON CONFLICT(endpoint) DO UPDATE SET p256dh=excluded.p256dh, auth=excluded.auth""",
+            (endpoint, p256dh, auth, _t.time()),
+        )
+
+
+def get_all_push_subs() -> list[dict]:
+    with _conn() as c:
+        rows = c.execute("SELECT endpoint, p256dh, auth FROM push_subs").fetchall()
+    return [dict(r) for r in rows]
+
+
+def delete_push_sub(endpoint: str) -> None:
+    with _conn() as c:
+        c.execute("DELETE FROM push_subs WHERE endpoint = ?", (endpoint,))
 
 
 # ── Persona rules (Phase 13) ──────────────────────────────────────────────────

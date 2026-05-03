@@ -159,6 +159,14 @@ def start_proactive_push(agent_fn):
         except Exception as e:
             print(f"[Proactive] Banner failed: {e}")
 
+    def _web_push(title: str, body: str):
+        """iOS/Android web push notification (Phase 14 — ENABLE_WEB_PUSH kill switch)."""
+        try:
+            from truman.delivery.web_push import send_push
+            send_push(title, body)
+        except Exception as e:
+            print(f"[Proactive] WebPush failed: {e}")
+
     def _llm(prompt: str) -> str:
         try:
             result = agent_fn(prompt, mood="")
@@ -197,6 +205,7 @@ def start_proactive_push(agent_fn):
                     )
                     brief_text = _llm(prompt)
                     _telegram(f"☀️ *Morning Brief*\n\n{brief_text}")
+                    _web_push("☀️ Morning Brief", brief_text[:120])
                     _push(brief_text)
 
                 # ── b. Idle nudge — 4hr silence, skip quiet hours ─────────────
@@ -214,8 +223,9 @@ def start_proactive_push(agent_fn):
                         "Don't be dramatic."
                     )
                     nudge_text = _llm(prompt)
-                    _banner("Truman", nudge_text)   # macOS banner (Mac only, no-op on Railway)
-                    _push(nudge_text)               # SSE always
+                    _banner("Truman", nudge_text)
+                    _web_push("Truman", nudge_text[:120])
+                    _push(nudge_text)
 
                 # ── c. Goal nudge at noon — stalled goals only ────────────────
                 if (now.hour == 12 and now.minute <= 2
@@ -247,7 +257,8 @@ def start_proactive_push(agent_fn):
                                 f"🎯 *Goal Check-in*\n\n{nudge_text}",
                                 buttons=[[{"text": "View Goals", "callback_data": "view_goals"}]],
                             )
-                            _push(nudge_text)  # SSE always
+                            _web_push("🎯 Goal Check-in", nudge_text[:120])
+                            _push(nudge_text)
                     except Exception as e:
                         print(f"[Proactive] goal nudge error: {e}")
 
