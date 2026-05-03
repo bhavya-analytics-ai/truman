@@ -1082,6 +1082,29 @@ function _nowTs() {
 }
 
 // ── Chat message builder ──────────────────────────────────────────────────────
+// Render [Image: name|attach:ID] and [File: name|attach:ID] markers in user messages
+function _renderAttachments(text) {
+  if (!text) return '';
+  // Image with attach_id → show persistent image from server
+  text = text.replace(/\[Image:\s*([^|\]]+)\|attach:([a-f0-9]+)\]([\s\S]*?)(?=\[|$)/gi,
+    (_, fname, aid, rest) => {
+      const desc = rest.replace(/^\n+/, '').trim();
+      return `<div style="margin:4px 0"><img src="/api/attachments/${aid}" alt="${fname}" style="max-width:260px;max-height:220px;border-radius:10px;display:block;margin-bottom:4px" loading="lazy"><span style="font-size:11px;color:var(--text3)">🖼 ${fname}</span></div>${desc ? '<div style="margin-top:6px;font-size:13px">' + renderMarkdown(desc) + '</div>' : ''}`;
+    });
+  // File with attach_id → show download link
+  text = text.replace(/\[File:\s*([^|\]]+)\|attach:([a-f0-9]+)\]([\s\S]*?)(?=\[|$)/gi,
+    (_, fname, aid, rest) => {
+      const desc = rest.replace(/^\n+/, '').trim();
+      return `<div style="margin:4px 0"><a href="/api/attachments/${aid}" download="${fname}" style="color:var(--accent2);font-size:13px;text-decoration:none">📄 ${fname} <span style="font-size:10px;opacity:0.6">(download)</span></a></div>${desc ? '<div style="margin-top:6px;font-size:13px">' + renderMarkdown(desc) + '</div>' : ''}`;
+    });
+  // Legacy — no attach_id (old messages): just show icon + filename
+  text = text.replace(/\[Image:\s*([^\]]+)\]/gi, (_, fname) =>
+    `<span style="font-size:13px">🖼 ${fname} <span style="font-size:10px;opacity:0.5">(image — refresh to see)</span></span>`);
+  text = text.replace(/\[File:\s*([^\]]+)\]/gi, (_, fname) =>
+    `<span style="font-size:13px">📄 ${fname}</span>`);
+  return text;
+}
+
 function addMsg(role, text, meta) {
   const div = document.createElement('div');
   const isProactive = meta && meta.proactive;
@@ -1093,7 +1116,13 @@ function addMsg(role, text, meta) {
   if (role === 'truman') {
     bubble.innerHTML = renderMarkdown(text || '');
   } else {
-    bubble.innerHTML = renderUserText(text || '');
+    // user messages: check for attachment markers first
+    const hasAttach = text && (text.includes('[Image:') || text.includes('[File:'));
+    if (hasAttach) {
+      bubble.innerHTML = _renderAttachments(text || '');
+    } else {
+      bubble.innerHTML = renderUserText(text || '');
+    }
   }
 
   div.appendChild(bubble);
@@ -1207,12 +1236,14 @@ async function send() {
     const fileParts = [];
     let hasImage = false;
     for (const pf of _pendingFiles) {
+      // embed attach_id so image/file survives refresh (served from /api/attachments/<id>)
+      const attachTag = pf.attach_id ? `|attach:${pf.attach_id}` : '';
       if (pf.isImage) {
-        addImageMsg(pf.file);
-        fileParts.push(`[Image: ${pf.filename}]\n${pf.text}`);
+        addImageMsg(pf.file);  // show local blob immediately
+        fileParts.push(`[Image: ${pf.filename}${attachTag}]\n${pf.text}`);
         hasImage = true;
       } else {
-        fileParts.push(`[File: ${pf.filename}]\n${pf.text}`);
+        fileParts.push(`[File: ${pf.filename}${attachTag}]\n${pf.text}`);
         if (!displayText) displayText = `📎 ${pf.filename}`;
         else displayText += ` + 📎 ${pf.filename}`;
       }
@@ -1263,8 +1294,9 @@ async function send() {
     if (!respText) { setStatus('idle','idle'); addMsg('truman', '(no response — try again)', null); _localTurnInFlight = false; return; }
     addMsg('truman', respText, {model: d.model || 'deepseek-v3.2', pool: d.pool || 'general', tool_calls: d.tool_calls});
     updatePanelFromResponse(d, sendText || text, respText);
-    _localTurnInFlight = false;
     setStatus('idle', 'idle');
+    // delay flag reset so SSE broadcast (arriving ~50ms later) is still suppressed
+    setTimeout(() => { _localTurnInFlight = false; }, 300);
     macDot.className = 'mac-dot' + (d.mac === 'connected' ? ' on' : '');
     macStatus.textContent = d.mac === 'connected' ? 'mac online' : 'mac offline';
     const pb = document.getElementById('pool-badge');
@@ -1336,7 +1368,8 @@ document.getElementById('file-input').addEventListener('change', async (e) => {
       st.remove();
       if (d.error) { addMsg('truman', 'upload error: ' + d.error, null); continue; }
       const thumbUrl = isImage ? URL.createObjectURL(file) : null;
-      _pendingFiles.push({filename: d.filename, text: d.text, isImage, file, thumbUrl});
+      _pendingFiles.push({filename: d.filename, text: d.text, isImage, file, thumbUrl,
+                          attach_id: d.attach_id || null, mime: d.mime || ''});
     } catch(err) {
       st.remove();
       addMsg('truman', `failed to read ${file.name}`, null);

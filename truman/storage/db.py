@@ -367,6 +367,14 @@ def init():
                     source TEXT NOT NULL DEFAULT 'manual',
                     created_at REAL NOT NULL
                 )""",
+                # Phase 15: attachments — persistent file/image storage
+                """CREATE TABLE IF NOT EXISTS attachments (
+                    id TEXT PRIMARY KEY,
+                    filename TEXT NOT NULL,
+                    mime_type TEXT NOT NULL DEFAULT 'application/octet-stream',
+                    data BLOB NOT NULL,
+                    created_at REAL NOT NULL DEFAULT (unixepoch())
+                )""",
             ]:
                 try:
                     c.execute(ddl)
@@ -1110,3 +1118,26 @@ def get_trace_history(session_id: str = None, limit: int = 200) -> list[dict]:
         return [dict(zip(cols, r)) for r in reversed(rows)]
     except Exception:
         return []
+
+
+# ── Attachments (Phase 15 — persistent file/image storage) ───────────────────
+
+def save_attachment(attach_id: str, filename: str, mime_type: str, data: bytes) -> None:
+    """Store raw file bytes. Called from /api/upload."""
+    import time as _time
+    with _conn() as c:
+        c.execute(
+            "INSERT OR REPLACE INTO attachments (id, filename, mime_type, data, created_at) VALUES (?,?,?,?,?)",
+            (attach_id, filename, mime_type, data, _time.time())
+        )
+
+def get_attachment(attach_id: str) -> dict | None:
+    """Return {id, filename, mime_type, data} or None."""
+    with _conn() as c:
+        row = c.execute(
+            "SELECT id, filename, mime_type, data FROM attachments WHERE id = ?",
+            (attach_id,)
+        ).fetchone()
+    if not row:
+        return None
+    return {"id": row[0], "filename": row[1], "mime_type": row[2], "data": row[3]}

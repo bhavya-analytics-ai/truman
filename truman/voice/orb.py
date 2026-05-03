@@ -599,25 +599,38 @@ def _extract_text(filename: str, data: bytes) -> str:
 @app.route("/api/upload", methods=["POST"])
 def api_upload():
     from flask import request
+    import uuid as _uuid
     f = request.files.get("file")
     if not f:
         return jsonify({"error": "no file"}), 400
     data = f.read()
     ext  = os.path.splitext(f.filename)[1].lower()
+    mime_map = {".png":"image/png",".jpg":"image/jpeg",".jpeg":"image/jpeg",
+                ".gif":"image/gif",".webp":"image/webp",".bmp":"image/bmp",
+                ".pdf":"application/pdf",".txt":"text/plain",".md":"text/plain",
+                ".docx":"application/vnd.openxmlformats-officedocument.wordprocessingml.document"}
+    mime = mime_map.get(ext, "application/octet-stream")
+
+    # ── Persist raw bytes to SQLite (Phase 15 — survives refresh forever) ──
+    attach_id = _uuid.uuid4().hex[:16]
+    try:
+        from truman.storage.db import save_attachment
+        save_attachment(attach_id, f.filename, mime, data)
+    except Exception as e:
+        print(f"[Upload] attachment save failed: {e}")
+        attach_id = None
+
     try:
         text = _extract_text(f.filename, data)
     except Exception as e:
         return jsonify({"error": f"parse failed: {e}"}), 500
 
     if text == "__IMAGE__":
-        # send to NVIDIA vision model
         try:
             import base64
             from langchain_openai import ChatOpenAI
             from truman.core.config import NVIDIA_API_KEY, NVIDIA_BASE_URL
             b64 = base64.b64encode(data).decode()
-            mime_map = {".png":"image/png",".gif":"image/gif",".webp":"image/webp",".bmp":"image/bmp"}
-            mime = mime_map.get(ext, "image/jpeg")
             llm = ChatOpenAI(model="meta/llama-4-maverick-17b-128e-instruct",
                              api_key=NVIDIA_API_KEY, base_url=NVIDIA_BASE_URL)
             resp = llm.invoke([{
@@ -637,11 +650,32 @@ def api_upload():
         except Exception as e:
             return jsonify({"error": f"vision failed: {e}"}), 500
 
-    # trim to 30000 chars — maverick handles 1M context, no reason to cut at 8K
     if len(text) > 30000:
         text = text[:30000] + "\n\n[...truncated — document exceeds 30K chars]"
 
-    return jsonify({"filename": f.filename, "text": text})
+    return jsonify({"filename": f.filename, "text": text,
+                    "attach_id": attach_id, "mime": mime})
+
+
+@app.route("/api/attachments/<attach_id>")
+def api_attachment(attach_id):
+    """Serve a stored file/image by attach_id. Used by dashboard to render persistent images."""
+    try:
+        from flask import request as freq, Response
+        from truman.storage.db import get_attachment
+        att = get_attachment(attach_id)
+        if not att:
+            return jsonify({"error": "not found"}), 404
+        # inline for images, attachment for everything else
+        disposition = "inline" if att["mime_type"].startswith("image/") else "attachment"
+        return Response(
+            att["data"],
+            mimetype=att["mime_type"],
+            headers={"Content-Disposition": f'{disposition}; filename="{att["filename"]}"',
+                     "Cache-Control": "public, max-age=31536000"}  # cache 1yr — content never changes
+        )
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 # ── Mac Bridge WebSocket (Railway side) ──────────────────────────────────────
