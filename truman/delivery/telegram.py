@@ -4,6 +4,13 @@ telegram.py — Truman's Telegram delivery channel (Phase 12)
 One-way:  Truman → Om  (morning brief, goal nudges, idle alerts)
 Two-way:  Om → Truman  (reply to bot → runs through agent → Truman replies on Telegram)
 
+Phase 15B additions:
+  - [✅ Approve] [✏️ Edit] [⏭ Skip] inline buttons for WhatsApp/Gmail/iMessage
+  - /status  — shows system health (WA bridge, iMessage, Gmail poller, Railway)
+  - /pause   — pauses Truman agent (TRUMAN_PAUSED=1)
+  - /resume  — resumes Truman agent
+  - /vip     — shows VIP approval counts
+
 Setup (Om does once, 5 min):
   1. Telegram → @BotFather → /newbot → copy the token
   2. Message your new bot once so it can see your chat_id
@@ -11,9 +18,6 @@ Setup (Om does once, 5 min):
        TELEGRAM_BOT_TOKEN=<token>
        TELEGRAM_CHAT_ID=<your chat id>
   4. ENABLE_TELEGRAM is already defaulted to 1 — no extra step
-
-Buttons wired now (Phase 15 will hook them):
-  send_message(text, buttons=[[{"text": "View Goals", "callback_data": "view_goals"}]])
 """
 import os
 import sys
@@ -31,6 +35,7 @@ _BASE    = f"https://api.telegram.org/bot{_TOKEN}"
 _last_update_id = 0
 _poller_started = False
 _poller_lock    = threading.Lock()
+_pending_edit: dict = {}   # chat_id → msg_id waiting for edit reply
 
 
 # ── Low-level API call ────────────────────────────────────────────────────────
@@ -54,7 +59,7 @@ def send_message(text: str, buttons: list = None) -> bool:
     buttons format (inline keyboard):
       [[{"text": "View Goals", "callback_data": "view_goals"},
         {"text": "Dismiss",    "callback_data": "dismiss"}]]
-      Each inner list = one row. Wired now; Phase 15 hooks the callbacks.
+      Each inner list = one row.
 
     Returns True if Telegram confirmed ok=True.
     """
@@ -79,9 +84,118 @@ def send_message(text: str, buttons: list = None) -> bool:
     return ok
 
 
+# ── Control commands ──────────────────────────────────────────────────────────
+def _handle_command(text: str):
+    """Handle /commands from Om."""
+    cmd = text.strip().lower().split()[0]
+
+    if cmd == "/status":
+        lines = ["*Truman System Status*\n"]
+
+        # Agent paused?
+        paused = os.environ.get("TRUMAN_PAUSED", "0") == "1"
+        lines.append(f"🤖 Agent: {'⏸ PAUSED' if paused else '✅ running'}")
+
+        # WhatsApp bridge
+        try:
+            from truman.integrations.whatsapp_bridge import bridge_state
+            wa = bridge_state()
+            icon = "✅" if wa == "CONNECTED" else ("📱" if wa == "QR_PENDING" else "❌")
+            lines.append(f"{icon} WA bridge: {wa}")
+        except Exception:
+            lines.append("❌ WA bridge: not installed")
+
+        # iMessage
+        imsg_on = os.environ.get("ENABLE_IMESSAGE", "0") == "1"
+        lines.append(f"{'✅' if imsg_on else '⏸'} iMessage poller: {'on' if imsg_on else 'off (ENABLE_IMESSAGE=0)'}")
+
+        # Gmail poller
+        gmail_on = os.environ.get("ENABLE_GMAIL_POLLING", "0") == "1"
+        lines.append(f"{'✅' if gmail_on else '⏸'} Gmail poller: {'on' if gmail_on else 'off (ENABLE_GMAIL_POLLING=0)'}")
+
+        # Boss flow
+        boss_on = os.environ.get("ENABLE_BOSS_FLOW", "0") == "1"
+        lines.append(f"{'✅' if boss_on else '⏸'} Boss flow: {'on' if boss_on else 'off (ENABLE_BOSS_FLOW=0)'}")
+
+        # VIP threshold
+        vip_t = os.environ.get("IMESSAGE_VIP_THRESHOLD", "0")
+        lines.append(f"{'🤖' if vip_t != '0' else '⏸'} VIP auto-reply: threshold={vip_t} ({'enabled' if vip_t != '0' else 'disabled'})")
+
+        # Pending edits
+        if _pending_edit:
+            lines.append(f"✏️ Pending edit for msg #{list(_pending_edit.values())[0]}")
+
+        send_message("\n".join(lines))
+
+    elif cmd == "/pause":
+        os.environ["TRUMAN_PAUSED"] = "1"
+        send_message("⏸ *Truman paused.* He won't respond to messages until you /resume.")
+
+    elif cmd == "/resume":
+        os.environ["TRUMAN_PAUSED"] = "0"
+        send_message("▶️ *Truman resumed.* Back to normal.")
+
+    elif cmd == "/vip":
+        try:
+            from truman.storage import db
+            contacts = db.list_vip_contacts()
+            if not contacts:
+                send_message("No VIP contacts yet. Approvals build up over time.")
+                return
+            threshold = int(os.environ.get("IMESSAGE_VIP_THRESHOLD", "0"))
+            lines = [f"*VIP Contacts* (threshold={threshold}):\n"]
+            for c in contacts[:15]:
+                status = "🤖 auto" if c["approval_count"] >= threshold > 0 else "👤 manual"
+                lines.append(f"• {c['identifier']} — {c['approval_count']} approvals {status}")
+            send_message("\n".join(lines))
+        except Exception as e:
+            send_message(f"_(vip error: {e})_")
+
+    elif cmd == "/help":
+        send_message(
+            "*Truman commands:*\n\n"
+            "/status — system health check\n"
+            "/pause  — pause Truman's agent\n"
+            "/resume — resume Truman\n"
+            "/vip    — VIP auto-reply contacts\n"
+            "/help   — this message\n\n"
+            "_Any other message → routed to Truman as chat._"
+        )
+
+    else:
+        # Unknown command — pass to agent
+        return False
+
+    return True
+
+
 # ── Incoming message handlers ─────────────────────────────────────────────────
 def _handle_text(text: str, agent_fn):
     """Om replied on Telegram → run through agent → send reply back on Telegram."""
+
+    # Check for pending edit first
+    if _pending_edit:
+        chat_id = _CHAT_ID
+        if chat_id in _pending_edit:
+            msg_id = _pending_edit.pop(chat_id)
+            try:
+                from truman.integrations.boss_handler import apply_edit
+                apply_edit(msg_id, text)
+            except Exception as e:
+                send_message(f"_(edit error: {e})_")
+            return
+
+    # Check for /commands
+    if text.startswith("/"):
+        handled = _handle_command(text)
+        if handled:
+            return
+
+    # Check agent paused
+    if os.environ.get("TRUMAN_PAUSED", "0") == "1":
+        send_message("⏸ Truman is paused. Send /resume to wake him up.")
+        return
+
     try:
         result = agent_fn(text, mood="", session_id="telegram")
         response = result["response"] if isinstance(result, dict) else str(result)
@@ -126,13 +240,7 @@ def _handle_photo(photo_list: list, caption: str, agent_fn):
             return
         b64 = base64.b64encode(data).decode()
         prompt = caption or "what's in this image? describe it."
-        # use vision pool via agent
-        vision_prompt = (
-            f"[Image attached as base64 PNG — analyze it]\n"
-            f"User request: {prompt}\n"
-            f"Image data (base64): {b64[:200]}...[truncated for routing, full image attached]"
-        )
-        # Simpler: describe the image using the vision pool directly
+        # Describe the image using the vision pool directly
         try:
             from truman.core.model_router import run_with_pool
             from langchain_core.messages import HumanMessage
@@ -207,7 +315,6 @@ def _handle_callback(cb: dict):
     data  = cb.get("data", "")
     _api("answerCallbackQuery", callback_query_id=cb_id)
 
-    # Phase 15: WhatsApp / Gmail approve or skip
     if data.startswith("boss_approve:"):
         try:
             msg_id = int(data.split(":", 1)[1])
@@ -216,9 +323,22 @@ def _handle_callback(cb: dict):
         except Exception as e:
             send_message(f"_(approve error: {e})_")
 
+    elif data.startswith("boss_edit:"):
+        try:
+            msg_id = int(data.split(":", 1)[1])
+            # Register pending edit: next text from Om will be the new draft
+            _pending_edit[_CHAT_ID] = msg_id
+            from truman.integrations.boss_handler import execute_edit
+            execute_edit(msg_id)
+        except Exception as e:
+            send_message(f"_(edit error: {e})_")
+
     elif data.startswith("boss_skip:"):
         try:
             msg_id = int(data.split(":", 1)[1])
+            # Clear any pending edit for this msg
+            if _CHAT_ID in _pending_edit and _pending_edit[_CHAT_ID] == msg_id:
+                _pending_edit.pop(_CHAT_ID, None)
             from truman.integrations.boss_handler import execute_skip
             execute_skip(msg_id)
             send_message("⏭ Skipped.")

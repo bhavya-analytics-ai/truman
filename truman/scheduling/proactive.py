@@ -362,4 +362,10 @@ def start_all(speak_fn, agent_fn, idle_minutes=20):
         start_gmail()
     except Exception as e:
         print(f"[Proactive] Gmail poller skipped: {e}")
+    # Phase 15B: iMessage polling (Mac only — set ENABLE_IMESSAGE=1 to activate)
+    try:
+        from truman.integrations.imessage_poller import start as start_imessage
+        start_imessage()
+    except Exception as e:
+        print(f"[Proactive] iMessage poller skipped: {e}")
     print(f"[Proactive] All systems active — voice ({idle_minutes}min idle) + SSE push.")

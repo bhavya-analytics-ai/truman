@@ -82,6 +82,8 @@ _os.environ.setdefault("ENABLE_WEB_PUSH",       "1")
 _os.environ.setdefault("ENABLE_TG_MEDIA",       "1")
 _os.environ.setdefault("ENABLE_BOSS_FLOW",      "0")   # Phase 15: WhatsApp/any-contact intake
 _os.environ.setdefault("ENABLE_GMAIL_POLLING",  "0")   # Phase 15: Gmail triage + reply
+_os.environ.setdefault("ENABLE_IMESSAGE",       "0")   # Phase 15B: iMessage poller (Mac only)
+_os.environ.setdefault("IMESSAGE_VIP_THRESHOLD","0")   # Phase 15B: 0=always ask, N=auto-reply after N approvals
 
 # ── Telegram bot (Phase 12) — fill in .env ───────────────────────────────────
 # TELEGRAM_BOT_TOKEN → @BotFather → /newbot → copy token

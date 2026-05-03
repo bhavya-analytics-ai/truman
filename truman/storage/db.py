@@ -386,6 +386,14 @@ def init():
                     extra_json  TEXT DEFAULT '{}',
                     created_at  REAL NOT NULL
                 )""",
+                # Phase 15B: VIP contacts — track approval counts for auto-reply
+                """CREATE TABLE IF NOT EXISTS vip_contacts (
+                    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+                    identifier       TEXT NOT NULL UNIQUE,
+                    approval_count   INTEGER NOT NULL DEFAULT 0,
+                    auto_reply_on    INTEGER NOT NULL DEFAULT 0,
+                    updated_at       REAL NOT NULL DEFAULT (unixepoch())
+                )""",
             ]:
                 try:
                     c.execute(ddl)
@@ -1202,3 +1210,46 @@ def get_approved_boss_replies(limit: int = 5) -> list:
             (limit,)
         ).fetchall()
     return [r[0] for r in rows]
+
+
+# ── VIP contacts (Phase 15B — iMessage auto-reply) ───────────────────────────
+
+def get_vip_approval_count(identifier: str) -> int:
+    """Return number of times Om approved a reply to this contact."""
+    with _conn() as c:
+        row = c.execute(
+            "SELECT approval_count FROM vip_contacts WHERE identifier = ?",
+            (identifier,)
+        ).fetchone()
+    return row[0] if row else 0
+
+
+def increment_vip_approval_count(identifier: str) -> int:
+    """Increment approval count for contact. Returns new count."""
+    import time as _time
+    with _conn() as c:
+        c.execute(
+            """INSERT INTO vip_contacts (identifier, approval_count, updated_at)
+               VALUES (?, 1, ?)
+               ON CONFLICT(identifier) DO UPDATE SET
+                 approval_count = approval_count + 1,
+                 updated_at = excluded.updated_at""",
+            (identifier, _time.time())
+        )
+        row = c.execute(
+            "SELECT approval_count FROM vip_contacts WHERE identifier = ?",
+            (identifier,)
+        ).fetchone()
+    return row[0] if row else 1
+
+
+def list_vip_contacts() -> list:
+    """Return all VIP contact rows."""
+    with _conn() as c:
+        rows = c.execute(
+            "SELECT identifier, approval_count, auto_reply_on, updated_at FROM vip_contacts ORDER BY approval_count DESC"
+        ).fetchall()
+    return [
+        {"identifier": r[0], "approval_count": r[1], "auto_reply_on": bool(r[2]), "updated_at": r[3]}
+        for r in rows
+    ]
