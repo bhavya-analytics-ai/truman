@@ -238,6 +238,15 @@
   .ap-minimized { border-radius:12px; }
   .ap-minimized .ap-hdr { border-radius:12px; border-bottom:none; }
 
+  /* ── Attachment chips ────────────────────────────────────────────────────────── */
+  .attach-bar { display:none; padding:4px 12px 0; background:var(--bg2); gap:6px; flex-wrap:wrap; flex-shrink:0; }
+  .attach-bar.has-files { display:flex; }
+  .attach-chip { display:flex; align-items:center; gap:5px; background:var(--bg3); border:1px solid var(--border2); border-radius:20px; padding:3px 8px 3px 8px; font-size:11px; color:var(--text2); max-width:220px; }
+  .attach-chip img.thumb { width:22px; height:22px; border-radius:5px; object-fit:cover; flex-shrink:0; }
+  .attach-chip-name { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:140px; }
+  .attach-chip-x { background:none; border:none; color:var(--text3); font-size:15px; cursor:pointer; padding:0 0 0 2px; line-height:1; flex-shrink:0; }
+  .attach-chip-x:hover { color:#ef4444; }
+
   /* ── Mobile overrides ──────────────────────────────────────────────────────── */
   /* Sidebar overlay — behind slide-in sidebar on mobile */
   .sidebar-overlay { display:none; position:fixed; inset:0; z-index:199; background:rgba(0,0,0,0.55); }
@@ -515,9 +524,12 @@
   </select>
 </div>
 
+<!-- Attachment chips (files staged here until Send) -->
+<div class="attach-bar" id="attach-bar"></div>
+
 <div class="input-area">
   <textarea id="input" placeholder="say something..." rows="1"></textarea>
-  <input type="file" id="file-input" style="display:none" accept=".py,.js,.ts,.html,.css,.json,.md,.txt,.csv,.xml,.yaml,.yml,.sh,.pdf,.docx,.xlsx,.pptx,.png,.jpg,.jpeg,.gif,.webp,.bmp,image/*">
+  <input type="file" id="file-input" style="display:none" multiple accept=".py,.js,.ts,.html,.css,.json,.md,.txt,.csv,.xml,.yaml,.yml,.sh,.pdf,.docx,.xlsx,.pptx,.png,.jpg,.jpeg,.gif,.webp,.bmp,image/*">
   <button class="btn voice-btn" id="upload-btn" title="upload file" onclick="document.getElementById('file-input').click()">
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
       <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
@@ -1175,28 +1187,37 @@ let _localTurnInFlight = false;
 // ── Send ──────────────────────────────────────────────────────────────────────
 async function send() {
   const text = input.value.trim();
-  if (!text) return;
+  const hasFiles = _pendingFiles.length > 0;
+  if (!text && !hasFiles) return;
   input.value = '';
   input.style.height = 'auto';
   _localTurnInFlight = true;
 
-  let displayText = text;
+  let displayText = text || null;
   let sendText = text;
   let sendPool = _currentModel || null;
 
-  // if a file is pending
-  if (_pendingFile) {
-    if (_pendingFile.isImage) {
-      addImageMsg(_pendingFile.file);
-      sendText = `[Image: ${_pendingFile.filename}]\n\n${_pendingFile.text}`;
-      sendPool = 'vision';
-      displayText = null;
-    } else {
-      displayText = `📎 ${_pendingFile.filename}`;
-      sendText = `[File: ${_pendingFile.filename}]\n\n${_pendingFile.text}`;
-      sendPool = sendPool || 'docs';
+  // handle staged files
+  if (hasFiles) {
+    const fileParts = [];
+    let hasImage = false;
+    for (const pf of _pendingFiles) {
+      if (pf.isImage) {
+        addImageMsg(pf.file);
+        fileParts.push(`[Image: ${pf.filename}]\n${pf.text}`);
+        hasImage = true;
+      } else {
+        fileParts.push(`[File: ${pf.filename}]\n${pf.text}`);
+        if (!displayText) displayText = `📎 ${pf.filename}`;
+        else displayText += ` + 📎 ${pf.filename}`;
+      }
     }
-    _pendingFile = null;
+    // build combined message: user question + all file blocks
+    const fileBlock = fileParts.join('\n\n---\n\n');
+    sendText = text ? `${text}\n\n${fileBlock}` : fileBlock;
+    sendPool = hasImage ? 'vision' : (sendPool || 'docs');
+    _pendingFiles = [];
+    _renderChips();
   }
 
   if (displayText) addMsg('user', displayText, null);
@@ -1254,8 +1275,9 @@ async function send() {
   }
 }
 
-// ── File Upload ───────────────────────────────────────────────────────────────
+// ── File Upload — chip staging (Phase 14.2) ───────────────────────────────────
 const IMAGE_EXTS = new Set(['.png','.jpg','.jpeg','.gif','.webp','.bmp']);
+let _pendingFiles = [];  // array of {filename, text, isImage, file}
 
 function addImageMsg(file) {
   const url = URL.createObjectURL(file);
@@ -1266,34 +1288,58 @@ function addImageMsg(file) {
   messages.scrollTop = messages.scrollHeight;
 }
 
+function _renderChips() {
+  const bar = document.getElementById('attach-bar');
+  bar.innerHTML = '';
+  bar.classList.toggle('has-files', _pendingFiles.length > 0);
+  _pendingFiles.forEach((pf, i) => {
+    const chip = document.createElement('div');
+    chip.className = 'attach-chip';
+    let inner = '';
+    if (pf.isImage && pf.thumbUrl) {
+      inner += `<img class="thumb" src="${pf.thumbUrl}">`;
+    } else {
+      inner += `<span style="font-size:14px">${pf.isImage ? '🖼️' : '📄'}</span>`;
+    }
+    inner += `<span class="attach-chip-name">${pf.filename}</span>`;
+    inner += `<button class="attach-chip-x" onclick="_removeChip(${i})" title="remove">×</button>`;
+    chip.innerHTML = inner;
+    bar.appendChild(chip);
+  });
+}
+
+function _removeChip(i) {
+  _pendingFiles.splice(i, 1);
+  _renderChips();
+}
+
 document.getElementById('file-input').addEventListener('change', async (e) => {
-  const file = e.target.files[0];
-  if (!file) return;
+  const files = Array.from(e.target.files);
   e.target.value = '';
-  const ext = '.' + file.name.split('.').pop().toLowerCase();
-  const isImage = IMAGE_EXTS.has(ext);
+  if (!files.length) return;
 
-  const status = addStatus();
-  status.querySelector('.status-text').textContent = `reading ${file.name}...`;
-  try {
-    const fd = new FormData();
-    fd.append('file', file);
-    const r = await fetch('/api/upload', {method:'POST', body: fd});
-    const d = await r.json();
-    status.remove();
-    if (d.error) { addMsg('truman', (isImage ? 'vision' : 'upload') + ' error: ' + d.error, null); return; }
-    _pendingFile = {filename: d.filename, text: d.text, isImage, file};
-    input.value = `📎 ${d.filename}`;
-    input.style.height = 'auto';
-    input.style.height = Math.min(input.scrollHeight, 120) + 'px';
-    input.focus();
-  } catch(err) {
-    status.remove();
-    addMsg('truman', 'upload failed', null);
+  for (const file of files) {
+    const ext = '.' + file.name.split('.').pop().toLowerCase();
+    const isImage = IMAGE_EXTS.has(ext);
+    const st = addStatus();
+    st.querySelector('.status-text').textContent = `reading ${file.name}...`;
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const r = await fetch('/api/upload', {method:'POST', body: fd});
+      const d = await r.json();
+      st.remove();
+      if (d.error) { addMsg('truman', 'upload error: ' + d.error, null); continue; }
+      const thumbUrl = isImage ? URL.createObjectURL(file) : null;
+      _pendingFiles.push({filename: d.filename, text: d.text, isImage, file, thumbUrl});
+    } catch(err) {
+      st.remove();
+      addMsg('truman', `failed to read ${file.name}`, null);
+    }
   }
+  _renderChips();
+  input.focus();
 });
-
-let _pendingFile = null;
 
 // ── Voice ─────────────────────────────────────────────────────────────────────
 let audioWs = null, audioCtx = null, micStream = null, processor = null;

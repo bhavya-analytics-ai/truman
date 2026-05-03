@@ -169,6 +169,19 @@ def _auto_extract_facts(user_input: str) -> None:
         pass
 
 
+_DOC_GROUNDING = """\
+You are reading a document Om uploaded. Rules — follow exactly:
+1. Use ONLY facts from the document below. Zero outside knowledge.
+2. If Om's question isn't answered in the doc, say: "That's not in this document."
+3. Back every claim with a short verbatim quote in "quotes".
+4. Format your answer as: Answer → Key points (with quotes) → What's missing (if relevant).
+5. Never guess or personify ("I think", "probably"). Only what the document states.
+
+DOCUMENT:
+{doc_content}
+
+OM ASKS: {user_question}"""
+
 @app.route("/api/chat", methods=["POST"])
 def api_chat():
     from flask import request
@@ -179,6 +192,38 @@ def api_chat():
     pool_hint  = (data.get("pool") or None)
     if not user_input:
         return jsonify({"error": "empty message"}), 400
+
+    # ── Anti-hallucination: wrap doc/image messages with grounding template ──
+    import re as _re
+    _file_pat = _re.compile(r"^\[File:\s*(.+?)\]\n(.+)", _re.DOTALL)
+    _img_pat  = _re.compile(r"^\[Image:\s*(.+?)\]\n(.+)", _re.DOTALL)
+    # Multi-file: user question + file blocks separated by ---
+    if "\n---\n" in user_input:
+        parts   = user_input.split("\n---\n")
+        # first part may be user question or first file block
+        q_parts = []; f_parts = []
+        for p in parts:
+            if _file_pat.match(p) or _img_pat.match(p):
+                f_parts.append(p)
+            else:
+                q_parts.append(p)
+        user_question = "\n".join(q_parts).strip() or "analyze this"
+        doc_content   = "\n\n---\n\n".join(f_parts)
+        user_input = _DOC_GROUNDING.format(doc_content=doc_content, user_question=user_question)
+        if not pool_hint:
+            pool_hint = "docs"
+    elif _file_pat.match(user_input):
+        m = _file_pat.match(user_input)
+        fname, content = m.group(1), m.group(2)
+        # check if user typed a question before the file block
+        pre = user_input[:m.start()].strip()
+        user_question = pre or "analyze this document"
+        user_input = _DOC_GROUNDING.format(doc_content=f"[File: {fname}]\n{content}", user_question=user_question)
+        if not pool_hint:
+            pool_hint = "docs"
+    elif _img_pat.match(user_input):
+        if not pool_hint:
+            pool_hint = "vision"
     try:
         from truman.text.agent import run as agent_run
         from truman.storage import db as _db
@@ -579,16 +624,22 @@ def api_upload():
                 "role": "user",
                 "content": [
                     {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}"}},
-                    {"type": "text", "text": "Describe this image in detail. Extract any text, data, or key info visible."}
+                    {"type": "text", "text": (
+                        "Describe this image with full accuracy. "
+                        "Extract ALL visible text verbatim. "
+                        "List every data point, table, chart, number, name you can see. "
+                        "Do not infer or guess anything not visible. "
+                        "If something is unclear, say so explicitly."
+                    )}
                 ]
             }])
             text = resp.content
         except Exception as e:
             return jsonify({"error": f"vision failed: {e}"}), 500
 
-    # trim to 8000 chars to avoid token flood
-    if len(text) > 8000:
-        text = text[:8000] + "\n\n[...truncated]"
+    # trim to 30000 chars — maverick handles 1M context, no reason to cut at 8K
+    if len(text) > 30000:
+        text = text[:30000] + "\n\n[...truncated — document exceeds 30K chars]"
 
     return jsonify({"filename": f.filename, "text": text})
 
