@@ -3,6 +3,50 @@
 
 ---
 
+## CORE FUNCTION (north star — never change without Om's approval)
+
+> **"Watch incoming messages → triage → draft reply → send when Om approves."**
+
+Everything in the codebase is either CORE (directly serves this) or SUPPORT (makes it better).
+If a feature does neither, it gets cut.
+
+### CORE — must always work, highest priority
+| Component | File | Role |
+|---|---|---|
+| Brain loop | `truman/brain/loop.py` | Processes every message end-to-end |
+| Agent | `truman/text/agent.py` | Tool detection, LLM routing, tool execution |
+| Flask API | `truman/voice/orb.py` | `/api/chat`, `/api/boss_message`, `/api/upload` |
+| DB turns | `truman/storage/db.py` | Saves every message + reply |
+| Telegram poller | `truman/delivery/telegram.py` | Primary inbound channel from Om |
+| Boss handler | `truman/integrations/boss_handler.py` | WA/Gmail/iMessage triage → Telegram approval |
+
+### SUPPORT — enriches the core loop, all fail-soft
+| Component | File | Role |
+|---|---|---|
+| Memory | `truman/brain/nodes.py::load_memory` | Enriches replies with context |
+| Goals | `truman/brain/nodes.py::load_goals` | Surfaces active goals as context |
+| Persona rules | `truman/storage/db.py::persona_rules` | Behavior constraints on replies |
+| Concept graph | `truman/brain/nodes.py::concept_lookup` | Cognee graph — enriches replies |
+| Morning brief | `truman/voice/email_digest.py` | Scheduled output (SECONDARY output) |
+| Proactive push | `truman/scheduling/proactive.py` | Nudges + brief delivery |
+| Web push | `truman/delivery/web_push.py` | Delivery mechanism for notifications |
+| Nightly reflect | `truman/storage/reflect.py` | 2am maintenance |
+| Sleep tracking | `truman/storage/db.py::sleep_log` | Context for morning brief |
+| Gmail poller | `truman/integrations/gmail_poller.py` | Secondary inbound (gated) |
+| iMessage | `truman/integrations/imessage_poller.py` | Mac-only secondary inbound |
+| Awareness layer | (planned) | NOT BUILT YET — cut until real inputs exist |
+
+### Memory authority hierarchy (no exceptions)
+```
+facts        = truth          (wins all conflicts)
+goals        = intent         (what Om is trying to do)
+persona rules= behavior       (how Truman responds, not what)
+activity logs= history only   (zero decision authority)
+concept graph= inference only (can be wrong, never authoritative)
+```
+
+---
+
 ## DECISIONS & ARCHITECTURE
 
 | Decision | Choice | Reason |

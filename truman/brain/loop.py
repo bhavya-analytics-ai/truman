@@ -1,5 +1,19 @@
 """
 loop.py — Truman's LangGraph brain loop.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+TRUMAN CORE FUNCTION:
+  A message arrives → Truman reads it, picks the right
+  tool/pool, calls the LLM, and returns a reply.
+  Everything else in the system exists to make THIS better.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Node roles:
+  CORE   — classify_mood, detect_pool, detect_tool, risk_gate,
+            route_skill, execute_tool, call_llm, save_memory
+  SUPPORT— concept_lookup, load_memory, load_goals, curiosity
+           (enrich the reply; fail soft; never block the loop)
+
 Sequential graph: mood → memory → pool → tool → llm → save → event
 Each node is isolated, fails soft, errors surface in the events drawer.
 """

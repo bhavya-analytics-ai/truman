@@ -1,13 +1,24 @@
 """
 main_cloud.py — Truman entry point for Railway (cloud).
 
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+TRUMAN CORE FUNCTION:
+  Watch incoming messages → triage → draft reply →
+  send when Om approves.
+  One sentence. Everything else is support.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Startup order:
+  [CORE]    agent warmup          — brain ready to handle messages
+  [CORE]    Telegram poller       — primary inbound channel
+  [CORE]    Flask app             — HTTP API + dashboard
+  [SUPPORT] nightly reflection    — maintenance, runs 2am UTC
+  [SUPPORT] proactive push        — morning brief, idle nudge, goal nudge
+  [SUPPORT] Gmail poller          — secondary inbound (gated: ENABLE_GMAIL_POLLING)
+  [SUPPORT] realtime              — WebRTC audio bridge
+
 Differences from main.py (local Mac):
-  - No hotkey (pynput needs a display)
-  - No Kokoro TTS boot message (no audio device)
-  - No browser auto-open
-  - No Apple Reminders (osascript mac-only)
-  - Mac Bridge SERVER side — accepts connections from the mac daemon
-  - Dashboard served at /dashboard
+  - No hotkey, no TTS, no browser auto-open, no Apple Reminders
   - Port from $PORT env var (Railway sets this)
 """
 from truman.core import config  # noqa: F401 — must be first
@@ -61,18 +72,21 @@ def main():
             except Exception as e:
                 print(f"[MCP] mount failed for {sid}: {e}")
 
-    agent.get_agent()
-    _start_nightly_reflection()
-    proactive.start_proactive_push(agent.run)
+    # ── [CORE] Message handling infrastructure ────────────────────────────────
+    agent.get_agent()   # warm up brain — must be first
 
-    # Telegram poller — runs on Railway so it works even when Mac is off (Phase 12)
+    # [CORE] Telegram poller — primary inbound channel (works when Mac is off)
     try:
         from truman.delivery.telegram import start_poller as _tg_start
         _tg_start(agent.run)
     except Exception as e:
         print(f"[Cloud] Telegram poller failed to start: {e}")
 
-    # Gmail poller — 15min IMAP poll, LLM 3-tier triage, Telegram approval flow
+    # ── [SUPPORT] Background services ────────────────────────────────────────
+    _start_nightly_reflection()                  # 2am UTC maintenance pass
+    proactive.start_proactive_push(agent.run)    # morning brief + nudges
+
+    # [SUPPORT] Gmail poller — secondary inbound (gated, off by default)
     if os.environ.get("ENABLE_GMAIL_POLLING", "0") == "1":
         try:
             from truman.integrations.gmail_poller import start as _gmail_start
@@ -81,7 +95,7 @@ def main():
         except Exception as e:
             print(f"[Cloud] Gmail poller failed to start: {e}")
 
-    realtime.start()
+    realtime.start()    # [SUPPORT] WebRTC audio bridge
 
     print(f"[Cloud] Truman running on port {port}")
     # On Railway, Flask must run in the main thread (blocks) so the process stays alive.
