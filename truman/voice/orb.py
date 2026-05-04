@@ -717,10 +717,14 @@ def api_attachment(attach_id):
             return jsonify({"error": "not found"}), 404
         # inline for images, attachment for everything else
         disposition = "inline" if att["mime_type"].startswith("image/") else "attachment"
+        # Sanitize filename for Content-Disposition header — HTTP headers are latin-1 only.
+        # iPhone/macOS filenames often contain   (narrow no-break space before AM/PM).
+        raw_name = att["filename"] or "file"
+        safe_name = raw_name.encode("latin-1", errors="replace").decode("latin-1")
         return Response(
             att["data"],
             mimetype=att["mime_type"],
-            headers={"Content-Disposition": f'{disposition}; filename="{att["filename"]}"',
+            headers={"Content-Disposition": f'{disposition}; filename="{safe_name}"',
                      "Cache-Control": "public, max-age=31536000"}  # cache 1yr — content never changes
         )
     except Exception as e:

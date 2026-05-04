@@ -65,22 +65,47 @@ def send_message(text: str, buttons: list = None) -> bool:
     """
     if not _ENABLE or not _TOKEN or not _CHAT_ID:
         return False
-    payload: dict = {
-        "chat_id":    _CHAT_ID,
-        "text":       text[:4096],  # Telegram limit
-        "parse_mode": "Markdown",
-    }
+
+    # Sanitize text — strip non-BMP characters that Telegram rejects
+    safe_text = text.encode("utf-16", "surrogatepass").decode("utf-16")
+
+    inline_kb = None
     if buttons:
-        payload["reply_markup"] = {
+        inline_kb = {
             "inline_keyboard": [
                 [{"text": b["text"], "callback_data": b["callback_data"]} for b in row]
                 for row in buttons
             ]
         }
+
+    payload: dict = {
+        "chat_id":    _CHAT_ID,
+        "text":       safe_text[:4096],
+        "parse_mode": "Markdown",
+    }
+    if inline_kb:
+        payload["reply_markup"] = inline_kb
+
     resp = _api("sendMessage", **payload)
     ok = resp.get("ok", False)
+
     if not ok:
-        print(f"[Telegram] sendMessage failed: {resp.get('description', resp)}")
+        err = resp.get("description", "")
+        # Markdown parse error — retry as plain text (LLM draft may have unmatched backticks / asterisks)
+        if "parse entities" in err.lower() or "can't find end" in err.lower():
+            plain_payload: dict = {
+                "chat_id": _CHAT_ID,
+                "text":    safe_text[:4096],
+            }
+            if inline_kb:
+                plain_payload["reply_markup"] = inline_kb
+            resp = _api("sendMessage", **plain_payload)
+            ok = resp.get("ok", False)
+            if not ok:
+                print(f"[Telegram] sendMessage (plain fallback) failed: {resp.get('description', resp)}")
+        else:
+            print(f"[Telegram] sendMessage failed: {err}")
+
     return ok
 
 
