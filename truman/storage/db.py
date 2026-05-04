@@ -394,6 +394,12 @@ def init():
                     auto_reply_on    INTEGER NOT NULL DEFAULT 0,
                     updated_at       REAL NOT NULL DEFAULT (unixepoch())
                 )""",
+                # Phase 15D: reply_contacts whitelist — who gets Telegram approval flow
+                """CREATE TABLE IF NOT EXISTS reply_contacts (
+                    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name       TEXT NOT NULL UNIQUE,
+                    created_at REAL NOT NULL DEFAULT (unixepoch())
+                )""",
             ]:
                 try:
                     c.execute(ddl)
@@ -1278,3 +1284,48 @@ def list_vip_contacts() -> list:
         {"identifier": r[0], "approval_count": r[1], "auto_reply_on": bool(r[2]), "updated_at": r[3]}
         for r in rows
     ]
+
+
+# ── Reply contacts whitelist ───────────────────────────────────────────────────
+
+def add_reply_contact(name: str) -> bool:
+    """Add a contact to the reply whitelist. Returns True if added, False if already exists."""
+    try:
+        with _conn() as c:
+            c.execute("INSERT INTO reply_contacts (name) VALUES (?)", (name.strip().lower(),))
+        return True
+    except Exception:
+        return False
+
+
+def remove_reply_contact(name: str) -> bool:
+    """Remove a contact from the reply whitelist. Returns True if removed."""
+    with _conn() as c:
+        cur = c.execute("DELETE FROM reply_contacts WHERE name = ?", (name.strip().lower(),))
+    return cur.rowcount > 0
+
+
+def list_reply_contacts() -> list:
+    """Return all whitelisted contact names."""
+    with _conn() as c:
+        rows = c.execute("SELECT id, name, created_at FROM reply_contacts ORDER BY name").fetchall()
+    return [{"id": r[0], "name": r[1], "created_at": r[2]} for r in rows]
+
+
+def is_reply_contact(sender: str, extra: dict = None) -> bool:
+    """
+    Returns True if sender matches any whitelist entry (or whitelist is empty = allow all).
+    Matches against name, phone number, or email — partial/substring match.
+    """
+    contacts = list_reply_contacts()
+    if not contacts:
+        return True   # empty whitelist = everyone gets through
+    extra = extra or {}
+    name  = (sender or "").lower()
+    phone = (extra.get("phone") or "").replace("+", "").lower()
+    email = (extra.get("email") or "").lower()
+    for c in contacts:
+        pattern = c["name"]
+        if pattern in name or pattern in phone or pattern in email:
+            return True
+    return False

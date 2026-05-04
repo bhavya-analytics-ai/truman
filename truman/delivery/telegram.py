@@ -151,14 +151,68 @@ def _handle_command(text: str):
         except Exception as e:
             send_message(f"_(vip error: {e})_")
 
+    elif cmd == "/contacts":
+        try:
+            from truman.storage import db
+            contacts = db.list_reply_contacts()
+            if not contacts:
+                send_message(
+                    "📋 *Reply contacts — empty*\n\n"
+                    "Everyone gets through right now.\n"
+                    "Add someone: `/add adam`"
+                )
+            else:
+                lines = ["📋 *Reply contacts* (only these get Telegram pings):\n"]
+                for c in contacts:
+                    lines.append(f"• {c['name']}")
+                lines.append("\n`/add name` · `/remove name`")
+                send_message("\n".join(lines))
+        except Exception as e:
+            send_message(f"_(contacts error: {e})_")
+
+    elif cmd == "/add":
+        parts = text.strip().split(None, 1)
+        if len(parts) < 2 or not parts[1].strip():
+            send_message("Usage: `/add adam`")
+        else:
+            name = parts[1].strip().lower()
+            try:
+                from truman.storage import db
+                added = db.add_reply_contact(name)
+                if added:
+                    send_message(f"✅ Added *{name}* to reply contacts.")
+                else:
+                    send_message(f"_{name} is already in the list._")
+            except Exception as e:
+                send_message(f"_(add error: {e})_")
+
+    elif cmd == "/remove":
+        parts = text.strip().split(None, 1)
+        if len(parts) < 2 or not parts[1].strip():
+            send_message("Usage: `/remove adam`")
+        else:
+            name = parts[1].strip().lower()
+            try:
+                from truman.storage import db
+                removed = db.remove_reply_contact(name)
+                if removed:
+                    send_message(f"🗑 Removed *{name}* from reply contacts.")
+                else:
+                    send_message(f"_{name} wasn't in the list._")
+            except Exception as e:
+                send_message(f"_(remove error: {e})_")
+
     elif cmd == "/help":
         send_message(
             "*Truman commands:*\n\n"
-            "/status — system health check\n"
-            "/pause  — pause Truman's agent\n"
-            "/resume — resume Truman\n"
-            "/vip    — VIP auto-reply contacts\n"
-            "/help   — this message\n\n"
+            "/status   — system health check\n"
+            "/contacts — show reply whitelist\n"
+            "/add name — add contact to whitelist\n"
+            "/remove name — remove from whitelist\n"
+            "/pause    — pause Truman's agent\n"
+            "/resume   — resume Truman\n"
+            "/vip      — VIP auto-reply contacts\n"
+            "/help     — this message\n\n"
             "_Any other message → routed to Truman as chat._"
         )
 

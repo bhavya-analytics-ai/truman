@@ -520,6 +520,38 @@ def api_rules_delete(rule_id):
         return jsonify({"error": str(e)}), 500
 
 
+# ── Reply contacts (Phase 15D) ───────────────────────────────────────────────
+@app.route("/api/contacts", methods=["GET"])
+def api_contacts_get():
+    try:
+        from truman.storage import db
+        return jsonify({"contacts": db.list_reply_contacts()})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/contacts", methods=["POST"])
+def api_contacts_add():
+    try:
+        from truman.storage import db
+        name = (request.json or {}).get("name", "").strip()
+        if not name:
+            return jsonify({"error": "name required"}), 400
+        added = db.add_reply_contact(name)
+        return jsonify({"ok": True, "added": added})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/contacts/<int:contact_id>", methods=["DELETE"])
+def api_contacts_delete(contact_id):
+    try:
+        from truman.storage import db
+        with db._conn() as c:
+            c.execute("DELETE FROM reply_contacts WHERE id = ?", (contact_id,))
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 # ── Web Push (Phase 14) ───────────────────────────────────────────────────────
 @app.route("/api/push/vapid-public-key", methods=["GET"])
 def api_push_vapid_key():

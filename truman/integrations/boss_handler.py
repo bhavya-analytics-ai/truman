@@ -26,19 +26,13 @@ import re
 
 _ENABLE = os.getenv("ENABLE_BOSS_FLOW", "0") == "1"
 
-# ── Contact whitelist ─────────────────────────────────────────────────────────
-# REPLY_CONTACTS = comma-separated names or phone substrings, e.g. "adam,bhavya,14085551234"
-# If empty → everyone gets through. If set → only matching contacts trigger approval flow.
-_RAW_CONTACTS = os.getenv("REPLY_CONTACTS", "")
-_WHITELIST = {c.strip().lower() for c in _RAW_CONTACTS.split(",") if c.strip()}
-
+# ── Contact whitelist (stored in SQLite, managed via Telegram /add /remove) ───
 def _is_whitelisted(sender: str, extra: dict) -> bool:
-    if not _WHITELIST:
-        return True   # no filter = everyone gets through
-    name  = (sender or "").lower()
-    phone = (extra.get("phone") or "").replace("+", "").lower()
-    email = (extra.get("email") or "").lower()
-    return any(w in name or w in phone or w in email for w in _WHITELIST)
+    try:
+        from truman.storage import db
+        return db.is_reply_contact(sender, extra)
+    except Exception:
+        return True   # fail open — don't block messages if DB errors
 
 
 # msg_id → True: waiting for Om to type a new draft via Telegram

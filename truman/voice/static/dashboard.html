@@ -423,6 +423,7 @@
   <div class="mem-tabs">
     <button class="mem-tab active" id="mem-tab-facts" onclick="switchMemTab('facts')">Facts</button>
     <button class="mem-tab" id="mem-tab-rules" onclick="switchMemTab('rules')">Rules</button>
+    <button class="mem-tab" id="mem-tab-contacts" onclick="switchMemTab('contacts')">Contacts</button>
   </div>
   <!-- Facts tab -->
   <div class="mem-body" id="mem-body" data-tab="facts">
@@ -432,6 +433,11 @@
   <div class="mem-body" id="rules-body" data-tab="rules" style="display:none">
     <div id="rules-placeholder" style="color:var(--text3);padding:24px;text-align:center;font-size:12px">no rules set yet — type "rule: always..." to add one</div>
   </div>
+  <!-- Contacts tab -->
+  <div class="mem-body" id="contacts-body" data-tab="contacts" style="display:none">
+    <div style="color:var(--text3);padding:12px 16px;font-size:11px;border-bottom:1px solid var(--border)">Only these contacts trigger Telegram pings. Empty = everyone gets through.</div>
+    <div id="contacts-list"></div>
+  </div>
   <div class="mem-add" id="mem-add-facts">
     <input type="text" id="mem-input" placeholder="add a fact manually..." maxlength="300">
     <button class="mem-add-btn" onclick="addFactManual()">+ add</button>
@@ -439,6 +445,10 @@
   <div class="mem-add" id="mem-add-rules" style="display:none">
     <input type="text" id="rule-input" placeholder="add a rule... (e.g. never use bullet points)" maxlength="300">
     <button class="mem-add-btn" onclick="addRuleManual()">+ add</button>
+  </div>
+  <div class="mem-add" id="mem-add-contacts" style="display:none">
+    <input type="text" id="contact-input" placeholder="add contact name or number..." maxlength="100">
+    <button class="mem-add-btn" onclick="addContactManual()">+ add</button>
   </div>
 </div>
 
@@ -941,14 +951,34 @@ function showPopup(e, s) {
 function hidePopup() { if (_ssbPopup) { _ssbPopup.remove(); _ssbPopup = null; } }
 
 // ── Export / Import ───────────────────────────────────────────────────────────
-function exportChats() {
-  const data = JSON.stringify({sessions: _msgCache, exported: new Date().toISOString()}, null, 2);
-  const blob = new Blob([data], {type: 'application/json'});
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = `truman-chats-${new Date().toISOString().slice(0,10)}.json`;
-  a.click();
-  showToast('chats exported');
+async function exportChats() {
+  showToast('preparing export…');
+  try {
+    // Fetch all sessions from server
+    const sessRes = await fetch('/api/sessions');
+    const sessData = await sessRes.json();
+    const allSessions = sessData.sessions || [];
+    const out = { exported: new Date().toISOString(), sessions: [] };
+    for (const s of allSessions) {
+      const bid = s.browser_id || String(s.id);
+      const histRes = await fetch(`/api/history?session_id=${encodeURIComponent(bid)}`);
+      const turns = await histRes.json();
+      out.sessions.push({
+        id: bid,
+        label: s.label || '(untitled)',
+        started: s.started_at,
+        turns: Array.isArray(turns) ? turns : []
+      });
+    }
+    const blob = new Blob([JSON.stringify(out, null, 2)], {type: 'application/json'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `truman-export-${new Date().toISOString().slice(0,10)}.json`;
+    a.click();
+    showToast(`exported ${out.sessions.length} session(s) ✓`);
+  } catch(e) {
+    showToast('export failed: ' + e.message);
+  }
 }
 
 function importChats(event) {
@@ -1678,12 +1708,52 @@ function switchMemTab(tab) {
   _activeMemTab = tab;
   document.getElementById('mem-tab-facts').classList.toggle('active', tab === 'facts');
   document.getElementById('mem-tab-rules').classList.toggle('active', tab === 'rules');
-  document.getElementById('mem-body').style.display   = tab === 'facts' ? '' : 'none';
-  document.getElementById('rules-body').style.display = tab === 'rules' ? '' : 'none';
-  document.getElementById('mem-add-facts').style.display = tab === 'facts' ? '' : 'none';
-  document.getElementById('mem-add-rules').style.display = tab === 'rules' ? '' : 'none';
+  document.getElementById('mem-tab-contacts').classList.toggle('active', tab === 'contacts');
+  document.getElementById('mem-body').style.display      = tab === 'facts'    ? '' : 'none';
+  document.getElementById('rules-body').style.display    = tab === 'rules'    ? '' : 'none';
+  document.getElementById('contacts-body').style.display = tab === 'contacts' ? '' : 'none';
+  document.getElementById('mem-add-facts').style.display    = tab === 'facts'    ? '' : 'none';
+  document.getElementById('mem-add-rules').style.display    = tab === 'rules'    ? '' : 'none';
+  document.getElementById('mem-add-contacts').style.display = tab === 'contacts' ? '' : 'none';
   if (tab === 'rules') refreshRules();
+  else if (tab === 'contacts') refreshContacts();
   else refreshFacts();
+}
+
+async function refreshContacts() {
+  const list = document.getElementById('contacts-list');
+  try {
+    const r = await fetch('/api/contacts');
+    const data = await r.json();
+    const contacts = data.contacts || [];
+    if (!contacts.length) {
+      list.innerHTML = '<div style="color:var(--text3);padding:20px;text-align:center;font-size:12px">empty — everyone gets through<br><br>Add a name or number below to filter</div>';
+      return;
+    }
+    list.innerHTML = contacts.map(c => `
+      <div class="mem-row" style="display:flex;align-items:center;padding:10px 16px;border-bottom:1px solid var(--border);gap:8px">
+        <span style="flex:1;font-size:13px">👤 ${c.name}</span>
+        <button onclick="removeContact(${c.id},'${c.name}')" style="background:none;border:none;color:var(--text3);cursor:pointer;font-size:14px;padding:2px 6px" title="remove">🗑</button>
+      </div>`).join('');
+  } catch(e) {
+    list.innerHTML = `<div style="color:var(--text3);padding:20px;text-align:center;font-size:12px">error: ${e.message}</div>`;
+  }
+}
+
+async function addContactManual() {
+  const inp = document.getElementById('contact-input');
+  const name = inp.value.trim().toLowerCase();
+  if (!name) return;
+  await fetch('/api/contacts', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({name})});
+  inp.value = '';
+  refreshContacts();
+  showToast(`added ${name}`);
+}
+
+async function removeContact(id, name) {
+  await fetch(`/api/contacts/${id}`, {method:'DELETE'});
+  refreshContacts();
+  showToast(`removed ${name}`);
 }
 
 async function openMemory() {
@@ -1691,6 +1761,7 @@ async function openMemory() {
   document.getElementById('memory-sidebar').classList.add('open');
   document.getElementById('memory-btn').classList.add('active');
   if (_activeMemTab === 'rules') await refreshRules();
+  else if (_activeMemTab === 'contacts') await refreshContacts();
   else await refreshFacts();
 }
 
