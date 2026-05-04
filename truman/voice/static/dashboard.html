@@ -246,6 +246,15 @@
   .attach-chip-name { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:140px; }
   .attach-chip-x { background:none; border:none; color:var(--text3); font-size:15px; cursor:pointer; padding:0 0 0 2px; line-height:1; flex-shrink:0; }
   .attach-chip-x:hover { color:#ef4444; }
+  /* Context tray — shows active sticky attachments (already sent, still in LLM context) */
+  .context-tray { display:none; padding:3px 12px 4px; background:var(--bg2); gap:5px; flex-wrap:wrap; flex-shrink:0; border-top:1px solid var(--border); }
+  .context-tray.has-active { display:flex; }
+  .context-chip { display:flex; align-items:center; gap:4px; background:rgba(99,102,241,0.12); border:1px solid rgba(99,102,241,0.3); border-radius:20px; padding:2px 7px 2px 7px; font-size:10px; color:var(--text2); max-width:200px; }
+  .context-chip-icon { font-size:11px; flex-shrink:0; }
+  .context-chip-name { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:110px; }
+  .context-chip-ttl { font-size:9px; color:var(--text3); flex-shrink:0; margin-left:1px; }
+  .context-chip-x { background:none; border:none; color:var(--text3); font-size:13px; cursor:pointer; padding:0 0 0 2px; line-height:1; flex-shrink:0; }
+  .context-chip-x:hover { color:#ef4444; }
 
   /* ── Mobile overrides ──────────────────────────────────────────────────────── */
   /* Sidebar overlay — behind slide-in sidebar on mobile */
@@ -533,6 +542,9 @@
     <option value="creative">🎨 mistral large — creative writing</option>
   </select>
 </div>
+
+<!-- Context tray — files already sent, still active in LLM context (sticky, shows turns left) -->
+<div class="context-tray" id="context-tray" title="These files are still in Truman's context"></div>
 
 <!-- Attachment chips (files staged here until Send) -->
 <div class="attach-bar" id="attach-bar"></div>
@@ -1325,6 +1337,8 @@ async function send() {
     addMsg('truman', respText, {model: d.model || 'deepseek-v3.2', pool: d.pool || 'general', tool_calls: d.tool_calls});
     updatePanelFromResponse(d, sendText || text, respText);
     setStatus('idle', 'idle');
+    // update context tray with active sticky attachments
+    if (d.attachments) _renderContextTray(d.attachments);
     // delay flag reset so SSE broadcast (arriving ~50ms later) is still suppressed
     setTimeout(() => { _localTurnInFlight = false; }, 300);
     macDot.className = 'mac-dot' + (d.mac === 'connected' ? ' on' : '');
@@ -1340,6 +1354,50 @@ async function send() {
     setTimeout(() => setStatus('idle','idle'), 4000);
     addMsg('truman', 'server error — check the terminal', null);
   }
+}
+
+// ── Context tray — shows active sticky attachments (L4/L6) ───────────────────
+function _mimeIcon(mime) {
+  if (!mime) return '📎';
+  if (mime.startsWith('image/')) return '🖼️';
+  if (mime === 'application/pdf') return '📄';
+  if (mime.includes('word') || mime.includes('docx')) return '📝';
+  if (mime.includes('sheet') || mime.includes('excel') || mime.includes('xlsx')) return '📊';
+  if (mime === 'text/csv') return '📊';
+  return '📎';
+}
+
+function _renderContextTray(attachments) {
+  const tray = document.getElementById('context-tray');
+  if (!tray) return;
+  tray.innerHTML = '';
+  const active = (attachments || []).filter(a => a.turns_left > 0);
+  tray.classList.toggle('has-active', active.length > 0);
+  active.forEach(a => {
+    const chip = document.createElement('div');
+    chip.className = 'context-chip';
+    chip.title = `${a.filename} — ${a.turns_left} turn${a.turns_left !== 1 ? 's' : ''} left in context`;
+    chip.innerHTML =
+      `<span class="context-chip-icon">${_mimeIcon(a.mime)}</span>` +
+      `<span class="context-chip-name">${a.filename || a.attach_id}</span>` +
+      `<span class="context-chip-ttl">${a.turns_left}t</span>` +
+      `<button class="context-chip-x" title="drop from context" onclick="_dropContextChip('${a.attach_id}')">×</button>`;
+    tray.appendChild(chip);
+  });
+}
+
+async function _dropContextChip(attachId) {
+  // Single-chip drop: tell server to clear all (session_state tracks per session)
+  try {
+    const sid = currentSessionId();
+    const r = await fetch(`/api/attachments/session/${sid}/drop`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({kind: 'all'})
+    });
+    const d = await r.json();
+    _renderContextTray([]);   // clear tray immediately
+  } catch(e) { console.error('drop chip error', e); }
 }
 
 // ── File Upload — chip staging (Phase 14.2) ───────────────────────────────────
