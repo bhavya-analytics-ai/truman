@@ -1,6 +1,6 @@
 [build]
 builder = "dockerfile"
-dockerfilePath = "wa-bridge/Dockerfile"
+dockerfilePath = "Dockerfile"
 
 [deploy]
 startCommand = "node index.js"

@@ -7,5 +7,5 @@
 // Session stored on Railway volume (/data mounted in Railway dashboard)
 process.env.WA_SESSION_DIR = process.env.WA_SESSION_DIR || "/data/whatsapp-session";
 
-// Load the bridge
-require("../truman/integrations/whatsapp_bridge.js");
+// Load the bridge (whatsapp_bridge.js copied into this dir for Docker build)
+require("./whatsapp_bridge.js");
