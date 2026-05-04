@@ -32,15 +32,14 @@ OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
 # ── Pool defaults — Railway vars override these ───────────────────────────────
 # Format: nvidia:provider/model-name  (no groq anywhere)
-POOL_GENERAL  = os.getenv("POOL_GENERAL",  "nvidia:meta/llama-3.1-8b-instruct,nvidia:nvidia/llama-3.1-nemotron-nano-8b-v1,nvidia:stepfun-ai/step-3.5-flash,nvidia:nvidia/llama-3.3-nemotron-super-49b-v1,nvidia:moonshotai/kimi-k2-instruct")
-POOL_CODING   = os.getenv("POOL_CODING",   "nvidia:qwen/qwen3-coder-480b-a35b-instruct,nvidia:moonshotai/kimi-k2-instruct,nvidia:meta/llama-3.3-70b-instruct")
-POOL_REASONING= os.getenv("POOL_REASONING","nvidia:moonshotai/kimi-k2-thinking,nvidia:qwen/qwen3-coder-480b-a35b-instruct")
-POOL_CREATIVE = os.getenv("POOL_CREATIVE", "nvidia:moonshotai/kimi-k2-thinking,nvidia:meta/llama-3.3-70b-instruct")
-POOL_DESIGN   = os.getenv("POOL_DESIGN",   "nvidia:moonshotai/kimi-k2-thinking,nvidia:qwen/qwen3-coder-480b-a35b-instruct")
-POOL_DOCS     = os.getenv("POOL_DOCS",     "nvidia:meta/llama-4-maverick-17b-128e-instruct,nvidia:meta/llama-3.3-70b-instruct,nvidia:moonshotai/kimi-k2-instruct")
-POOL_VISION   = os.getenv("POOL_VISION",   "nvidia:meta/llama-3.2-90b-vision-instruct,nvidia:meta/llama-4-scout-17b-16e-instruct,nvidia:meta/llama-4-maverick-17b-128e-instruct")
-POOL_FAST     = os.getenv("POOL_FAST",     "nvidia:meta/llama-3.1-8b-instruct,nvidia:nvidia/llama-3.1-nemotron-nano-8b-v1,nvidia:stepfun-ai/step-3.5-flash")
-POOL_AGENTIC  = os.getenv("POOL_AGENTIC",  "nvidia:qwen/qwen3-coder-480b-a35b-instruct,nvidia:moonshotai/kimi-k2-instruct,nvidia:meta/llama-3.3-70b-instruct")
+# 6 pools: general, coding, reasoning, agentic, vision, docs
+# 1 primary + 1 fallback each — no randomness, no coin flips
+POOL_GENERAL   = os.getenv("POOL_GENERAL",   "nvidia:meta/llama-3.3-70b-instruct,nvidia:meta/llama-3.1-8b-instruct")
+POOL_CODING    = os.getenv("POOL_CODING",    "nvidia:qwen/qwen3-coder-480b-a35b-instruct,nvidia:moonshotai/kimi-k2-instruct")
+POOL_REASONING = os.getenv("POOL_REASONING", "nvidia:moonshotai/kimi-k2-thinking,nvidia:meta/llama-3.3-70b-instruct")
+POOL_AGENTIC   = os.getenv("POOL_AGENTIC",   "nvidia:qwen/qwen3-coder-480b-a35b-instruct,nvidia:moonshotai/kimi-k2-instruct")
+POOL_VISION    = os.getenv("POOL_VISION",    "nvidia:meta/llama-3.2-90b-vision-instruct,nvidia:meta/llama-4-scout-17b-16e-instruct")
+POOL_DOCS      = os.getenv("POOL_DOCS",      "nvidia:meta/llama-4-maverick-17b-128e-instruct,nvidia:meta/llama-3.3-70b-instruct")
 
 # ── LLM builder used by get_agent() (ReAct loop) ─────────────────────────────
 def get_llm(temperature: float = 0.7, json_mode: bool = False):

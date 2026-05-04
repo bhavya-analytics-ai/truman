@@ -118,13 +118,20 @@ def detect_pool(state: TrumanState) -> dict:
             return {"chosen_pool": pool_hint}
 
         _FILE_TOOLS = {"list_mac_dir", "read_mac_file", "search_mac_files", "write_mac_file", "tree_mac_dir"}
-        if _detect_tool(state["user_input"]) in _FILE_TOOLS:
-            _t(state, "detect_pool", "end", summary="pool → fast (file tool)", duration_ms=int((time.time()-t0)*1000))
-            return {"chosen_pool": "fast"}
+        detected_tool = _detect_tool(state["user_input"])
+        if detected_tool in _FILE_TOOLS:
+            _t(state, "detect_pool", "end", summary="pool → general (file tool)", duration_ms=int((time.time()-t0)*1000))
+            print(f"[ROUTING] pool=general  reason=FILE_TOOL  matched={detected_tool}")
+            return {"chosen_pool": "general", "routing_reason": "FILE_TOOL", "routing_matched": detected_tool}
 
-        chosen = _detect_pool(state["user_input"])
-        _t(state, "detect_pool", "end", summary=f"pool → {chosen}", duration_ms=int((time.time()-t0)*1000))
-        return {"chosen_pool": chosen}
+        from truman.core.model_router import detect_pool_with_reason
+        has_image = bool(state.get("attach_ids"))
+        chosen, reason, matched = detect_pool_with_reason(
+            state["user_input"], has_image=has_image, tool_detected=detected_tool or None
+        )
+        print(f"[ROUTING] pool={chosen}  reason={reason}  matched={matched}")
+        _t(state, "detect_pool", "end", summary=f"pool → {chosen} ({reason})", duration_ms=int((time.time()-t0)*1000))
+        return {"chosen_pool": chosen, "routing_reason": reason, "routing_matched": matched}
     except Exception as e:
         _t(state, "detect_pool", "error", summary=str(e))
         errs = dict(state.get("node_errors") or {})
@@ -422,12 +429,27 @@ def call_llm(state: TrumanState) -> dict:
         import re as _re
         from truman.text.agent import strip_markdown
         from truman.core.model_router import run_with_pool
-        _t(state, "call_llm", "start", summary=f"calling {state.get('chosen_pool','general')} pool",
-           args={"pool": state.get("chosen_pool","general"), "tool_result": bool(tool_result)})
+
+        # ── Mode hint for GENERAL pool (soft nudge — one line, after persona) ─
+        chosen_pool = state.get("chosen_pool", "general")
+        if chosen_pool == "general":
+            _ui_lower = user_input.lower()
+            _creative_cues = {"story", "poem", "creative", "imagine", "write a", "invent", "name idea", "pitch"}
+            _doc_cues = {"draft an email", "write a report", "format this", "summarize", "write up"}
+            if any(c in _ui_lower for c in _creative_cues):
+                system_content += "\nRespond creatively."
+            elif any(c in _ui_lower for c in _doc_cues):
+                system_content += "\nBe structured and clear."
+
+        _t(state, "call_llm", "start", summary=f"calling {chosen_pool} pool",
+           args={"pool": chosen_pool, "tool_result": bool(tool_result)})
         t0 = time.time()
-        result = run_with_pool(messages, pool=state.get("chosen_pool", "general"), user_message=user_input)
+        result = run_with_pool(messages, pool=chosen_pool, user_message=user_input)
         raw = result["content"]
         model_label = result["model"]
+        latency_info = result.get("latency", {})
+        total_lat = latency_info.get("total", round(time.time() - t0, 1))
+        print(f"[MODEL] model={model_label}  pool={chosen_pool}  total={total_lat}s")
         response = strip_markdown(raw)
         # strip hallucinated tool/model blocks
         response = _re.sub(r'\[Tool result[^\]]*\][:\s]*[^\n]*\n?', '', response)
