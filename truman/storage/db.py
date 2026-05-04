@@ -225,6 +225,11 @@ CREATE INDEX IF NOT EXISTS idx_feeds_date   ON memory_feeds(date);
 CREATE INDEX IF NOT EXISTS idx_feeds_source ON memory_feeds(source);
 
 -- ── User preferences (changeable via natural language) ──────────────────────
+-- KEY SPLIT (enforced by memory hierarchy):
+--   CONFIG keys  → live here: morning_brief_hour, morning_brief_hour_int,
+--                             quiet_start, quiet_end, vapid_public_key, vapid_private_key
+--   BEHAVIOR keys→ go to persona_rules table, NOT here
+-- logs intentionally excluded from decision context (see brain/memory.py)
 CREATE TABLE IF NOT EXISTS user_prefs (
     key        TEXT PRIMARY KEY,
     value      TEXT NOT NULL,

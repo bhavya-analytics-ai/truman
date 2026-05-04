@@ -367,46 +367,20 @@ def call_llm(state: TrumanState) -> dict:
         except Exception:
             now_et = datetime.now(timezone(timedelta(hours=-4)))  # EDT fallback
         clock_line = f"\n\nCURRENT TIME: {now_et.strftime('%A, %b %d %Y, %I:%M %p ET')}"
-        mem_ctx = state.get("memory_context", "")
         mood = state.get("mood", "neutral")
         mood_line = f"\n\nMOOD CONTEXT: {mood}" if mood and mood != "neutral" else ""
         persona_reminder = "\n\nCRITICAL: You are texting Om on his dashboard. Be direct, casual, lowercase. No bullet points. No asking permission. Commit to your answer. Match Om's energy. NEVER claim which model you are — just respond. NEVER write '[Tool result...]' or '(hypothetical output)' or invent bracket-blocks."
         last_session_ctx = _last_session_str()
 
-        goals_ctx     = state.get("goals_context", "")
-        curiosity_ctx = state.get("curiosity_context", "")
-
-        # load top user facts (cross-chat persistent memory about Om)
-        facts_ctx = ""
-        try:
-            from truman.storage.db import get_top_facts
-            facts = get_top_facts(10)
-            if facts:
-                lines = "\n".join(f"- {f['fact']}" for f in facts)
-                facts_ctx = f"\n\nWHAT YOU KNOW ABOUT OM (pinned facts):\n{lines}"
-        except Exception:
-            pass
-
-        # load active persona rules (Phase 13 — self-correcting persona)
-        import os as _os
-        rules_ctx = ""
-        if _os.environ.get("ENABLE_SELF_CORRECT", "1") == "1":
-            try:
-                from truman.storage.db import get_active_rules
-                rules = get_active_rules()
-                if rules:
-                    lines = "\n".join(f"- {r['rule']}" for r in rules)
-                    rules_ctx = f"\n\nPERSONAL RULES (Om set these — follow them exactly):\n{lines}"
-            except Exception:
-                pass
+        # ── Memory resolver (Phase 3) — single source, enforced priority ─────
+        # facts → goals → persona_rules | logs intentionally excluded
+        from truman.brain.memory import resolve_memory, build_memory_prompt
+        mem_bundle  = resolve_memory(state)
+        memory_block = build_memory_prompt(mem_bundle)
 
         system_content = (
             SYSTEM + clock_line
-            + (f"\n\nRelevant memory:\n{mem_ctx}" if mem_ctx else "")
-            + facts_ctx
-            + rules_ctx
-            + (f"\n\n{goals_ctx}" if goals_ctx else "")
-            + (f"\n\n{curiosity_ctx}" if curiosity_ctx else "")
+            + (f"\n\n{memory_block}" if memory_block else "")
             + last_session_ctx + mood_line + persona_reminder
         )
 
