@@ -16,7 +16,6 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 from langchain_openai import ChatOpenAI
-from mem0 import MemoryClient
 from truman.core.config import MEM0_API_KEY, NVIDIA_API_KEY, NVIDIA_BASE_URL
 from truman.core.persona import SYSTEM
 from truman.core.model_router import detect_pool, get_session_model, short_label
@@ -46,9 +45,17 @@ def strip_markdown(text: str) -> str:
     return text.strip()
 
 
-memory = MemoryClient(api_key=MEM0_API_KEY)
-USER_ID = "om"
+# ── Memory backend — Mem0 cloud if key is set, SQLite local otherwise ─────────
+# All data stays local (SQLite /data/truman.db) when MEM0_API_KEY is unset/empty.
+_USE_MEM0 = bool(MEM0_API_KEY)
+USER_ID   = "om"
 MEM_FILTER = {"AND": [{"user_id": USER_ID}]}
+
+if _USE_MEM0:
+    from mem0 import MemoryClient as _MemoryClient
+    memory = _MemoryClient(api_key=MEM0_API_KEY)
+else:
+    memory = None
 
 # ── Error log ring buffer ─────────────────────────────────────────────────────
 _error_log: deque = deque(maxlen=50)
@@ -92,42 +99,64 @@ _GREETINGS = re.compile(
     re.I
 )
 
-def mem_search(query):
+def mem_search(query: str) -> list:
+    """Search memory. Uses Mem0 if key is set, local SQLite otherwise."""
+    if _USE_MEM0:
+        try:
+            results = memory.search(query, filters=MEM_FILTER)
+            return results.get("results", []) if isinstance(results, dict) else results
+        except Exception:
+            pass
+    # Local fallback — search user_facts in SQLite
     try:
-        results = memory.search(query, filters=MEM_FILTER)
-        return results.get("results", []) if isinstance(results, dict) else results
+        from truman.storage.db import search_facts
+        hits = search_facts(query, limit=5)
+        # Normalise to same shape as Mem0 results
+        return [{"memory": h["fact"], "score": 1.0} for h in hits]
     except Exception:
         return []
 
+
 def _should_save(text: str) -> bool:
-    """Return True only if the message is worth saving to Mem0."""
+    """Return True only if the message is worth saving to memory."""
     t = text.strip()
-    if len(t) < 20:          return False   # too short
-    if _GREETINGS.match(t):  return False   # greeting/reaction
+    if len(t) < 20:          return False
+    if _GREETINGS.match(t):  return False
     return True
 
+
 def _mem_add_smart(user_input: str, response: str):
-    """Write to Mem0 only if user message has real substance. Background thread."""
+    """Write to memory only if user message has real substance. Background thread."""
     if not _should_save(user_input):
         return
-    try:
-        # basic dedup: skip if Mem0 already has very similar entry
-        hits = memory.search(user_input[:80], filters=MEM_FILTER)
-        existing = hits.get("results", []) if isinstance(hits, dict) else hits
-        for h in existing[:3]:
-            if h.get("memory", "")[:60].lower() == user_input[:60].lower():
-                return  # duplicate, skip
-        memory.add([
-            {"role": "user",      "content": user_input},
-            {"role": "assistant", "content": response},
-        ], user_id=USER_ID)
-    except Exception:
-        pass
+    if _USE_MEM0:
+        try:
+            hits = memory.search(user_input[:80], filters=MEM_FILTER)
+            existing = hits.get("results", []) if isinstance(hits, dict) else hits
+            for h in existing[:3]:
+                if h.get("memory", "")[:60].lower() == user_input[:60].lower():
+                    return  # duplicate, skip
+            memory.add([
+                {"role": "user",      "content": user_input},
+                {"role": "assistant", "content": response},
+            ], user_id=USER_ID)
+        except Exception:
+            pass
+    # Local: facts are extracted async by _auto_extract_facts in orb.py — nothing extra needed
 
 
-def mem_add(info):
+def mem_add(info: str):
+    """Add a fact directly. Uses Mem0 if key is set, local SQLite otherwise."""
+    if _USE_MEM0:
+        try:
+            memory.add([{"role": "user", "content": info}], user_id=USER_ID)
+            return
+        except Exception:
+            pass
+    # Local fallback
     try:
-        memory.add([{"role": "user", "content": info}], user_id=USER_ID)
+        from truman.storage.db import save_fact
+        save_fact(info, importance=3, source="mem_add")
     except Exception:
         pass
 

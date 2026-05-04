@@ -118,7 +118,9 @@ GMAIL_ADDRESS       = os.getenv("GMAIL_ADDRESS", os.getenv("MORNING_EMAIL_FROM",
 # ── Misc ──────────────────────────────────────────────────────────────────────
 os.environ["COGNEE_SKIP_CONNECTION_TEST"] = "true"
 os.environ["HUGGINGFACE_TOKEN"]      = HUGGINGFACE_TOKEN or ""
-os.environ["LANGCHAIN_TRACING_V2"]   = "true"
+# LangSmith tracing — OFF by default (sends all LLM calls to LangChain servers).
+# Set LANGCHAIN_TRACING_V2=true in Railway env only for debugging.
+os.environ["LANGCHAIN_TRACING_V2"]   = os.getenv("LANGCHAIN_TRACING_V2", "false")
 os.environ["LANGCHAIN_PROJECT"]      = "truman"
 os.environ["LANGCHAIN_API_KEY"]      = LANGCHAIN_API_KEY or ""
 

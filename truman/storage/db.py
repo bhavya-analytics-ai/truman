@@ -972,6 +972,29 @@ def save_fact(fact: str, importance: int = 3, source: str = "manual") -> int:
         return cur.lastrowid
 
 
+def search_facts(query: str, limit: int = 5) -> list[dict]:
+    """
+    Keyword search over user_facts — local Mem0 replacement.
+    Splits query into words, scores each fact by how many words it matches,
+    returns top `limit` results sorted by score then importance.
+    """
+    words = [w.lower() for w in query.split() if len(w) > 3]
+    if not words:
+        return get_top_facts(limit)
+    with _conn() as c:
+        rows = c.execute(
+            "SELECT id, fact, importance, source FROM user_facts ORDER BY importance DESC, created_at DESC LIMIT 200"
+        ).fetchall()
+    scored = []
+    for r in rows:
+        text = r["fact"].lower()
+        score = sum(1 for w in words if w in text)
+        if score > 0:
+            scored.append((score, dict(r)))
+    scored.sort(key=lambda x: (-x[0], -x[1]["importance"]))
+    return [item for _, item in scored[:limit]]
+
+
 def get_top_facts(limit: int = 10) -> list[dict]:
     """Top facts by importance + recency for system prompt injection."""
     with _conn() as c:

@@ -93,13 +93,13 @@ def load_memory(state: TrumanState) -> dict:
     if len(_ui) < 50 or _ui.lower().rstrip("!?.") in _GREETINGS or _detect_tool(_ui) in _FILE_TOOLS:
         _t(state, "load_memory", "end", summary="skipped (short/greeting/file tool)")
         return {"memory_context": ""}
-    _t(state, "load_memory", "start", summary="searching Mem0")
+    _t(state, "load_memory", "start", summary="searching memory")
     try:
         from truman.text.agent import mem_search
         results = mem_search(state["user_input"])
         ctx = "\n".join([r["memory"] for r in results[:5]]) if results else ""
         ms = int((time.time()-t0)*1000)
-        summary = f"{len(results)} mem0 facts loaded" if results else "no mem0 matches"
+        summary = f"{len(results)} facts loaded" if results else "no memory matches"
         _t(state, "load_memory", "end", summary=summary, result=ctx[:200] if ctx else None, duration_ms=ms)
         return {"memory_context": ctx}
     except Exception as e:
