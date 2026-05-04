@@ -1118,6 +1118,213 @@ Phone/Browser → Railway (live chat) → Mac syncs every 60s → local SQLite
 
 ---
 
+## 2026-05-04 — Multimodal Pipeline Phase 1 + Vision Pool Upgrade
+
+**Commits: `990a089`, `8f3deff`**
+
+### What shipped
+
+**Deleted (broken pipeline):**
+- `_DOC_GROUNDING` template + grounding wrapper in `/api/chat` — was wrapping all image/doc messages in a rigid "only use doc facts" template. Caused hallucination because model was constrained to a stale text description, not the actual image.
+- Describe-once maverick call in `/api/upload` — was calling vision LLM at upload time, storing description as text, discarding bytes. Root cause: every "look again" request used the same broken description from upload. Now removed. Images return `text: ""`.
+
+**Built (`truman/multimodal/`):**
+- `loader.py` — given attach_id, fetches raw bytes from `attachments` DB table, returns NIM `image_url` content block (`{"type":"image_url","image_url":{"url":"data:<mime>;base64,..."}}`). Runs every turn, not once at upload. Non-images return None (text already extracted inline).
+- `prompts.py` — type-specific system prompt injections. iMessage screenshots: "blue right = sender, gray left = receiver, never swap." Generic images: "read precisely, never hallucinate, say if unclear."
+- `__init__.py` — module init.
+
+**Wired through graph:**
+- `brain/state.py` — `attach_ids: list` field added to TrumanState
+- `brain/loop.py` — `attach_ids` param added to `run()`, included in initial_state
+- `text/agent.py` — `attach_ids` param added to `run()`, passed through to lg_run
+- `brain/nodes.py call_llm` — when `attach_ids` present: fetches live image bytes, builds `[image_url_block, text_block]` content list, injects type-specific system hint. Falls back to plain text if loader fails (safe).
+- `voice/orb.py` — `_parse_multimodal_input()` helper parses `|attach:ID` patterns from message, extracts image IDs, strips markers from user text, auto-sets `pool_hint = "vision"`
+
+**Vision pool upgraded (`config.py`, `model_router.py`):**
+- Old: `vision = maverick only`
+- New: `vision = llama-3.2-90b-vision-instruct → llama-4-scout-17b-16e → llama4-maverick`
+- 90B is the most accurate vision model on NIM. Scout is fast fallback. Maverick is last resort.
+- Model labels + MODEL_INFO entries added for both new models.
+
+### Still pending — Full multimodal build (next session, DO THIS IN ORDER)
+
+**What's already done (don't redo):**
+- `truman/multimodal/loader.py` exists — images only (base64 → image_url block)
+- `truman/multimodal/prompts.py` exists — iMessage hint + generic image hint only
+- `attach_ids` wired through state → loop → agent → nodes (images go to LLM on upload turn)
+- `_parse_multimodal_input()` in orb.py — parses markers, extracts image attach_ids
+- Vision pool = `llama-3.2-90b-vision → llama-4-scout → maverick`
+
+**What's NOT done yet — build these in order:**
+
+---
+
+#### Layer 1 — Reception (already exists, verify only)
+- Upload → saves bytes to `attachments` table ✓
+- Returns `attach_id` + `text: ""` for images ✓
+- Turn content gets `[Image: name|attach:ID]` marker in dashboard ✓
+- NO description generated at upload ✓
+
+---
+
+#### Layer 2 — Full type-aware loader (`truman/multimodal/loader.py` — expand current)
+
+Current file only handles images. Expand to:
+
+| File type | What to load |
+|---|---|
+| png / jpg / webp / gif / heic | bytes → base64 → `image_url` content block |
+| PDF (text) | pdfplumber text extract + first page as image |
+| PDF (scanned, no text) | every page as image, max 20 pages |
+| DOCX | python-docx → markdown with headings + bold |
+| XLSX / CSV | pandas → markdown table, cap 200 rows, note if truncated |
+| TXT / MD / code | raw bytes as text |
+
+Return shape per attach_id:
+```python
+{
+  "blocks": [...],       # NIM content blocks (image_url or text)
+  "text_inline": "...",  # text to include inline in human message (for docs)
+  "tokens_est": N,       # rough token estimate for UI display
+  "kind": "image"|"pdf"|"docx"|"xlsx"|"text"
+}
+```
+
+---
+
+#### Layer 3 — Multimodal call builder (`truman/multimodal/call.py` — new file)
+
+Move all multimodal message building OUT of `nodes.py` (currently inline). Build:
+
+```python
+def build_messages(attach_ids, user_text, tool_result=None, chat_history=None, system_content="") -> list:
+    """
+    Returns properly formed messages list for NIM multimodal call.
+    Images → image_url content blocks in HumanMessage.
+    Docs → text_inline appended to human message text.
+    Both → same call if mixed.
+    """
+```
+
+Format NIM expects:
+```json
+{
+  "role": "user",
+  "content": [
+    {"type": "image_url", "image_url": {"url": "data:image/png;base64,..."}},
+    {"type": "text", "text": "what's beth saying here"}
+  ]
+}
+```
+
+Image goes in EVERY turn it's still relevant (handled by Layer 4 sticky state).
+`nodes.py call_llm` should call `call.build_messages()` instead of inline block.
+
+---
+
+#### Layer 4 — Sticky attachments (`truman/multimodal/session_state.py` — new file)
+
+```python
+# Per-session live attachment tracking
+_live_attachments: dict[str, list] = {}
+# shape: {session_id: [{attach_id, kind, filename, turns_left, tokens_est}]}
+
+def add_attachment(session_id, attach_id, kind, filename, tokens_est): ...
+def get_live_attachments(session_id) -> list: ...
+def tick_session(session_id): ...       # decrement turns_left, drop at 0
+def drop_attachment(session_id, attach_id): ...  # user taps X
+def clear_session(session_id): ...      # "new topic" / "drop everything"
+```
+
+Rules:
+- New attachment uploaded → `turns_left = 10`
+- Every turn with this session → `tick_session()` decrements all
+- "look again" / "check the ss" / "re-read" / "what does it say" → reset `turns_left = 10` for all
+- "drop the file" / "new topic" / "forget it" → `clear_session()`
+- `turns_left == 0` → auto-drop (stop sending to LLM)
+
+Wire into `nodes.py call_llm`:
+- Before building messages: `attach_ids = get_live_attachments(session_id)` (replaces state.attach_ids for follow-up turns)
+- After LLM call: `tick_session(session_id)`
+
+Wire into `orb.py /api/upload`:
+- After saving to DB: `add_attachment(session_id, attach_id, kind, filename, tokens_est)`
+
+---
+
+#### Layer 5 — Smart per-type system prompts (`truman/multimodal/prompts.py` — expand current)
+
+Current file only has iMessage + generic image. Expand:
+
+| Type | System injection |
+|---|---|
+| iMessage screenshot | "Blue bubble RIGHT = the OTHER person messaging Om. Gray bubble LEFT = Om's own past replies. Never swap. If unclear, say so." |
+| WhatsApp screenshot | "Green bubble RIGHT = Om sent this. White/gray bubble LEFT = other person. Never swap." |
+| PDF document | "Quote sources verbatim. Include page numbers for every claim. If question not answered in doc, say so directly." |
+| Spreadsheet / CSV | "Reference column headers literally. Never rename or infer column names. Note row count if truncated." |
+| Code file | "Cite line numbers for every reference. Do not summarize logic you haven't read." |
+| Photo / general image | "Describe only what is actually visible. Never infer or guess. If something is unreadable, say so." |
+
+Auto-detect type from filename + mime (no manual tagging):
+- filename contains "imessage"/"imsg"/"chat"/"screenshot" + image mime → iMessage hint
+- filename contains "whatsapp"/"wa-" + image mime → WhatsApp hint
+- mime = application/pdf → PDF hint
+- mime = xlsx/csv → spreadsheet hint
+- etc.
+
+---
+
+#### Layer 6 — Dashboard live context tray (update `dashboard.html`)
+
+Strip below the input area (above the attach-bar or replace it):
+- Shows which attachments are currently in model's context (from `/api/live_attachments?session_id=X`)
+- Each chip: thumbnail (if image) + filename + token count + "N turns left" + X button
+- Click X → `DELETE /api/live_attachments/<attach_id>?session_id=X` → drops from session state
+- Auto-updates every turn (re-fetch after send)
+- Styling: matches existing `.attach-chip` style
+
+New endpoint in `orb.py`:
+- `GET /api/live_attachments?session_id=X` → returns current live_attachments for session
+- `DELETE /api/live_attachments/<attach_id>?session_id=X` → drops one attachment
+
+---
+
+#### Layer 7 — Page-pinning for PDFs (add to `loader.py`)
+
+Detect "page N" / "go to page 3" / "show me page 5" in user message.
+If PDF is live in context and user asks for a specific page:
+- `loader.py` sends only that page (as image or text extract)
+- Saves tokens — don't send full 40-page PDF every turn
+
+Pattern in `orb.py _parse_multimodal_input()` or `nodes.py detect_tool`:
+```python
+_PAGE_RE = re.compile(r'\bpage[s]?\s+(\d+)\b', re.I)
+```
+If match + PDF in live_attachments → set `page_hint` in state → loader uses it.
+
+---
+
+#### Layer 8 — Multi-image in one call (already free, just verify)
+
+If multiple attach_ids in one turn → loader returns multiple image_url blocks → all go into same content list → maverick/90B sees them side by side. No extra code needed if Layers 2-3 are built correctly. Test with 2 screenshots.
+
+---
+
+#### Wiring checklist for next Claude
+
+1. Expand `loader.py` — full type matrix (Layer 2)
+2. Write `call.py` — message builder (Layer 3)
+3. Write `session_state.py` — sticky attachments (Layer 4)
+4. Expand `prompts.py` — all types + auto-detect (Layer 5)
+5. Update `nodes.py call_llm` — use `call.py` + `session_state.get_live_attachments()` instead of inline block + `state.attach_ids`
+6. Update `orb.py /api/upload` — call `session_state.add_attachment()` after DB save
+7. Update `orb.py /api/chat` — pass `session_id` to session_state tick
+8. Add `/api/live_attachments` endpoints to `orb.py`
+9. Update `dashboard.html` — live context tray below input
+10. Test: upload image → ask question → "look again" → verify image re-sent → verify drops at turn 10
+
+---
+
 ## Phase 15D — 3-Channel Automation Final (2026-05-04, continued session)
 
 ### What changed from Phase 15C
@@ -1226,11 +1433,107 @@ Same vars also set on Railway Truman service via API. Plus `WA_BRIDGE_URL=http:/
 
 Beth birthday-planning brief delivered May 3 9am ET via Telegram. Phase 4 (load_goals) + Phase 11 (email_digest) chain works.
 
-### Next session resume points
+### Next session resume points (archived — see 2026-05-04 for current state)
 
-1. **Decide Pushcut 24/7 strategy** (spare iPhone vs accept gaps vs another path)
-2. **WhatsApp Railway:** retry with Docker-based Puppeteer image, OR accept Mac-only
-3. **Gmail tuning:** test with real important email, switch to LLM importance check if keywords too strict
-4. **Test full flow end-to-end:** real iMessage in → Telegram approval → Pushcut send → message arrives
-5. Phase 16 (Ambient Awareness) still next major phase — Pushcut location triggers + HTTP request actions can feed it
+---
+
+## 2026-05-04 — Multimodal Layers 2-8 + System hardening
+
+**Commits: `0b7e423`, `f86214b`, `237d097`**
+
+### 15D Verification ✅
+
+- WA Bridge: **live and connected** on Railway. QR already scanned. Incoming messages arriving (tested by Keshav).
+- Railway POOL_* vars: updated to NVIDIA-only (removed groq/glm-4.7/mistral-nemotron/deepseek stale refs — was causing ⚠️ spam in logs)
+- Truman deploy: `railway up --service Truman --detach` triggered (commit `237d097`)
+
+### Multimodal Layer 1 (already done, previous session)
+
+- `loader.py` — images only, live bytes per turn
+- `prompts.py` — iMessage hint + generic image hint
+- `attach_ids` wired through state → loop → agent → nodes
+
+### Multimodal Layer 2 — Full type matrix (`0b7e423`)
+
+`truman/multimodal/loader.py` rewritten — `load_attachment(attach_id, page_hint=None)` returns unified dict:
+- Images → `image_url` block + `kind="image"`
+- PDF (text) → pdfplumber extract → markdown, `kind="pdf_text"`
+- PDF (scanned, avg <50 chars/page) → PyMuPDF pages as PNG image blocks, `kind="pdf_scan"`
+- DOCX → python-docx → markdown (headings + tables), `kind="docx"`
+- XLSX → pandas → per-sheet markdown tables (max 5 sheets, 200 rows), `kind="xlsx"`
+- CSV → pandas → markdown table, `kind="csv"`
+- Code files (py/js/ts/go/rs/etc.) → fenced code block, `kind="code"`
+- Plain text → inline, `kind="text"`
+- `load_image_block()` kept for backward compat
+- Added `pandas==2.2.3` + `tabulate==0.9.0` to requirements.txt
+
+### Multimodal Layer 3 — Clean message builder (`0b7e423`)
+
+`truman/multimodal/call.py` (NEW):
+- `build_messages(system_content, chat_history, user_input, attach_ids, tool_result, tool_name, history_window=16)` — extracts message-building out of nodes.py
+- `extract_page_hint(user_input)` — regex for "page 3" / "pg 5" / "p.3" → PDF page pin
+- Routes: image/pdf_scan → image_url blocks; text types → inline text merged with user message
+- `nodes.py call_llm` now calls `build_messages()` — old inline code replaced; fallback to plain text kept
+
+### Multimodal Layer 4 — Sticky attachments (`f86214b`)
+
+`truman/multimodal/session_state.py` (NEW):
+- Per-session sticky store (in-process, TTL=10 turns)
+- `register_attachments(session_id, attach_ids)` — fresh upload → add to store
+- `get_sticky_ids(session_id)` — return active ids
+- `tick_turn(session_id)` — called after each LLM response, decrements TTL
+- `reset_ttl(session_id)` — "look again" → reset to 10
+- `clear_attachments(session_id, kind)` — "drop file" / "drop image" / "drop all"
+- `process_commands(session_id, user_input)` — detects natural language drop/reset commands
+- `orb.py api_chat` wired: register → merge sticky → tick after response → `attachments[]` in response JSON
+- 2 new endpoints: `GET /api/attachments/session/<id>` + `POST /api/attachments/session/<id>/drop`
+
+### Multimodal Layer 5 — Per-type system prompts (`0b7e423`)
+
+`truman/multimodal/prompts.py` rewritten:
+- `_BASE_ACCURACY` injected on every multimodal turn: "NEVER invent, hallucinate, or infer content not shown"
+- Type-specific hints: image, iMessage, WhatsApp, pdf_text, pdf_scan, docx, xlsx, csv, code, text
+- `_detect_kind(meta)` — auto-detects from filename + mime (iMessage → blue/gray bubble rules, WhatsApp → green/white rules)
+- `get_system_injection_typed(metas)` — priority: imessage > whatsapp > pdf > xlsx > csv > docx > code > text > image
+- Legacy `get_system_injection(attach_ids)` kept for Phase 1 compat
+
+### Multimodal Layer 6 — Dashboard context tray (`237d097`)
+
+`dashboard.html`:
+- New `.context-tray` (purple chips, shown above input area)
+- Each chip: file icon + filename + turns-left counter (e.g. "9t") + × button
+- `_renderContextTray(attachments)` — updates tray from `d.attachments` in chat response
+- `_dropContextChip(attachId)` — calls `/api/attachments/session/<id>/drop`
+
+### Multimodal Layer 7 — PDF page-pin (`0b7e423`)
+
+- `extract_page_hint(user_input)` in call.py detects "page 3" / "pg 5" / "p.3"
+- `load_attachment(aid, page_hint=N)` pins to that single page (pdfplumber or PyMuPDF)
+- Wired in `build_messages()` — runs automatically on every multimodal turn
+
+### Multimodal Layer 8 — Multi-image verified (`237d097`)
+
+- Verified by logic test: 2 image_url blocks + 1 text block in one HumanMessage
+- Mixed image + PDF: image blocks + PDF text merged into final text block — correct
+
+### Key anti-hallucination improvements
+
+- Base accuracy anchor on every multimodal turn (explicit "never invent" instruction)
+- Per-type prompts (iMessage bubble direction, PDF truncation notice, spreadsheet column names)
+- Live bytes every turn (no stale "describe once" cache)
+- Sticky context prevents model losing file between questions
+
+### Current system state
+
+- Railway: Truman service deploying `237d097`, WA-Bridge connected
+- POOL vars: all NVIDIA-only, warning spam eliminated
+- Multimodal: all 8 layers live
+- iMessage: Mac AppleScript primary, Pushcut Pro purchased + working as backup
+- Gmail: polling `bhavyapandya005@gmail.com`, LLM triage 3-tier (HIGH/MID/LOW)
+- WhatsApp: Railway WA-Bridge connected, bidirectional
+
+### Next
+
+- Phase 16: Ambient Awareness (location triggers, Pushcut HTTP actions)
+- Or test full 3-channel flow end-to-end with a real message
 
