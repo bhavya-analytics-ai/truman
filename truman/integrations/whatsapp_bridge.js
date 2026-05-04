@@ -106,6 +106,8 @@ function startClient() {
 const app = express();
 app.use(express.json());
 
+app.get("/health", (_req, res) => res.json({ ok: true }));
+
 app.get("/status", (_req, res) => {
   res.json({ ok: _state === "CONNECTED", state: _state });
 });
