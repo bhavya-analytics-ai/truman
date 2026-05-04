@@ -55,8 +55,54 @@ def _decode_str(raw) -> str:
 
 
 def _is_important(subject: str, sender: str) -> bool:
+    """Cheap keyword pre-filter — used as fallback when LLM check fails."""
     target = (subject + " " + sender).lower()
     return any(kw in target for kw in _KEYWORDS)
+
+
+def _classify_email(subject: str, sender: str, body: str) -> dict:
+    """
+    LLM-based 3-tier importance classifier.
+    Returns {"tier": "HIGH"|"MID"|"LOW", "summary": "1-line summary"}
+
+    HIGH = needs Om's reply (interview invite, urgent question, offer, action required)
+    MID  = informational, worth notifying (rejection, meeting reminder, status update, payment)
+    LOW  = ignore (newsletter, promo, automated digest, social notification)
+    """
+    try:
+        from truman.core.model_router import run_with_pool
+        from langchain_core.messages import HumanMessage, SystemMessage
+        import json as _json
+
+        system = (
+            "You are an email triage assistant for Om. Classify each email into one tier:\n"
+            "  HIGH — needs reply or immediate attention (interview invite, urgent question, "
+            "         job offer, action required from Om, personal message from a real person)\n"
+            "  MID  — informational, worth a notification but no reply needed (rejection notice, "
+            "         meeting reminder/calendar invite, status update, receipt, payment, "
+            "         account alert, important automated email)\n"
+            "  LOW  — newsletter, marketing, promo, social media notification, generic digest, spam\n"
+            "Return ONLY JSON: {\"tier\":\"HIGH|MID|LOW\",\"summary\":\"one-line summary under 80 chars\"}"
+        )
+        user = f"From: {sender}\nSubject: {subject}\n\nBody:\n{body[:1500]}"
+        msgs = [SystemMessage(content=system), HumanMessage(content=user)]
+        result = run_with_pool(msgs, pool="fast", user_message=subject)
+        content = (result.get("content") or "").strip()
+        # Strip markdown fencing if any
+        if content.startswith("```"):
+            content = content.strip("`").lstrip("json").strip()
+        data = _json.loads(content)
+        tier = data.get("tier", "LOW").upper()
+        if tier not in ("HIGH", "MID", "LOW"):
+            tier = "LOW"
+        return {"tier": tier, "summary": data.get("summary", "")[:140]}
+    except Exception as e:
+        print(f"[Gmail] LLM classify failed ({e}) — falling back to keyword check")
+        # Fallback: keyword match → HIGH if matches, LOW otherwise
+        return {
+            "tier": "HIGH" if _is_important(subject, sender) else "LOW",
+            "summary": subject[:80],
+        }
 
 
 def _extract_body(msg_obj) -> str:
@@ -114,14 +160,34 @@ def _poll_once():
             reply_to    = _decode_str(msg_obj.get("Reply-To", sender)).strip()
             body        = _extract_body(msg_obj)
 
-            if not _is_important(subject, sender):
+            # 3-tier LLM classification: HIGH=draft+approve, MID=summary notify, LOW=ignore
+            cls = _classify_email(subject, sender, body)
+            tier = cls["tier"]
+            if tier == "LOW":
                 continue
-
+            if tier == "MID":
+                _handle_mid_email(sender, subject, cls["summary"])
+                continue
+            # HIGH
             _handle_important_email(uid_str, sender, reply_to, subject, body)
 
         mail.logout()
     except Exception as e:
         print(f"[Gmail] Poll error: {e}")
+
+
+def _handle_mid_email(sender: str, subject: str, summary: str):
+    """MID-tier email: just send Telegram summary, no draft, no buttons."""
+    try:
+        from truman.delivery.telegram import send_message
+        name = sender.split("<")[0].strip().strip('"') or sender
+        send_message(
+            f"📧 *Gmail FYI — {name}*\n"
+            f"_{subject[:80]}_\n\n"
+            f"{summary}"
+        )
+    except Exception as e:
+        print(f"[Gmail] MID notify error: {e}")
 
 
 def _handle_important_email(uid: str, sender: str, reply_to: str, subject: str, body: str):
