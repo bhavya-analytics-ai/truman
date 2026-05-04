@@ -72,6 +72,15 @@ def main():
     except Exception as e:
         print(f"[Cloud] Telegram poller failed to start: {e}")
 
+    # Gmail poller — 15min IMAP poll, LLM 3-tier triage, Telegram approval flow
+    if os.environ.get("ENABLE_GMAIL_POLLING", "0") == "1":
+        try:
+            from truman.integrations.gmail_poller import start as _gmail_start
+            _gmail_start()
+            print("[Cloud] Gmail poller started")
+        except Exception as e:
+            print(f"[Cloud] Gmail poller failed to start: {e}")
+
     realtime.start()
 
     print(f"[Cloud] Truman running on port {port}")
