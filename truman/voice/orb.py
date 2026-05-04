@@ -169,23 +169,45 @@ def _auto_extract_facts(user_input: str) -> None:
         pass
 
 
-_DOC_GROUNDING = """\
-You are reading a document Om uploaded. Rules — follow exactly:
-1. Use ONLY facts from the document below. Zero outside knowledge.
-2. If Om's question isn't answered in the doc, say: "That's not in this document."
-3. Back every claim with a short verbatim quote in "quotes".
-4. Format your answer as: Answer → Key points (with quotes) → What's missing (if relevant).
-5. Never guess or personify ("I think", "probably"). Only what the document states.
+def _parse_multimodal_input(raw: str):
+    """
+    Extract image attach_ids and return clean user_input.
+    Images: attach_id extracted, marker stripped (bytes sent live to LLM via content blocks).
+    Files (PDF/DOCX etc): attach_id extracted, text content kept inline for LLM.
+    Returns (image_ids: list[str], clean_input: str)
+    """
+    import re as _re
+    _attach_pat = _re.compile(r'\[(Image|File):\s*([^|\]]+?)\|attach:([a-f0-9]+)\]', _re.I)
+    parts = raw.split('\n---\n') if '\n---\n' in raw else [raw]
+    image_ids = []
+    clean_parts = []
+    for part in parts:
+        part = part.strip()
+        m = _attach_pat.search(part)
+        if m:
+            kind = m.group(1).lower()
+            aid  = m.group(3)
+            if kind == 'image':
+                image_ids.append(aid)
+                # drop image description — live bytes sent via content blocks
+            else:
+                # file: keep extracted text, strip just the marker tag
+                text_after = part[m.end():].strip()
+                fname = m.group(2).strip()
+                if text_after:
+                    clean_parts.append(f"[File: {fname}]\n{text_after}")
+        else:
+            if part:
+                clean_parts.append(part)
+    clean_input = '\n\n'.join(clean_parts).strip() or 'analyze this'
+    return image_ids, clean_input
 
-DOCUMENT:
-{doc_content}
-
-OM ASKS: {user_question}"""
 
 @app.route("/api/chat", methods=["POST"])
 def api_chat():
     from flask import request
     import concurrent.futures
+    import re as _re
     data = request.get_json(silent=True) or {}
     user_input = (data.get("message") or "").strip()
     session_id = (data.get("session_id") or "default").strip()
@@ -193,43 +215,17 @@ def api_chat():
     if not user_input:
         return jsonify({"error": "empty message"}), 400
 
-    # ── Anti-hallucination: wrap doc/image messages with grounding template ──
-    import re as _re
-    _file_pat = _re.compile(r"^\[File:\s*(.+?)\]\n(.+)", _re.DOTALL)
-    _img_pat  = _re.compile(r"^\[Image:\s*(.+?)\]\n(.+)", _re.DOTALL)
-    # Multi-file: user question + file blocks separated by ---
-    if "\n---\n" in user_input:
-        parts   = user_input.split("\n---\n")
-        # first part may be user question or first file block
-        q_parts = []; f_parts = []
-        for p in parts:
-            if _file_pat.match(p) or _img_pat.match(p):
-                f_parts.append(p)
-            else:
-                q_parts.append(p)
-        user_question = "\n".join(q_parts).strip() or "analyze this"
-        doc_content   = "\n\n---\n\n".join(f_parts)
-        user_input = _DOC_GROUNDING.format(doc_content=doc_content, user_question=user_question)
-        if not pool_hint:
-            pool_hint = "docs"
-    elif _file_pat.match(user_input):
-        m = _file_pat.match(user_input)
-        fname, content = m.group(1), m.group(2)
-        # check if user typed a question before the file block
-        pre = user_input[:m.start()].strip()
-        user_question = pre or "analyze this document"
-        user_input = _DOC_GROUNDING.format(doc_content=f"[File: {fname}]\n{content}", user_question=user_question)
-        if not pool_hint:
-            pool_hint = "docs"
-    elif _img_pat.match(user_input):
-        if not pool_hint:
-            pool_hint = "vision"
+    # ── Multimodal: extract image attach_ids, clean user input ───────────────
+    image_ids, user_input = _parse_multimodal_input(user_input)
+    if image_ids and not pool_hint:
+        pool_hint = "vision"
+
     try:
         from truman.text.agent import run as agent_run
         from truman.storage import db as _db
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
-            future = ex.submit(agent_run, user_input, "", pool_hint, session_id)
+            future = ex.submit(agent_run, user_input, "", pool_hint, session_id, image_ids)
             try:
                 result = future.result(timeout=45)
             except concurrent.futures.TimeoutError:
@@ -657,30 +653,9 @@ def api_upload():
     except Exception as e:
         return jsonify({"error": f"parse failed: {e}"}), 500
 
+    # Images: bytes are stored above — no describe-once. LLM sees live bytes via content blocks.
     if text == "__IMAGE__":
-        try:
-            import base64
-            from langchain_openai import ChatOpenAI
-            from truman.core.config import NVIDIA_API_KEY, NVIDIA_BASE_URL
-            b64 = base64.b64encode(data).decode()
-            llm = ChatOpenAI(model="meta/llama-4-maverick-17b-128e-instruct",
-                             api_key=NVIDIA_API_KEY, base_url=NVIDIA_BASE_URL)
-            resp = llm.invoke([{
-                "role": "user",
-                "content": [
-                    {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}"}},
-                    {"type": "text", "text": (
-                        "Describe this image with full accuracy. "
-                        "Extract ALL visible text verbatim. "
-                        "List every data point, table, chart, number, name you can see. "
-                        "Do not infer or guess anything not visible. "
-                        "If something is unclear, say so explicitly."
-                    )}
-                ]
-            }])
-            text = resp.content
-        except Exception as e:
-            return jsonify({"error": f"vision failed: {e}"}), 500
+        text = ""
 
     if len(text) > 30000:
         text = text[:30000] + "\n\n[...truncated — document exceeds 30K chars]"

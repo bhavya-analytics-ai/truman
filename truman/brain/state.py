@@ -35,6 +35,9 @@ class TrumanState(TypedDict):
     response:        str             # call_llm
     model_label:     str             # call_llm
 
+    # ── Multimodal ───────────────────────────────────────────────────────────
+    attach_ids:      list            # image attach_ids for this turn
+
     # ── Error tracking ───────────────────────────────────────────────────────
     node_errors:     dict            # {node_name: error_str} — soft failures
     fatal_error:     str             # if whole graph failed

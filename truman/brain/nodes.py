@@ -500,6 +500,15 @@ def call_llm(state: TrumanState) -> dict:
         if node_errors:
             system_content += f"\n\n[INTERNAL: some steps had soft failures: {node_errors}]"
 
+        # inject multimodal system hint when images are attached
+        attach_ids = state.get("attach_ids") or []
+        if attach_ids:
+            try:
+                from truman.multimodal.prompts import get_system_injection
+                system_content += get_system_injection(attach_ids)
+            except Exception:
+                pass
+
         messages = [SystemMessage(content=system_content)]
         for h in chat_history[-16:]:
             if h["role"] == "user":
@@ -507,10 +516,30 @@ def call_llm(state: TrumanState) -> dict:
             else:
                 messages.append(AIMessage(content=h["content"]))
 
-        user_input = state["user_input"]
+        user_input  = state["user_input"]
         tool_result = state.get("tool_result")
         tool_name   = state.get("tool_name")
-        if tool_result:
+
+        # Build final human message — multimodal if images attached
+        if attach_ids:
+            try:
+                from truman.multimodal.loader import load_image_block
+                content_blocks = []
+                for aid in attach_ids:
+                    block = load_image_block(aid)
+                    if block:
+                        content_blocks.append(block)
+                text_part = user_input
+                if tool_result:
+                    text_part += f"\n\n[Tool result from {tool_name}]:\n{tool_result}"
+                content_blocks.append({"type": "text", "text": text_part})
+                messages.append(HumanMessage(content=content_blocks))
+            except Exception as _mm_err:
+                # fallback: send as plain text if multimodal load fails
+                print(f"[call_llm] multimodal fallback: {_mm_err}")
+                txt = user_input + (f"\n\n[Tool result from {tool_name}]:\n{tool_result}" if tool_result else "")
+                messages.append(HumanMessage(content=txt))
+        elif tool_result:
             messages.append(HumanMessage(content=f"{user_input}\n\n[Tool result from {tool_name}]:\n{tool_result}"))
         else:
             messages.append(HumanMessage(content=user_input))

@@ -481,7 +481,7 @@ def _run_legacy(user_input: str, mood: str = "", pool: str | None = None, sessio
 
 import os as _os
 
-def run(user_input: str, mood: str = "", pool: str | None = None, session_id: str = "default") -> dict:
+def run(user_input: str, mood: str = "", pool: str | None = None, session_id: str = "default", attach_ids: list = None) -> dict:
     """
     Primary entry point.
     Tries LangGraph brain loop first (ENABLE_LANGGRAPH=1, default on).
@@ -493,7 +493,7 @@ def run(user_input: str, mood: str = "", pool: str | None = None, session_id: st
     if use_lg:
         try:
             from truman.brain.loop import run as lg_run
-            return lg_run(user_input, session_id=session_id, pool_hint=pool)
+            return lg_run(user_input, session_id=session_id, pool_hint=pool, attach_ids=attach_ids or [])
         except Exception as e:
             print(f"[LangGraph] failed, falling back to legacy: {e}")
             # emit error event so it shows in drawer

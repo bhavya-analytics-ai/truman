@@ -53,7 +53,7 @@ def get_graph():
     return _graph
 
 
-def run(user_input: str, session_id: str = "default", pool_hint: str = None) -> dict:
+def run(user_input: str, session_id: str = "default", pool_hint: str = None, attach_ids: list = None) -> dict:
     """
     Run the LangGraph brain loop.
     Returns same shape as agent.run() — response, model, pool, tool_calls, mood.
@@ -98,6 +98,7 @@ def run(user_input: str, session_id: str = "default", pool_hint: str = None) -> 
         "messages":         [],
         "response":         "",
         "model_label":      "none",
+        "attach_ids":       list(attach_ids or []),
         "node_errors":      {},
         "fatal_error":      "",
     }
