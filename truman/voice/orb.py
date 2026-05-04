@@ -169,6 +169,15 @@ def _auto_extract_facts(user_input: str) -> None:
         pass
 
 
+def _get_session_attachment_summary(session_id: str) -> list:
+    """Return active sticky attachment metadata for the dashboard context tray."""
+    try:
+        from truman.multimodal.session_state import get_session_summary
+        return get_session_summary(session_id)
+    except Exception:
+        return []
+
+
 def _parse_multimodal_input(raw: str):
     """
     Extract image attach_ids and return clean user_input.
@@ -217,7 +226,25 @@ def api_chat():
 
     # ── Multimodal: extract image attach_ids, clean user input ───────────────
     image_ids, user_input = _parse_multimodal_input(user_input)
-    if image_ids and not pool_hint:
+
+    # Sticky attachment layer (L4)
+    try:
+        from truman.multimodal.session_state import (
+            register_attachments, get_sticky_ids, process_commands
+        )
+        # Handle "look again" / "drop file" commands
+        cmd_ack = process_commands(session_id, user_input)
+        # Register any fresh uploads into sticky store
+        if image_ids:
+            register_attachments(session_id, image_ids)
+        # Merge fresh ids with still-active sticky ids (dedup, fresh ids first)
+        sticky = get_sticky_ids(session_id)
+        all_ids = image_ids + [x for x in sticky if x not in image_ids]
+    except Exception as _se:
+        print(f"[orb] session_state error: {_se}")
+        all_ids = image_ids
+
+    if all_ids and not pool_hint:
         pool_hint = "vision"
 
     try:
@@ -225,11 +252,18 @@ def api_chat():
         from truman.storage import db as _db
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
-            future = ex.submit(agent_run, user_input, "", pool_hint, session_id, image_ids)
+            future = ex.submit(agent_run, user_input, "", pool_hint, session_id, all_ids)
             try:
                 result = future.result(timeout=45)
             except concurrent.futures.TimeoutError:
                 return jsonify({"error": "response timed out — try again"}), 504
+
+        # Tick sticky attachment TTL (L4)
+        try:
+            from truman.multimodal.session_state import tick_turn
+            tick_turn(session_id)
+        except Exception:
+            pass
 
         # log to SQLite — map browser UUID → SQLite integer session id
         try:
@@ -259,15 +293,23 @@ def api_chat():
         ).start()
 
         mac_status = "connected" if _mac_ws else "disconnected"
+        # Prepend drop-file ack if a command was processed
+        response_text = result["response"]
+        try:
+            if cmd_ack:
+                response_text = cmd_ack + "\n" + response_text
+        except NameError:
+            pass
         return jsonify({
-            "response":   result["response"],
-            "model":      result["model"],
-            "pool":       result["pool"],
-            "tool_calls": result["tool_calls"],
-            "mood":       result["mood"],
-            "warnings":   result.get("warnings", []),
-            "skill":      result.get("skill", ""),
-            "mac":        mac_status,
+            "response":     response_text,
+            "model":        result["model"],
+            "pool":         result["pool"],
+            "tool_calls":   result["tool_calls"],
+            "mood":         result["mood"],
+            "warnings":     result.get("warnings", []),
+            "skill":        result.get("skill", ""),
+            "mac":          mac_status,
+            "attachments":  _get_session_attachment_summary(session_id),
         })
     except Exception as e:
         import traceback; traceback.print_exc()
@@ -681,6 +723,25 @@ def api_attachment(attach_id):
             headers={"Content-Disposition": f'{disposition}; filename="{att["filename"]}"',
                      "Cache-Control": "public, max-age=31536000"}  # cache 1yr — content never changes
         )
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/attachments/session/<session_id>")
+def api_session_attachments(session_id):
+    """Return active sticky attachments for a session (for dashboard context tray)."""
+    return jsonify({"attachments": _get_session_attachment_summary(session_id)})
+
+
+@app.route("/api/attachments/session/<session_id>/drop", methods=["POST"])
+def api_drop_attachments(session_id):
+    """Drop sticky attachments for a session. Body: {"kind": "all"|"image"|"file"}"""
+    from flask import request as _req
+    kind = (_req.get_json(silent=True) or {}).get("kind", "all")
+    try:
+        from truman.multimodal.session_state import clear_attachments
+        n = clear_attachments(session_id, kind)
+        return jsonify({"dropped": n})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
