@@ -37,10 +37,20 @@ function startClient() {
       "--no-first-run",
     ],
   };
-  // Only override executablePath if explicitly set — otherwise let puppeteer
-  // use its own bundled Chromium (works on Railway without snap deps)
+  // Use puppeteer's bundled Chrome — avoids /usr/bin/chromium-browser snap wrapper on Railway
   if (process.env.CHROMIUM_PATH) {
     puppeteerArgs.executablePath = process.env.CHROMIUM_PATH;
+  } else {
+    try {
+      const puppeteer = require("puppeteer");
+      const execPath = puppeteer.executablePath();
+      if (execPath) {
+        puppeteerArgs.executablePath = execPath;
+        console.log("[WA Bridge] Using puppeteer bundled Chrome:", execPath);
+      }
+    } catch (e) {
+      console.log("[WA Bridge] puppeteer not installed, using whatsapp-web.js default");
+    }
   }
 
   _client = new Client({
