@@ -18,7 +18,7 @@ const qrcode  = require("qrcode-terminal");
 const express = require("express");
 const path    = require("path");
 
-const PORT        = parseInt(process.env.WA_BRIDGE_PORT || "3099");
+const PORT        = parseInt(process.env.PORT || process.env.WA_BRIDGE_PORT || "3099");
 const DATA_DIR    = process.env.WA_SESSION_DIR || "/data/whatsapp-session";
 const READY_TIMEOUT = 60_000; // ms to wait for READY before marking DOWN
 
