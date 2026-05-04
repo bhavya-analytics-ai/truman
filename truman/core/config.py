@@ -38,7 +38,7 @@ POOL_REASONING= os.getenv("POOL_REASONING","nvidia:moonshotai/kimi-k2-thinking,n
 POOL_CREATIVE = os.getenv("POOL_CREATIVE", "nvidia:moonshotai/kimi-k2-thinking,nvidia:meta/llama-3.3-70b-instruct")
 POOL_DESIGN   = os.getenv("POOL_DESIGN",   "nvidia:moonshotai/kimi-k2-thinking,nvidia:qwen/qwen3-coder-480b-a35b-instruct")
 POOL_DOCS     = os.getenv("POOL_DOCS",     "nvidia:meta/llama-4-maverick-17b-128e-instruct,nvidia:meta/llama-3.3-70b-instruct,nvidia:moonshotai/kimi-k2-instruct")
-POOL_VISION   = os.getenv("POOL_VISION",   "nvidia:meta/llama-4-maverick-17b-128e-instruct")
+POOL_VISION   = os.getenv("POOL_VISION",   "nvidia:meta/llama-3.2-90b-vision-instruct,nvidia:meta/llama-4-scout-17b-16e-instruct,nvidia:meta/llama-4-maverick-17b-128e-instruct")
 POOL_FAST     = os.getenv("POOL_FAST",     "nvidia:meta/llama-3.1-8b-instruct,nvidia:nvidia/llama-3.1-nemotron-nano-8b-v1,nvidia:stepfun-ai/step-3.5-flash")
 POOL_AGENTIC  = os.getenv("POOL_AGENTIC",  "nvidia:qwen/qwen3-coder-480b-a35b-instruct,nvidia:moonshotai/kimi-k2-instruct,nvidia:meta/llama-3.3-70b-instruct")
 

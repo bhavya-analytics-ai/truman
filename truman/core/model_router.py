@@ -34,7 +34,9 @@ MODEL_INFO: dict[str, str] = {
     "nvidia:stepfun-ai/step-3.5-flash":                 "200B sparse MoE, fast agentic AI",
     "nvidia:qwen/qwen3-coder-480b-a35b-instruct":       "480B/35B active, agentic coding, 256K ctx",
     "nvidia:meta/llama-3.3-70b-instruct":               "70B, strong general + coding, fast",
-    "nvidia:meta/llama-4-maverick-17b-128e-instruct":   "multimodal, 128 MoE, vision capable",
+    "nvidia:meta/llama-3.2-90b-vision-instruct":         "90B, top-tier vision, best image/screenshot accuracy",
+    "nvidia:meta/llama-4-scout-17b-16e-instruct":        "17B MoE, fast vision fallback, newer than maverick",
+    "nvidia:meta/llama-4-maverick-17b-128e-instruct":    "multimodal, 128 MoE, vision capable",
     "nvidia:mistralai/devstral-2-123b-instruct-2512":   "Mistral code model, deep reasoning, 256K ctx",
     # OpenRouter
     "openrouter:deepseek/deepseek-r1:free":             "reasoning, last resort",
@@ -177,7 +179,9 @@ def short_label(slug: str) -> str:
         "stepfun-ai/step-3.5-flash":                 "step-flash",
         "qwen/qwen3-coder-480b-a35b-instruct":       "qwen3-coder",
         "meta/llama-3.3-70b-instruct":               "llama3.3-70b",
-        "meta/llama-4-maverick-17b-128e-instruct":   "llama4-maverick",
+        "meta/llama-3.2-90b-vision-instruct":         "llama3.2-90b-vision",
+        "meta/llama-4-scout-17b-16e-instruct":        "llama4-scout",
+        "meta/llama-4-maverick-17b-128e-instruct":    "llama4-maverick",
         "mistralai/devstral-2-123b-instruct-2512":   "devstral-123b",
     }
     return short.get(model, model.split("/")[-1])
