@@ -427,6 +427,48 @@ ENABLE_MAC_BANNER=1
 
 ---
 
+### 2026-05-04 — Phase 15 channels: WA QR endpoint + Gmail fix + Resend morning brief
+
+**Commit: `254ed2b`**
+
+#### Root causes found
+- **WA QR distorted**: terminal `qrcode-terminal` wraps at 80 chars → unreadable in Railway logs. Multiple QR images stacked on reconnects.
+- **Gmail poller never started**: `ENABLE_GMAIL_POLLING=0` is the code default. On Railway the env var wasn't set. Code was silently not starting — no error, no log line.
+- **Morning brief blocked**: Railway blocks outbound SMTP port 465. `[Errno 101] Network is unreachable`. Can't fix by changing Gmail settings — it's Railway's firewall.
+
+#### Fix 1 — WA Bridge: GET /qr PNG endpoint (`wa-bridge/whatsapp_bridge.js`, `package.json`)
+- Added `qrcode` npm package (PNG generator, not terminal)
+- `_lastQr` stores latest raw QR string on every `qr` event
+- New `GET /qr` endpoint: generates PNG via `qrcodeImage.toBuffer()`, serves with `Cache-Control: no-store`
+- Returns friendly HTML page if already connected or QR not yet ready
+- **How to use:** open `https://your-wa-bridge.railway.app/qr` in any browser → scan with WhatsApp
+
+#### Fix 2 — Morning brief: SMTP → Resend HTTP API (`truman/voice/email_digest.py`, `truman/core/config.py`)
+- Replaced `smtplib.SMTP_SSL(port=465)` with `urllib.request` POST to `https://api.resend.com/emails`
+- Zero new dependencies — uses stdlib `urllib` only
+- `RESEND_API_KEY` env var → set on Railway once
+- `MORNING_EMAIL_FROM` defaults to `Truman <brief@truman.resend.dev>` (Resend default domain, works without custom domain)
+- `MORNING_EMAIL_TO` → Om's email (already set)
+- Free tier: 100 emails/day, no DNS setup needed to start
+
+#### Fix 3 — Gmail SMTP reply: port 465 → STARTTLS 587 (`truman/integrations/gmail_poller.py`)
+- `send_reply()` switched from `SMTP_SSL(port=465)` → `SMTP(port=587)` + `starttls()`
+- Port 587 is not blocked by Railway
+- IMAP reading (`imaplib.IMAP4_SSL`) unchanged — port 993, Railway allows it
+- Better startup log: `[Gmail] ✅ Polling inbox (address) every Ns` so Railway logs confirm it started
+- `ENABLE_GMAIL_POLLING=0` default unchanged — Om sets it to `1` on Railway
+
+#### ENV vars to set on Railway
+```
+RESEND_API_KEY=re_xxxxxxxx    # resend.com → API Keys → Create
+ENABLE_GMAIL_POLLING=1         # activate Gmail triage
+# MORNING_EMAIL_TO should already be set
+```
+
+**Verified:** Python syntax OK on all 3 files. WA /qr endpoint wired and tested locally.
+
+---
+
 ### Phase 14 — Ambient Awareness Layer (Mac + iPhone passive watching)
 
 **Why:** Truman should know what Om is working on WITHOUT Om telling him. No screenshots. Activity log feeds morning brief, sleep correlation, productivity patterns, and brain loop context.
@@ -1073,6 +1115,48 @@ Phone/Browser → Railway (live chat) → Mac syncs every 60s → local SQLite
 - End-to-end multi-device sync test (phone → Railway → Mac pull)
 
 ### Next — Phase 9B / 10 — Agent activity trace + deeper proactivity
+
+---
+
+## Phase 15D — 3-Channel Automation Final (2026-05-04, continued session)
+
+### What changed from Phase 15C
+
+**Gmail — keyword triage → LLM 3-tier classification**
+- Old: hardcoded keyword list (interview, urgent, offer, etc.) — too strict, Om never got pings
+- New: `_classify_email()` in `truman/integrations/gmail_poller.py` calls fast pool with JSON prompt
+- Returns `{"tier": "HIGH"|"MID"|"LOW", "reason": "..."}`
+- HIGH: draft reply + Telegram approval ping (same as before)
+- MID: Telegram FYI summary only (no approval needed) — `_handle_mid_email()` added
+- LOW: silent ignore
+- No keywords. LLM decides importance on every email.
+
+**iMessage — Pushcut DISABLED, Mac AppleScript primary**
+- Decision: Om doesn't keep phone charging → Pushcut Automation Server dies → useless
+- `PUSHCUT_URL` commented out in `.env` — Pushcut NOT used for sending
+- Mac stays open (pmset `sleep 0` + `disksleep 0` + `displaysleep 0` set — battery drains when closed, acceptable)
+- `send_imessage()` now goes direct to AppleScript. No Pushcut fallback needed.
+- iMessage only works when Mac is open. That's the accepted trade-off.
+
+**WhatsApp — incoming message listener added**
+- `client.on("message")` added to `truman/integrations/whatsapp_bridge.js`
+- Skips: `msg.fromMe`, `status@broadcast`, empty body
+- Forwards to `${RAILWAY_URL}/api/boss_message` with `{from, text, source: "whatsapp", extra: {phone, is_group}}`
+- Was outbound-only before. Now bidirectional.
+
+**WA Bridge Railway deploy — Docker fix**
+- Root cause of all Chromium failures: nixpacks installed `/usr/bin/chromium-browser` = snap proxy wrapper → crashes in containers
+- Fix: `wa-bridge/Dockerfile` switched from `ghcr.io/puppeteer/puppeteer:latest` (2.7GB, slow pull) to `node:20-slim` + `apt-get install -y chromium`
+- `CHROMIUM_PATH=/usr/bin/chromium` env var set in Dockerfile — whatsapp_bridge.js uses it directly
+- `PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true` — skips puppeteer bundled download
+- First attempt: `puppeteer/puppeteer:latest` image stuck 8+ min on Railway pull → swapped to slim
+- `wa-bridge/railway.toml`: `builder = "dockerfile"`, `dockerfilePath = "Dockerfile"`, `healthcheckPath = "/health"`
+- Build kicked via `railway up --service WA-Bridge` from `wa-bridge/` directory (force fresh, not cached redeploy)
+- **Status at time of writing: build in progress. QR code scan pending.**
+
+**nixpacks.toml (root)**
+- `providers = ["python"]` — one line. Stops nixpacks from seeing root `package.json` and mixing Node into the Python Railway build.
+- Was causing `ModuleNotFoundError: dotenv` on every Truman Railway deploy.
 
 ---
 
