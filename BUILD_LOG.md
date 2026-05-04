@@ -1073,3 +1073,80 @@ Phone/Browser → Railway (live chat) → Mac syncs every 60s → local SQLite
 - End-to-end multi-device sync test (phone → Railway → Mac pull)
 
 ### Next — Phase 9B / 10 — Agent activity trace + deeper proactivity
+
+---
+
+## Phase 15C — 3-Channel Automation (2026-05-04, commits `7d7d1a2`, `00ff1e7`, `35f160c`, `67ff34e`)
+
+**Goal:** Auto-handle WhatsApp + iMessage + Gmail with Telegram approval flow. No Mac dependency for iMessage/Gmail. Three smart additions: per-contact style learning, quiet-hours queue, auto-trivial replies.
+
+### Code shipped
+
+- `truman/integrations/whatsapp_bridge.js` — Railway-ready: session at `/data/whatsapp-session`, listens on `0.0.0.0:$PORT`, `/health` endpoint, auto-detects Chromium path
+- `truman/integrations/imessage_poller.py` — `send_imessage_pushcut()` added; `send_imessage()` tries Pushcut first then AppleScript fallback
+- `truman/integrations/boss_handler.py` — full rewrite. Smart additions:
+  - **Style learning (A):** `_draft_reply()` pulls last 50 approved replies *to that specific sender*, falls back to 10 generic
+  - **Auto-trivial (F):** `_TRIVIAL_RE` regex matches "ok/got it/thanks/np/lol/👍/etc." — auto-sends without approval, silent Telegram log
+  - **Quiet queue (C):** if `_in_quiet_hours()` (3am–8:50am), saves with status `queued` instead of pinging Telegram. `flush_quiet_queue()` called from proactive 60s tick when quiet hours end
+- `truman/storage/db.py` — `get_approved_boss_replies_for_sender()` + `get_queued_boss_messages()` helpers
+- `truman/scheduling/proactive.py` — wired `flush_quiet_queue()` into 60s tick
+- `truman/core/config.py` — `PUSHCUT_URL`, `WA_BRIDGE_URL`, `SERVICE_TYPE` env vars
+- `start.sh` (NEW) — entry point routes to Truman OR WA bridge based on `SERVICE_TYPE` env
+- `wa-bridge/` (NEW) — Railway worker subdirectory with `index.js` + `package.json` + `railway.toml`
+
+### `.env` updated
+
+```
+PUSHCUT_URL=https://api.pushcut.io/oCUGVyryRGc94qiI8czWONzT/execute?shortcut=Send+iMessage
+ENABLE_BOSS_FLOW=1
+ENABLE_GMAIL_POLLING=1
+ENABLE_IMESSAGE=1
+```
+
+Same vars also set on Railway Truman service via API. Plus `WA_BRIDGE_URL=http://wa-bridge.railway.internal:3099` and `GMAIL_ADDRESS=bhavyapandya005@gmail.com`.
+
+### Pushcut iOS setup (DONE)
+
+- Pushcut Pro **purchased** ($1.99/mo) — needed for Automation Server
+- API key: `oCUGVyryRGc94qiI8czWONzT`
+- iOS Shortcut `Send iMessage` created: takes `Shortcut Input` → splits by `|||` → sends Item 2 to Item 1, Show Compose Sheet OFF
+- Endpoint format: `POST https://api.pushcut.io/v1/execute` with `API-Key` header, body `{"shortcut":"Send iMessage","input":"+1NUMBER|||text"}`
+- Tested: 2 ✓ completed runs in Pushcut log. Works.
+
+### WhatsApp on Railway — UNRESOLVED
+
+- Created Railway service `WA-Bridge` (id `c9fc9b8f-9f1a-4d48-b2c3-dcf66e3f1b61`)
+- Multiple deploys failed — Chromium issue. Nixpacks installed Chromium via apt → resolves to a snap wrapper that can't run in containers. Last attempt: let puppeteer use bundled Chromium (uncommitted change to `whatsapp_bridge.js` removing exec-path detection)
+- **Decision: paused.** WhatsApp bridge stays on Mac (`node truman/integrations/whatsapp_bridge.js`) for now. Switch to Docker-based image or accept Mac-only WhatsApp.
+
+### Pushcut 24/7 limitation — UNDECIDED
+
+- iOS sandbox suspends Pushcut Automation Server when phone not on charger / not in screensaver mode
+- Om's situation: rarely keeps phone plugged in → server will frequently die → curl will fail → Truman falls back to "copy manually" message in Telegram
+- Mac AppleScript fallback in `send_imessage()` covers when Mac is on
+- **Options Om has NOT decided yet:**
+  1. Accept gaps + Mac fallback when Mac on
+  2. Get a spare/old iPhone as dedicated Pushcut server (plug in at home, never touch)
+  3. Switch to paid service (Sendblue ~$100/mo, LoopMessage similar) — too expensive
+  4. Wait for `pypush` v3.0 (currently broken — sending removed during rewrite)
+- $2/mo Pushcut Pro is NOT wasted — it's the cheapest cloud-iMessage path that exists
+- Status: **Om has not committed to a 24/7 strategy yet**
+
+### Gmail status
+
+- `gmail_poller.py` already shipped from earlier. Polls `bhavyapandya005@gmail.com` every 15 min via IMAP. Filters by keyword list (interview, urgent, deadline, offer, etc.)
+- Om has not received any Gmail Telegram pings yet — either no matching emails arrived or keyword list is too strict. To verify: `railway logs --service Truman | grep -i gmail`. If too strict, switch to LLM importance check (no keyword list)
+- He has 10 Gmails — only this one is wired. Others: change `GMAIL_ADDRESS` env var + new app password
+
+### Morning brief — confirmed working
+
+Beth birthday-planning brief delivered May 3 9am ET via Telegram. Phase 4 (load_goals) + Phase 11 (email_digest) chain works.
+
+### Next session resume points
+
+1. **Decide Pushcut 24/7 strategy** (spare iPhone vs accept gaps vs another path)
+2. **WhatsApp Railway:** retry with Docker-based Puppeteer image, OR accept Mac-only
+3. **Gmail tuning:** test with real important email, switch to LLM importance check if keywords too strict
+4. **Test full flow end-to-end:** real iMessage in → Telegram approval → Pushcut send → message arrives
+5. Phase 16 (Ambient Awareness) still next major phase — Pushcut location triggers + HTTP request actions can feed it
+
