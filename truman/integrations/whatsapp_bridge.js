@@ -27,12 +27,27 @@ let _client = null;
 
 // ── Init WhatsApp client ──────────────────────────────────────────────────────
 function startClient() {
+  // On Railway, nixpacks installs Chromium via apt at /usr/bin/chromium
+  // Locally, Puppeteer uses its own bundled Chromium (no executablePath needed)
+  const puppeteerArgs = {
+    headless: true,
+    args: [
+      "--no-sandbox",
+      "--disable-setuid-sandbox",
+      "--disable-dev-shm-usage",
+      "--disable-gpu",
+      "--no-first-run",
+    ],
+  };
+  const chromiumPath = process.env.CHROMIUM_PATH ||
+    ["/usr/bin/chromium", "/usr/bin/chromium-browser"].find(p => {
+      try { require("fs").accessSync(p); return true; } catch { return false; }
+    });
+  if (chromiumPath) puppeteerArgs.executablePath = chromiumPath;
+
   _client = new Client({
     authStrategy: new LocalAuth({ dataPath: DATA_DIR }),
-    puppeteer: {
-      headless: true,
-      args: ["--no-sandbox", "--disable-setuid-sandbox"],
-    },
+    puppeteer: puppeteerArgs,
   });
 
   _client.on("qr", (qr) => {
