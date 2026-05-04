@@ -475,6 +475,147 @@ def call_llm(state: TrumanState) -> dict:
         return {"response": "", "model_label": "none", "node_errors": errs, "fatal_error": str(e)}
 
 
+# ── Node 6b: evaluate_output ─────────────────────────────────────────────────
+def evaluate_output(state: TrumanState) -> dict:
+    """
+    Hybrid evaluator: rule check → conditional LLM → retry on bad.
+    Runs BEFORE save_memory so only the accepted output is stored.
+    ENABLE_EVAL=0 → pass-through, zero overhead.
+    """
+    import os
+    t0 = time.time()
+
+    _SKIP = {"eval_score": "skip", "eval_issues": [], "eval_action": "accept", "eval_type": "none"}
+
+    if os.environ.get("ENABLE_EVAL", "1") != "1":
+        return _SKIP
+
+    # Nothing to evaluate on risk-gate turns
+    if state.get("awaiting_confirm") or not state.get("response"):
+        return _SKIP
+
+    try:
+        from truman.brain.eval import evaluate, build_retry_hint
+        from truman.brain.memory import resolve_memory
+
+        turn_id      = state.get("turn_id", "")
+        user_input   = state["user_input"]
+        response     = state.get("response", "")
+        tool_result  = state.get("tool_result")
+        tool_name    = state.get("tool_name")
+
+        # active_facts — only facts that were in prompt context this turn
+        try:
+            mem_bundle  = resolve_memory(state)
+            active_facts = mem_bundle.get("facts", [])
+        except Exception:
+            active_facts = []
+
+        # ── Evaluate (result frozen by turn_id) ──────────────────────────────
+        result = evaluate(
+            turn_id=turn_id,
+            user_input=user_input,
+            response=response,
+            tool_result=tool_result,
+            tool_name=tool_name,
+            active_facts=active_facts,
+        )
+
+        score     = result["score"]
+        action    = result["action"]
+        issues    = result["issues"]
+        eval_type = result["eval_type"]
+        reason    = result.get("reason", "")
+
+        ms = int((time.time() - t0) * 1000)
+        print(f"[EVAL] score={score}  action={action}  type={eval_type}  issues={issues or 'none'}  reason={reason[:60] if reason else ''}")
+        _t(state, "evaluate_output", "end",
+           summary=f"score={score} action={action}",
+           result=str(issues), duration_ms=ms)
+
+        # ── Log weak as optimization candidate ───────────────────────────────
+        if score == "weak":
+            try:
+                import json as _j, threading
+                from truman.storage import db as _db
+                threading.Thread(
+                    target=_db.log_event_db,
+                    kwargs=dict(
+                        kind="eval_weak", source="evaluate_output",
+                        session_id=state.get("session_id"),
+                        pool=state.get("chosen_pool", ""),
+                        model=state.get("model_label", ""),
+                        elapsed_ms=ms,
+                        status="weak",
+                        detail=_j.dumps({
+                            "issues": issues,
+                            "reason": reason,
+                            "msg":    user_input[:120],
+                        }),
+                        error=None,
+                    ),
+                    daemon=True,
+                ).start()
+            except Exception:
+                pass
+
+        # ── Retry on bad (one retry, frozen hint from this eval snapshot) ────
+        if action == "retry":
+            try:
+                from truman.core.model_router import run_with_pool
+                from truman.core.persona import SYSTEM
+
+                # non-cumulative: build hint only from THIS eval result
+                hint = build_retry_hint(result)
+                print(f"[EVAL] retry firing  hint={hint}")
+
+                # get the existing messages and inject hint (replace, don't append)
+                retry_messages = list(state.get("messages") or [])
+                if retry_messages:
+                    # inject into system message (index 0)
+                    from langchain_core.messages import SystemMessage
+                    orig_sys = retry_messages[0].content if hasattr(retry_messages[0], "content") else ""
+                    # strip any previous eval hint to prevent bloat
+                    import re as _re_eval
+                    orig_sys = _re_eval.sub(r'\[EVAL RETRY\][^\n]*\n?', '', orig_sys)
+                    retry_messages[0] = SystemMessage(content=orig_sys + f"\n{hint}")
+
+                retry_result = run_with_pool(
+                    retry_messages,
+                    pool=state.get("chosen_pool", "general"),
+                    user_message=user_input,
+                )
+                new_response  = retry_result.get("content", response)
+                new_model     = retry_result.get("model", state.get("model_label", ""))
+                retry_ms = int((time.time() - t0) * 1000)
+                print(f"[EVAL] retry done  model={new_model}  latency={retry_ms}ms")
+
+                return {
+                    "response":    new_response,
+                    "model_label": new_model,
+                    "eval_score":  score,
+                    "eval_issues": issues,
+                    "eval_action": action,
+                    "eval_type":   eval_type,
+                }
+            except Exception as retry_err:
+                # retry failed — keep original response, log error
+                print(f"[EVAL] retry failed: {retry_err}")
+
+        return {
+            "eval_score":  score,
+            "eval_issues": issues,
+            "eval_action": action,
+            "eval_type":   eval_type,
+        }
+
+    except Exception as e:
+        _t(state, "evaluate_output", "error", summary=str(e))
+        errs = dict(state.get("node_errors") or {})
+        errs["evaluate_output"] = str(e)
+        return {**_SKIP, "node_errors": errs}
+
+
 # ── Node 7: save_memory ───────────────────────────────────────────────────────
 def save_memory(state: TrumanState) -> dict:
     _t(state, "save_memory", "start", summary="saving turn to Mem0 (background)")

@@ -37,6 +37,12 @@ class TrumanState(TypedDict):
     # ── Multimodal ───────────────────────────────────────────────────────────
     attach_ids:      list            # image attach_ids for this turn
 
+    # ── Evaluation (Phase 5) ─────────────────────────────────────────────────
+    eval_score:  str             # "good" | "weak" | "bad" | "skip"
+    eval_issues: list            # issue codes from rule + LLM layer
+    eval_action: str             # "accept" | "retry"
+    eval_type:   str             # "rule" | "llm" | "none"
+
     # ── Error tracking ───────────────────────────────────────────────────────
     node_errors:     dict            # {node_name: error_str} — soft failures
     fatal_error:     str             # if whole graph failed

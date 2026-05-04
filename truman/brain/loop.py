@@ -10,11 +10,11 @@ TRUMAN CORE FUNCTION:
 
 Node roles:
   CORE   — classify_mood, detect_pool, detect_tool, risk_gate,
-            route_skill, execute_tool, call_llm, save_memory
+            route_skill, execute_tool, call_llm, evaluate_output, save_memory
   SUPPORT— load_memory, load_goals
            (enrich the reply; fail soft; never block the loop)
 
-Sequential graph: mood → memory → pool → tool → llm → save → event
+Sequential graph: mood → memory → pool → tool → llm → eval → save → event
 Each node is isolated, fails soft, errors surface in the events drawer.
 """
 import time
@@ -34,21 +34,23 @@ def _build_graph():
     g.add_node("risk_gate",      nodes.risk_gate)
     g.add_node("route_skill",    nodes.route_skill)
     g.add_node("execute_tool",   nodes.execute_tool)
-    g.add_node("call_llm",       nodes.call_llm)
-    g.add_node("save_memory",    nodes.save_memory)
+    g.add_node("call_llm",        nodes.call_llm)
+    g.add_node("evaluate_output", nodes.evaluate_output)
+    g.add_node("save_memory",     nodes.save_memory)
 
     g.set_entry_point("classify_mood")
-    g.add_edge("classify_mood",  "load_memory")
-    g.add_edge("load_memory",    "load_goals")
-    g.add_edge("load_goals",     "detect_pool")
-    g.add_edge("detect_pool",    "detect_tool")
-    g.add_edge("detect_tool",    "risk_gate")
-    g.add_edge("risk_gate",      "route_skill")
-    # route_skill → execute_tool (if skill ran, execute_tool is a no-op because tool_name is None or skill already filled tool_result)
-    g.add_edge("route_skill",    "execute_tool")
-    g.add_edge("execute_tool",   "call_llm")
-    g.add_edge("call_llm",       "save_memory")
-    g.add_edge("save_memory",    END)
+    g.add_edge("classify_mood",   "load_memory")
+    g.add_edge("load_memory",     "load_goals")
+    g.add_edge("load_goals",      "detect_pool")
+    g.add_edge("detect_pool",     "detect_tool")
+    g.add_edge("detect_tool",     "risk_gate")
+    g.add_edge("risk_gate",       "route_skill")
+    # route_skill → execute_tool (if skill ran, execute_tool is a no-op)
+    g.add_edge("route_skill",     "execute_tool")
+    g.add_edge("execute_tool",    "call_llm")
+    g.add_edge("call_llm",        "evaluate_output")   # eval before save — no bad drafts in memory
+    g.add_edge("evaluate_output", "save_memory")
+    g.add_edge("save_memory",     END)
 
     return g.compile()
 
@@ -110,6 +112,10 @@ def run(user_input: str, session_id: str = "default", pool_hint: str = None, att
         "attach_ids":       list(attach_ids or []),
         "node_errors":      {},
         "fatal_error":      "",
+        "eval_score":       "skip",
+        "eval_issues":      [],
+        "eval_action":      "accept",
+        "eval_type":        "none",
     }
 
     final_state = get_graph().invoke(initial_state)
