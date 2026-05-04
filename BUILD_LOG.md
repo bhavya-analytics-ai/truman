@@ -1532,8 +1532,36 @@ Beth birthday-planning brief delivered May 3 9am ET via Telegram. Phase 4 (load_
 - Gmail: polling `bhavyapandya005@gmail.com`, LLM triage 3-tier (HIGH/MID/LOW)
 - WhatsApp: Railway WA-Bridge connected, bidirectional
 
+### 2026-05-04 (continued) — Bug fixes + privacy + WA volume
+
+**Commits: `9d3229c`, `1ea46b9`, `5c9b070`**
+
+**Bug fixes:**
+- `latin-1` header crash: iPhone filenames with ` ` (narrow no-break space before AM/PM) in Content-Disposition header — sanitized to latin-1
+- Telegram Markdown crash: LLM draft replies with unmatched backticks/asterisks silently killed button feedback — now retries as plain text
+- All boss_handler notifications stripped of Markdown to prevent recurrence
+- WA button silent failure: was bridge QR_PENDING + Markdown crash combo. `_send_fail_reason()` added — now tells Om exactly why + gives QR URL
+
+**Gmail flood fix:**
+- Dropped MID tier entirely (was causing 80+ daily pings)
+- HIGH now requires: real human + specific question at Om + negative consequence if ignored
+- Default LOW on LLM failure (never flood on error)
+- Daily cap: 5/day (`GMAIL_DAILY_CAP` env var). `ENABLE_GMAIL_POLLING=0` on Railway (off until Om re-enables)
+
+**WA Bridge volume:**
+- Root cause of repeated QR: no persistent volume on WA-Bridge service
+- Created `wa-bridge-volume` (5GB) mounted at `/data` on WA-Bridge
+- Session now persists across deploys — scan once, done forever
+- Om needs to scan QR at: `https://wa-bridge-production-7be4.up.railway.app/qr`
+
+**Privacy / storage:**
+- LangSmith OFF: `LANGCHAIN_TRACING_V2=false` (was sending all LLM calls to LangChain servers)
+- Mem0 kept — but `mem_search`/`mem_add`/`_mem_add_smart` now fall through to local SQLite `user_facts` when `MEM0_API_KEY` unset
+- `db.search_facts(query)` added — keyword search on user_facts (local Mem0 replacement)
+- Rule: never remove Railway env vars or code without asking Om first
+
 ### Next
 
+- Om scan WA Bridge QR then re-enable `ENABLE_GMAIL_POLLING=1` after testing
 - Phase 16: Ambient Awareness (location triggers, Pushcut HTTP actions)
-- Or test full 3-channel flow end-to-end with a real message
 
