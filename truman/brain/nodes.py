@@ -44,45 +44,6 @@ def classify_mood(state: TrumanState) -> dict:
         return {"mood": "neutral", "node_errors": errs}
 
 
-# ── Node 2: concept_lookup ────────────────────────────────────────────────────
-def concept_lookup(state: TrumanState) -> dict:
-    """
-    Search the Cognee concept graph for domain knowledge related to user input.
-    Runs only if ENABLE_COGNEE=1. Fails soft — graph continues without it.
-    Also fires a background ingest of the current input to grow the graph.
-    """
-    import os
-    t0 = time.time()
-    if os.environ.get("ENABLE_COGNEE", "1") != "1":
-        _t(state, "concept_lookup", "end", summary="skipped (disabled)")
-        return {}
-    _ui = state["user_input"].strip()
-    _GREETINGS = {"yo", "hey", "hi", "sup", "what's up", "whats up", "yoo", "heyy", "wassup"}
-    _FILE_TOOLS = {"list_mac_dir", "read_mac_file", "search_mac_files", "write_mac_file"}
-    from truman.text.agent import _detect_tool
-    if len(_ui) < 50 or _ui.lower().rstrip("!?.") in _GREETINGS or _detect_tool(_ui) in _FILE_TOOLS:
-        _t(state, "concept_lookup", "end", summary="skipped (short/greeting/file tool)")
-        return {}
-    _t(state, "concept_lookup", "start", summary="searching concept graph")
-    try:
-        from truman.brain.concepts import search_sync, ingest_background
-        concept_ctx = search_sync(state["user_input"], top_k=4)
-        ingest_background(state["user_input"])
-        ms = int((time.time()-t0)*1000)
-        if concept_ctx:
-            existing = state.get("memory_context", "")
-            combined = f"{existing}\n\nCONCEPT GRAPH:\n{concept_ctx}" if existing else f"CONCEPT GRAPH:\n{concept_ctx}"
-            _t(state, "concept_lookup", "end", summary="found concept context", result=concept_ctx[:200], duration_ms=ms)
-            return {"memory_context": combined}
-        _t(state, "concept_lookup", "end", summary="no concept matches", duration_ms=ms)
-        return {}
-    except Exception as e:
-        _t(state, "concept_lookup", "error", summary=str(e))
-        errs = dict(state.get("node_errors") or {})
-        errs["concept_lookup"] = str(e)
-        return {"node_errors": errs}
-
-
 # ── Node 3: load_memory (Mem0 facts) ─────────────────────────────────────────
 def load_memory(state: TrumanState) -> dict:
     t0 = time.time()
@@ -142,52 +103,6 @@ def load_goals(state: TrumanState) -> dict:
         errs = dict(state.get("node_errors") or {})
         errs["load_goals"] = str(e)
         return {"goals_context": "", "node_errors": errs}
-
-
-# ── Node 3c: curiosity ───────────────────────────────────────────────────────
-def curiosity(state: TrumanState) -> dict:
-    """
-    Background curiosity layer — searches Cognee concept graph for context
-    related to active goals. Runs only if ENABLE_CURIOSITY=1 and goals exist.
-    Injects a short 'CURIOSITY:' block into curiosity_context.
-    Fails soft — graph continues without it.
-    """
-    import os
-    t0 = time.time()
-    if os.environ.get("ENABLE_CURIOSITY", "1") != "1":
-        _t(state, "curiosity", "end", summary="skipped (disabled)")
-        return {"curiosity_context": ""}
-    goals_ctx = state.get("goals_context", "")
-    if not goals_ctx:
-        _t(state, "curiosity", "end", summary="skipped (no active goals)")
-        return {"curiosity_context": ""}
-    _ui = state["user_input"].strip()
-    _FILE_TOOLS = {"list_mac_dir", "read_mac_file", "search_mac_files", "write_mac_file"}
-    from truman.text.agent import _detect_tool
-    if len(_ui) < 50 or _detect_tool(_ui) in _FILE_TOOLS:
-        _t(state, "curiosity", "end", summary="skipped (short/file tool)")
-        return {"curiosity_context": ""}
-    _t(state, "curiosity", "start", summary="searching concept graph for goal context")
-    try:
-        from truman.brain.concepts import search_sync
-        lines = [l.lstrip("- ").split(":")[0].strip()
-                 for l in goals_ctx.splitlines() if l.startswith("-")]
-        if not lines:
-            _t(state, "curiosity", "end", summary="no goal titles parsed")
-            return {"curiosity_context": ""}
-        query = " ".join(lines[:2])
-        result = search_sync(query, top_k=3)
-        ms = int((time.time()-t0)*1000)
-        if not result:
-            _t(state, "curiosity", "end", summary="no concept matches for goals", duration_ms=ms)
-            return {"curiosity_context": ""}
-        _t(state, "curiosity", "end", summary="curiosity context found", result=result[:200], duration_ms=ms)
-        return {"curiosity_context": f"CURIOSITY (concept graph on your goals):\n{result}"}
-    except Exception as e:
-        _t(state, "curiosity", "error", summary=str(e))
-        errs = dict(state.get("node_errors") or {})
-        errs["curiosity"] = str(e)
-        return {"curiosity_context": "", "node_errors": errs}
 
 
 # ── Node 3: detect_pool ───────────────────────────────────────────────────────

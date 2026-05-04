@@ -237,9 +237,6 @@ _TOOL_PATTERNS = [
     (re.compile(r"\b(write.*file|save.*file|create.*file)\b", re.I), "write_mac_file"),
     (re.compile(r"\b(what model|which model|show.*model|list.*model|model.*have|available model|model.*pool|show me.*model|what.*model.*have)\b", re.I), "list_models"),
     (re.compile(r"\b(use model|switch.*model|set model|switch to (nemotron|kimi|step|qwen|llama|maverick|devstral)|use (nemotron|kimi|step|qwen|llama|maverick|devstral))\b", re.I), "set_model"),
-    (re.compile(r"\b(pipeline|pipeline mode|double check|3.?stage)\b", re.I), "pipeline_mode"),
-    (re.compile(r"\b(concept|how does.*work|explain.*concept|what.*strategy|concept graph|domain knowledge)\b", re.I), "concept_search"),
-    (re.compile(r"\b(teach you|learn this|add.*concept|store.*knowledge|concept.*ingest)\b", re.I), "concept_ingest"),
     (re.compile(r"\b(add.*goals?|set.*goals?|new goal|want to achieve|want to ship|goal is)\b", re.I), "add_goal"),
     (re.compile(r"\b(list.*goals?|show.*goals?|my goals?|what.*goals?|all.*goals?)\b", re.I), "list_goals"),
     (re.compile(r"\b(complete.*goals?|done.*goals?|finished.*goals?|mark.*done|shipped.*goals?)\b", re.I), "complete_goal"),
@@ -290,8 +287,6 @@ def _extract_arg(message: str, tool_name: str) -> dict:
     if tool_name == "set_model":
         m = re.search(r"(?:use|switch to|set model to)\s+(\w[\w\-\.]*)", msg, re.I)
         return {"model_slug": m.group(1) if m else msg}
-    if tool_name == "pipeline_mode":
-        return {"request": msg, "pool": detect_pool(msg)}
     if tool_name == "list_mac_dir":
         # 1. absolute/home path explicitly mentioned
         path_m = re.search(r"(~\/[\w/\.\-~ ]+|\/[\w/\.\-~ ]+)", msg, re.I)
@@ -310,11 +305,6 @@ def _extract_arg(message: str, tool_name: str) -> dict:
     if tool_name in ("read_mac_file", "search_mac_files", "write_mac_file"):
         path_m = re.search(r"(?:file|path|at|in|under)?\s*([\~/][\w/\.\-~]+)", msg, re.I)
         return {"path": path_m.group(1).strip() if path_m else "~"}
-    if tool_name == "concept_search":
-        q = re.sub(r"^(concept|how does|explain|what.*strategy)\s*", "", msg, flags=re.I).strip()
-        return {"query": q or msg}
-    if tool_name == "concept_ingest":
-        return {"text": msg}
     if tool_name == "add_goal":
         title = re.sub(r"^(add.*goal|set.*goal|new goal|my goal is|i want to|goal is)\s*[:\-]?\s*", "", msg, flags=re.I).strip()
         return {"title": title or msg, "description": ""}

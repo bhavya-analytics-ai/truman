@@ -11,14 +11,14 @@ RISK_TIERS: dict[str, list[str]] = {
     "safe": [
         "web_search", "get_weather", "recall", "list_goals", "list_models",
         "list_reminders", "search_history", "recent_conversations",
-        "concept_search", "list_mac_dir", "search_mac_files", "read_mac_file",
+        "list_mac_dir", "search_mac_files", "read_mac_file",
     ],
     "caution": [
         "set_reminder", "add_goal", "complete_goal", "drop_goal",
-        "concept_ingest", "remember", "update_pref", "log_sleep",
+        "remember", "update_pref", "log_sleep",
     ],
     "risky": [
-        "write_mac_file", "set_model", "pipeline_mode",
+        "write_mac_file", "set_model",
     ],
 }
 

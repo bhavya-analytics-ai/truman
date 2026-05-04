@@ -65,13 +65,11 @@ def get_llm(temperature: float = 0.7, json_mode: bool = False):
 # Set these in Railway env panel — defaults safe for production
 import os as _os
 _os.environ.setdefault("ENABLE_LANGGRAPH",   "1")
-_os.environ.setdefault("ENABLE_COGNEE",      "1")
 _os.environ.setdefault("ENABLE_MCP",         "1")
 _os.environ.setdefault("ENABLE_MCP_FILES",   "1")
 _os.environ.setdefault("ENABLE_MCP_WEB",     "1")
 _os.environ.setdefault("ENABLE_MCP_GITHUB",  "1")
 _os.environ.setdefault("ENABLE_GOALS",       "1")
-_os.environ.setdefault("ENABLE_CURIOSITY",   "1")
 _os.environ.setdefault("ENABLE_RISK_GATE",   "1")
 _os.environ.setdefault("ENABLE_PROACTIVE",     "1")
 _os.environ.setdefault("ENABLE_MORNING_EMAIL", "1")

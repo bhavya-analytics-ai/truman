@@ -11,7 +11,7 @@ TRUMAN CORE FUNCTION:
 Node roles:
   CORE   — classify_mood, detect_pool, detect_tool, risk_gate,
             route_skill, execute_tool, call_llm, save_memory
-  SUPPORT— concept_lookup, load_memory, load_goals, curiosity
+  SUPPORT— load_memory, load_goals
            (enrich the reply; fail soft; never block the loop)
 
 Sequential graph: mood → memory → pool → tool → llm → save → event
@@ -27,10 +27,8 @@ def _build_graph():
     g = StateGraph(TrumanState)
 
     g.add_node("classify_mood",  nodes.classify_mood)
-    g.add_node("concept_lookup", nodes.concept_lookup)
     g.add_node("load_memory",    nodes.load_memory)
     g.add_node("load_goals",     nodes.load_goals)
-    g.add_node("curiosity",      nodes.curiosity)
     g.add_node("detect_pool",    nodes.detect_pool)
     g.add_node("detect_tool",    nodes.detect_tool)
     g.add_node("risk_gate",      nodes.risk_gate)
@@ -40,11 +38,9 @@ def _build_graph():
     g.add_node("save_memory",    nodes.save_memory)
 
     g.set_entry_point("classify_mood")
-    g.add_edge("classify_mood",  "concept_lookup")
-    g.add_edge("concept_lookup", "load_memory")
+    g.add_edge("classify_mood",  "load_memory")
     g.add_edge("load_memory",    "load_goals")
-    g.add_edge("load_goals",     "curiosity")
-    g.add_edge("curiosity",      "detect_pool")
+    g.add_edge("load_goals",     "detect_pool")
     g.add_edge("detect_pool",    "detect_tool")
     g.add_edge("detect_tool",    "risk_gate")
     g.add_edge("risk_gate",      "route_skill")
@@ -100,7 +96,6 @@ def run(user_input: str, session_id: str = "default", pool_hint: str = None, att
         "mood":             "neutral",
         "memory_context":   "",
         "goals_context":    "",
-        "curiosity_context":  "",
         "risk_tier":          "safe",
         "pending_action_id":  None,
         "awaiting_confirm":   False,

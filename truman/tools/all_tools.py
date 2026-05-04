@@ -336,42 +336,6 @@ def set_model(model_slug: str) -> str:
 
 
 @tool
-def pipeline_mode(request: str, pool: str = "coding") -> str:
-    """Run a high-stakes task through the 3-stage pipeline: deepseek-v3.2 reasons → pool model generates → glm-4.7 reviews. Use when Om says 'pipeline this', 'use pipeline', 'double check', or for complex code/architecture tasks. Pool options: coding, creative, design, docs, general, reasoning."""
-    from truman.core.model_router import run_pipeline
-    pool = pool.lower().strip() or "coding"
-    result = run_pipeline(request, pool=pool)
-    output = result["content"]
-    stages = result.get("pipeline_stages", [])
-    if stages:
-        used = " → ".join(s["model"].split("/")[-1].split(":")[0] for s in stages)
-        output = f"[pipeline: {used}]\n\n{output}"
-    return output
-
-
-@tool
-def concept_search(query: str) -> str:
-    """Search Truman's concept graph for domain knowledge — relationships between ideas, strategies, patterns. Use when Om asks about how something works conceptually, wants to understand connections, or asks about a domain like forex, seacap, trading. Different from recall which finds facts — this finds relationships."""
-    try:
-        from truman.brain.concepts import search_sync
-        result = search_sync(query, top_k=5)
-        return result if result else "nothing in concept graph yet for that — it grows over time as we talk."
-    except Exception as e:
-        return f"concept graph unavailable: {e}"
-
-
-@tool
-def concept_ingest(text: str) -> str:
-    """Add important knowledge to Truman's concept graph — domain knowledge, strategies, how something works. Use when Om shares expertise, explains a strategy, or teaches Truman about a domain. This builds the world model."""
-    try:
-        from truman.brain.concepts import ingest
-        ok = ingest(text)
-        return "added to concept graph." if ok else "couldn't add to concept graph right now."
-    except Exception as e:
-        return f"concept graph write failed: {e}"
-
-
-@tool
 def add_goal(title: str, description: str = "") -> str:
     """Add a new active goal for Om — something he wants to accomplish. Use when Om says 'I want to', 'my goal is', 'add a goal', 'remember I need to ship X'. Stores it persistently and injects into every future session."""
     from truman.storage.db import add_goal as _add
@@ -561,6 +525,6 @@ def delete_rule(rule_id: int) -> str:
 
 TOOLS = [web_search, get_weather, remember, recall, set_reminder, list_reminders,
          search_history, recent_conversations, read_mac_file, list_mac_dir, search_mac_files,
-         write_mac_file, list_models, set_model, pipeline_mode, concept_search, concept_ingest,
+         write_mac_file, list_models, set_model,
          add_goal, list_goals, complete_goal, drop_goal, update_pref, log_sleep,
          add_rule, list_rules, delete_rule]
