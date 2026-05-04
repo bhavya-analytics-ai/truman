@@ -102,9 +102,9 @@ def handle_incoming(sender: str, text: str, source: str = "whatsapp", extra: dic
         if ok:
             db.set_boss_status(msg_id, "auto_approved")
             send_message(
-                f"🤖 *Auto-replied to {sender}* ({source})\n"
-                f"Their: _{text[:80]}_\n"
-                f"Sent: `{draft}`"
+                f"🤖 Auto-replied to {sender} ({source})\n"
+                f"Their: {text[:80]}\n"
+                f"Sent: {draft}"
             )
             return {"status": "auto_sent", "msg_id": msg_id, "draft": draft}
         # If send failed, fall through to normal approval flow
@@ -186,7 +186,8 @@ def execute_approval(msg_id: int) -> str:
     ok = _execute_send(source, sender, extra, draft)
 
     if ok:
-        send_message(f"✅ *Sent to {sender}* ({source})\n\n`{draft}`")
+        # No markdown — draft might have backticks or asterisks
+        send_message(f"✅ Sent to {sender} ({source})\n\n{draft}")
         # Increment VIP approval count for iMessage auto-reply tier
         if source == "imessage":
             handle = extra.get("handle") or sender
@@ -195,7 +196,8 @@ def execute_approval(msg_id: int) -> str:
             except Exception:
                 pass
     else:
-        send_message(f"⚠️ Send failed — copy manually:\n\n`{draft}`")
+        reason = _send_fail_reason(source)
+        send_message(f"⚠️ Send failed ({source})\n{reason}\n\nDraft:\n{draft}")
 
     return draft
 
@@ -332,6 +334,26 @@ def _draft_reply(sender: str, text: str) -> str:
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _send_fail_reason(source: str) -> str:
+    """Return a human-readable reason why a send failed, with next steps."""
+    if source == "whatsapp":
+        try:
+            from truman.integrations.whatsapp_bridge import bridge_state
+            state = bridge_state()
+            if state == "QR_PENDING":
+                return "WA Bridge needs re-scan. Open: https://wa-bridge-production-7be4.up.railway.app/qr — scan QR in WhatsApp → Linked Devices"
+            if state == "UNREACHABLE":
+                return "WA Bridge is down on Railway. Check WA-Bridge service logs."
+            return f"WA Bridge error (state: {state})"
+        except Exception as e:
+            return f"WA Bridge unreachable: {e}"
+    if source == "imessage":
+        return "Mac is offline or iMessage is closed. Open the Mac and try again."
+    if source == "gmail":
+        return "Gmail SMTP error. Check GMAIL_APP_PASSWORD env var."
+    return "Unknown send error."
+
 
 def _extract_phone(sender: str) -> str | None:
     """Try to extract a phone number from a sender string."""

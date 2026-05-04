@@ -28,15 +28,14 @@ _ADDRESS  = os.getenv("GMAIL_ADDRESS", os.getenv("MORNING_EMAIL_FROM", ""))
 _PASSWORD = os.getenv("GMAIL_APP_PASSWORD", "")
 _INTERVAL = int(os.getenv("GMAIL_POLL_INTERVAL_S", "900"))  # 15 min default
 
-_KEYWORDS = [kw.strip().lower() for kw in os.getenv(
-    "GMAIL_IMPORTANT_KEYWORDS",
-    "interview,application,offer,urgent,action required,deadline,follow up,follow-up,"
-    "rejected,accepted,invitation,schedule,hiring,opportunity,congratulations,decision"
-).split(",") if kw.strip()]
-
 _seen_ids: set = set()
 _lock = threading.Lock()
 _started = False
+
+# Daily cap — prevents notification flood if inbox has many important-looking emails
+_DAILY_CAP   = int(os.getenv("GMAIL_DAILY_CAP", "5"))    # max pings per calendar day
+_daily_count  = 0
+_daily_date   = ""   # YYYY-MM-DD of last reset
 
 
 # ── IMAP helpers ──────────────────────────────────────────────────────────────
@@ -54,20 +53,25 @@ def _decode_str(raw) -> str:
     return " ".join(out)
 
 
-def _is_important(subject: str, sender: str) -> bool:
-    """Cheap keyword pre-filter — used as fallback when LLM check fails."""
-    target = (subject + " " + sender).lower()
-    return any(kw in target for kw in _KEYWORDS)
-
-
 def _classify_email(subject: str, sender: str, body: str) -> dict:
     """
-    LLM-based 3-tier importance classifier.
-    Returns {"tier": "HIGH"|"MID"|"LOW", "summary": "1-line summary"}
+    Strict LLM classifier. Returns {"tier": "HIGH"|"LOW", "summary": "..."}
 
-    HIGH = needs Om's reply (interview invite, urgent question, offer, action required)
-    MID  = informational, worth notifying (rejection, meeting reminder, status update, payment)
-    LOW  = ignore (newsletter, promo, automated digest, social notification)
+    HIGH = something truly unusual or requiring Om's real decision:
+      - Direct personal question / request from a real human Om knows
+      - Job offer, interview invite, time-sensitive opportunity
+      - Legal / financial / compliance notice requiring action
+      - Account security alert (login attempt, password reset not by Om)
+      - Something that has a real negative consequence if ignored
+    LOW = everything else:
+      - Newsletters, marketing, promos, social media
+      - Receipts, invoices, shipping updates
+      - Meeting reminders, calendar invites from services
+      - Status updates, reports, digests
+      - Any automated / noreply email
+      - Anything that does NOT require Om to personally respond
+
+    When in doubt → LOW. Only flag the genuinely unusual stuff.
     """
     try:
         from truman.core.model_router import run_with_pool
@@ -75,34 +79,36 @@ def _classify_email(subject: str, sender: str, body: str) -> dict:
         import json as _json
 
         system = (
-            "You are an email triage assistant for Om. Classify each email into one tier:\n"
-            "  HIGH — needs reply or immediate attention (interview invite, urgent question, "
-            "         job offer, action required from Om, personal message from a real person)\n"
-            "  MID  — informational, worth a notification but no reply needed (rejection notice, "
-            "         meeting reminder/calendar invite, status update, receipt, payment, "
-            "         account alert, important automated email)\n"
-            "  LOW  — newsletter, marketing, promo, social media notification, generic digest, spam\n"
-            "Return ONLY JSON: {\"tier\":\"HIGH|MID|LOW\",\"summary\":\"one-line summary under 80 chars\"}"
+            "You are a strict email filter for Om Pandya (MS student, early-career professional). "
+            "Flag ONLY emails that require his personal attention — not automated systems, not newsletters.\n\n"
+            "HIGH (flag it) — ALL of these must be true:\n"
+            "  1. Sent by a real human (not noreply@, not automated)\n"
+            "  2. Contains a specific question or request directed at Om personally\n"
+            "  3. Will have a real negative consequence if Om ignores it for 24h\n"
+            "  Examples: recruiter asking for availability, professor with urgent question, "
+            "  bank fraud alert, legal notice, job offer with response deadline, "
+            "  colleague asking for something specific\n\n"
+            "LOW (ignore) — anything else:\n"
+            "  Receipts, shipping, newsletters, promos, meeting reminders, social notifications, "
+            "  automated reports, LinkedIn/Indeed job alerts, account confirmations, "
+            "  calendar invites from services, any mass/bulk email\n\n"
+            "Return ONLY JSON: {\"tier\":\"HIGH|LOW\",\"summary\":\"one-line reason under 60 chars\"}"
         )
-        user = f"From: {sender}\nSubject: {subject}\n\nBody:\n{body[:1500]}"
+        user = f"From: {sender}\nSubject: {subject}\n\nBody:\n{body[:1200]}"
         msgs = [SystemMessage(content=system), HumanMessage(content=user)]
         result = run_with_pool(msgs, pool="fast", user_message=subject)
         content = (result.get("content") or "").strip()
-        # Strip markdown fencing if any
         if content.startswith("```"):
             content = content.strip("`").lstrip("json").strip()
         data = _json.loads(content)
         tier = data.get("tier", "LOW").upper()
-        if tier not in ("HIGH", "MID", "LOW"):
+        if tier not in ("HIGH", "LOW"):
             tier = "LOW"
         return {"tier": tier, "summary": data.get("summary", "")[:140]}
     except Exception as e:
-        print(f"[Gmail] LLM classify failed ({e}) — falling back to keyword check")
-        # Fallback: keyword match → HIGH if matches, LOW otherwise
-        return {
-            "tier": "HIGH" if _is_important(subject, sender) else "LOW",
-            "summary": subject[:80],
-        }
+        print(f"[Gmail] LLM classify failed ({e}) — defaulting LOW")
+        # Strict fallback: default LOW on failure (never flood on error)
+        return {"tier": "LOW", "summary": subject[:80]}
 
 
 def _extract_body(msg_obj) -> str:
@@ -130,6 +136,21 @@ def _extract_body(msg_obj) -> str:
     return body[:3000]
 
 
+def _check_daily_cap() -> bool:
+    """Returns True if we can still send a notification today (under daily cap)."""
+    global _daily_count, _daily_date
+    import datetime
+    today = datetime.date.today().isoformat()
+    with _lock:
+        if _daily_date != today:
+            _daily_count = 0
+            _daily_date  = today
+        if _daily_count >= _DAILY_CAP:
+            return False
+        _daily_count += 1
+        return True
+
+
 def _poll_once():
     if not _ADDRESS or not _PASSWORD:
         return
@@ -155,39 +176,27 @@ def _poll_once():
             raw = msg_data[0][1]
             msg_obj = email.message_from_bytes(raw)
 
-            subject     = _decode_str(msg_obj.get("Subject", "(no subject)")).strip()
-            sender      = _decode_str(msg_obj.get("From", "unknown")).strip()
-            reply_to    = _decode_str(msg_obj.get("Reply-To", sender)).strip()
-            body        = _extract_body(msg_obj)
+            subject  = _decode_str(msg_obj.get("Subject", "(no subject)")).strip()
+            sender   = _decode_str(msg_obj.get("From", "unknown")).strip()
+            reply_to = _decode_str(msg_obj.get("Reply-To", sender)).strip()
+            body     = _extract_body(msg_obj)
 
-            # 3-tier LLM classification: HIGH=draft+approve, MID=summary notify, LOW=ignore
-            cls = _classify_email(subject, sender, body)
+            # Strict 2-tier: HIGH = unusual + needs attention, LOW = ignore
+            cls  = _classify_email(subject, sender, body)
             tier = cls["tier"]
-            if tier == "LOW":
+            if tier != "HIGH":
                 continue
-            if tier == "MID":
-                _handle_mid_email(sender, subject, cls["summary"])
-                continue
-            # HIGH
+
+            # Daily cap — never send more than GMAIL_DAILY_CAP notifications per day
+            if not _check_daily_cap():
+                print(f"[Gmail] Daily cap ({_DAILY_CAP}) reached — skipping {subject[:50]!r}")
+                break
+
             _handle_important_email(uid_str, sender, reply_to, subject, body)
 
         mail.logout()
     except Exception as e:
         print(f"[Gmail] Poll error: {e}")
-
-
-def _handle_mid_email(sender: str, subject: str, summary: str):
-    """MID-tier email: just send Telegram summary, no draft, no buttons."""
-    try:
-        from truman.delivery.telegram import send_message
-        name = sender.split("<")[0].strip().strip('"') or sender
-        send_message(
-            f"📧 *Gmail FYI — {name}*\n"
-            f"_{subject[:80]}_\n\n"
-            f"{summary}"
-        )
-    except Exception as e:
-        print(f"[Gmail] MID notify error: {e}")
 
 
 def _handle_important_email(uid: str, sender: str, reply_to: str, subject: str, body: str):
