@@ -18,8 +18,8 @@ const qrcode  = require("qrcode-terminal");
 const express = require("express");
 const path    = require("path");
 
-const PORT        = 3099;
-const DATA_DIR    = path.join(__dirname, "../../data/wa_session");
+const PORT        = parseInt(process.env.WA_BRIDGE_PORT || "3099");
+const DATA_DIR    = process.env.WA_SESSION_DIR || "/data/whatsapp-session";
 const READY_TIMEOUT = 60_000; // ms to wait for READY before marking DOWN
 
 let _state  = "QR_PENDING";   // QR_PENDING | CONNECTED | DOWN
@@ -130,8 +130,9 @@ app.post("/send", async (req, res) => {
   }
 });
 
-app.listen(PORT, "127.0.0.1", () => {
-  console.log(`[WA Bridge] HTTP server listening on localhost:${PORT}`);
+// Listen on 0.0.0.0 so Railway internal networking can reach this worker service
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`[WA Bridge] HTTP server listening on 0.0.0.0:${PORT}`);
   startClient();
 });
 

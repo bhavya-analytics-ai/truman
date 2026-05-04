@@ -1,48 +1,71 @@
 """
-boss_handler.py — Phase 15: WhatsApp + Gmail + iMessage intake + Telegram approval flow.
+boss_handler.py — Phase 15: All-channel message intake + Telegram approval flow.
 
+Handles messages from ANY contact via WhatsApp, iMessage, or Gmail.
 Flow:
-  WhatsApp   → iPhone Shortcut → POST /api/boss_message
-  Gmail      → gmail_poller polling IMAP
-  iMessage   → imessage_poller polling chat.db (Mac only)
+  WhatsApp   → whatsapp_bridge.js (Railway worker) → POST /api/boss_message
+  iMessage   → iOS 'Receive Message' Shortcut Automation → POST /api/boss_message
+  Gmail      → gmail_poller (5min IMAP poll) → handle_incoming()
 
-  → Truman saves + drafts reply in Om's tone
-  → Telegram fires: [✅ Approve] [✏️ Edit] [⏭ Skip]
+  → Truman saves + drafts reply in Om's tone (per-contact style learning)
+  → Auto-trivial check: if "got it" / "thanks" / social filler → auto-sends, no ask
+  → Quiet-hours check: if 3am–8:50am (or meetings/Focus) → queues, sends after
+  → Telegram: [✅ Approve] [✏️ Edit] [⏭ Skip]
   → Approve:
-      - Gmail:    SMTP auto-send
-      - WhatsApp: whatsapp-web.js bridge auto-send → falls back to shortcuts:// URL
-      - iMessage: AppleScript auto-send
-  → Edit: bot prompts Om to type new reply → re-drafts → re-sends for approval
+      WhatsApp  — whatsapp_bridge auto-send
+      iMessage  — Pushcut webhook → iOS Shortcut auto-send (no Mac)
+      Gmail     — SMTP auto-send
+  → Edit: Om types new reply → re-sends for approval
   → Skip: marks handled silently
 
 Kill switch: ENABLE_BOSS_FLOW=0 (default off — flip to 1 after setup)
-
-iPhone Shortcut setup (Om does once, 2 min):
-  1. Open Shortcuts app → New Shortcut
-  2. Add action: "Receive from Share Sheet" (type: Text)
-  3. Add action: "Get Contents of URL"
-       URL: https://truman-production.up.railway.app/api/boss_message
-       Method: POST
-       Headers: Content-Type: application/json
-       Body: {"from": "Contact Name", "text": "[Shortcut Input]", "source": "whatsapp"}
-  4. Save as "Forward to Truman"
-  Now: long-press any WhatsApp message → Share → Forward to Truman
 """
 
 import os
+import re
 
 _ENABLE = os.getenv("ENABLE_BOSS_FLOW", "0") == "1"
 
-# Track messages waiting for an edit reply: msg_id → telegram chat_id
-# telegram.py sets this when Om taps Edit, boss_handler reads it on next text
-_pending_edits: dict = {}   # msg_id (int) → True
+# msg_id → True: waiting for Om to type a new draft via Telegram
+_pending_edits: dict = {}
 
+# ── Trivial message patterns (auto-send, no approval needed) ──────────────────
+
+_TRIVIAL_RE = re.compile(
+    r"^\s*(ok|okay|got it|gotcha|sure|sounds good|will do|noted|thanks|thank you|"
+    r"thx|ty|no worries|np|no problem|lol|haha|👍|👋|😊|cool|great|perfect|nice|"
+    r"see you|see ya|bye|later|alright|ight)\s*[!.?]?\s*$",
+    re.I,
+)
+
+def _is_trivial(text: str) -> bool:
+    """True if the incoming message needs only a short social reply."""
+    return bool(_TRIVIAL_RE.match(text.strip())) and len(text.strip()) < 60
+
+
+# ── Quiet hours check ────────────────────────────────────────────────────────
+
+def _in_quiet_hours() -> bool:
+    """Reuse proactive.py's quiet-hours logic (reads user_prefs)."""
+    try:
+        from truman.scheduling.proactive import _in_quiet_hours as _qh
+        return _qh()
+    except Exception:
+        import datetime
+        from zoneinfo import ZoneInfo
+        now = datetime.datetime.now(ZoneInfo("America/New_York"))
+        mins = now.hour * 60 + now.minute
+        return 180 <= mins < 530   # 3:00am–8:50am ET fallback
+
+
+# ── Core intake ──────────────────────────────────────────────────────────────
 
 def handle_incoming(sender: str, text: str, source: str = "whatsapp", extra: dict = None) -> dict:
     """
     Called from POST /api/boss_message or directly from pollers.
-    Saves message, drafts reply, pings Telegram with [Approve][Edit][Skip].
-    Returns {"status": "ok"|"disabled", "msg_id": int, "draft": str}
+    Saves message, drafts reply, runs auto-trivial + quiet-queue logic,
+    then pings Telegram with [Approve][Edit][Skip].
+    Returns {"status": "ok"|"disabled"|"queued"|"auto_sent", "msg_id": int, "draft": str}
     """
     if not _ENABLE:
         return {"status": "disabled"}
@@ -53,16 +76,43 @@ def handle_incoming(sender: str, text: str, source: str = "whatsapp", extra: dic
     # 1. Save raw message
     msg_id = db.save_boss_message(source, sender, text, extra=extra or {})
 
-    # 2. Draft reply using LLM in Om's tone
+    # 2. Draft reply — per-contact style learning (last 50 approved replies to this person)
     draft = _draft_reply(sender, text)
     if draft and not draft.startswith("_("):
         db.set_boss_draft(msg_id, draft)
 
-    # 3. Push to Telegram with approve/edit/skip buttons
     source_icon = {"whatsapp": "📱", "gmail": "📧", "imessage": "💬"}.get(source, "📨")
+
+    # 3. Auto-trivial (Smart F): short social messages → auto-send, silent log
+    if _is_trivial(text) and draft and not draft.startswith("_("):
+        ok = _execute_send(source, sender, extra or {}, draft)
+        if ok:
+            db.set_boss_status(msg_id, "auto_approved")
+            send_message(
+                f"🤖 *Auto-replied to {sender}* ({source})\n"
+                f"Their: _{text[:80]}_\n"
+                f"Sent: `{draft}`"
+            )
+            return {"status": "auto_sent", "msg_id": msg_id, "draft": draft}
+        # If send failed, fall through to normal approval flow
+
+    # 4. Quiet queue (Smart C): hold during sleep hours, batch after
+    if _in_quiet_hours():
+        db.set_boss_status(msg_id, "queued")
+        print(f"[Handler] Quiet hours — queued msg #{msg_id} from {sender}")
+        return {"status": "queued", "msg_id": msg_id, "draft": draft}
+
+    # 5. Normal Telegram approval flow
+    _send_approval_request(msg_id, source_icon, source, sender, text, draft)
+    return {"status": "ok", "msg_id": msg_id, "draft": draft}
+
+
+def _send_approval_request(msg_id: int, icon: str, source: str, sender: str, text: str, draft: str):
+    """Fire Telegram notification with Approve / Edit / Skip buttons."""
+    from truman.delivery.telegram import send_message
     preview = text[:400] + ("..." if len(text) > 400 else "")
     tg_text = (
-        f"{source_icon} *{source.title()} — {sender}*\n"
+        f"{icon} *{source.title()} — {sender}*\n"
         f"{'─' * 22}\n"
         f"{preview}\n"
         f"{'─' * 22}\n"
@@ -75,16 +125,37 @@ def handle_incoming(sender: str, text: str, source: str = "whatsapp", extra: dic
     ]]
     send_message(tg_text, buttons)
 
-    return {"status": "ok", "msg_id": msg_id, "draft": draft}
 
+# ── Quiet queue flusher (called from proactive 60s tick) ─────────────────────
+
+def flush_quiet_queue():
+    """
+    Push any queued messages to Telegram now that quiet hours are over.
+    Called from proactive.py's 60s tick.
+    """
+    if _in_quiet_hours():
+        return
+    try:
+        from truman.storage import db
+        queued = db.get_queued_boss_messages()
+        if not queued:
+            return
+        for msg in queued:
+            icon = {"whatsapp": "📱", "gmail": "📧", "imessage": "💬"}.get(msg["source"], "📨")
+            db.set_boss_status(msg["id"], "pending")
+            _send_approval_request(
+                msg["id"], icon, msg["source"], msg["sender"],
+                msg["text"], msg.get("draft_reply") or "(no draft)"
+            )
+        print(f"[Handler] Flushed {len(queued)} queued message(s) to Telegram.")
+    except Exception as e:
+        print(f"[Handler] Queue flush error: {e}")
+
+
+# ── Approval execution ────────────────────────────────────────────────────────
 
 def execute_approval(msg_id: int) -> str:
-    """
-    Called when Om taps [✅ Approve].
-    - Gmail:    SMTP auto-send
-    - WhatsApp: whatsapp-web.js bridge auto-send → shortcut:// fallback → copy-paste fallback
-    - iMessage: AppleScript auto-send
-    """
+    """Called when Om taps [✅ Approve]."""
     from truman.storage import db
     from truman.delivery.telegram import send_message
 
@@ -92,92 +163,78 @@ def execute_approval(msg_id: int) -> str:
     if not msg:
         send_message("_(message not found)_")
         return "_(message not found)_"
+
     db.set_boss_status(msg_id, "approved")
-    draft = msg.get("draft_reply") or "(no draft saved)"
+    draft  = msg.get("draft_reply") or "(no draft saved)"
     source = msg.get("source", "")
     extra  = msg.get("extra", {})
+    sender = msg.get("sender", "")
 
-    if source == "gmail":
-        # ── Gmail: SMTP auto-send ──────────────────────────────────────────
-        to_addr = extra.get("reply_to") or msg.get("sender", "")
-        subject = extra.get("subject", "Re:")
-        try:
-            from truman.integrations.gmail_poller import send_reply
-            ok = send_reply(to_addr, subject, draft)
-            if ok:
-                send_message(f"✅ *Email sent to {to_addr}*\n\n_{draft}_")
-            else:
-                send_message(f"⚠️ Email send failed — copy manually:\n\n`{draft}`")
-        except Exception as e:
-            send_message(f"⚠️ Email error ({e}) — copy manually:\n\n`{draft}`")
+    ok = _execute_send(source, sender, extra, draft)
 
-    elif source == "imessage":
-        # ── iMessage: AppleScript auto-send ───────────────────────────────
-        handle = extra.get("handle") or msg.get("sender", "")
-        try:
-            from truman.integrations.imessage_poller import send_imessage
-            ok = send_imessage(handle, draft)
-            if ok:
-                send_message(f"✅ *iMessage sent to {handle}*\n\n`{draft}`")
-                # Increment VIP count
-                try:
-                    from truman.storage import db as _db
-                    _db.increment_vip_approval_count(handle)
-                except Exception:
-                    pass
-            else:
-                send_message(f"⚠️ iMessage send failed — copy manually:\n\n`{draft}`")
-        except Exception as e:
-            send_message(f"⚠️ iMessage error ({e}) — copy manually:\n\n`{draft}`")
-
-    else:
-        # ── WhatsApp: bridge → shortcut fallback → copy-paste fallback ────
-        phone = extra.get("phone") or _extract_phone(msg.get("sender", ""))
-        sent = False
-
-        if phone:
+    if ok:
+        send_message(f"✅ *Sent to {sender}* ({source})\n\n`{draft}`")
+        # Increment VIP approval count for iMessage auto-reply tier
+        if source == "imessage":
+            handle = extra.get("handle") or sender
             try:
-                from truman.integrations.whatsapp_bridge import send_whatsapp, is_bridge_up
-                if is_bridge_up():
-                    sent = send_whatsapp(phone, draft)
-                    if sent:
-                        send_message(f"✅ *WhatsApp sent to {msg['sender']}*\n\n`{draft}`")
-            except Exception as e:
-                print(f"[Boss] WA bridge error: {e}")
-
-        if not sent:
-            # Fallback: iPhone Shortcut URL (1-tap send)
-            # shortcuts://run-shortcut?name=Send+WA&input=<encoded>
-            import urllib.parse
-            payload  = urllib.parse.quote(f"{phone}|||{draft}" if phone else draft)
-            shortcut_url = f"shortcuts://run-shortcut?name=Send%20WA&input={payload}"
-            send_message(
-                f"📱 *WhatsApp — tap to send:*\n\n`{draft}`\n\n"
-                f"[Open Shortcut]({shortcut_url})\n"
-                f"_(or copy-paste above into WhatsApp manually)_"
-            )
+                db.increment_vip_approval_count(handle)
+            except Exception:
+                pass
+    else:
+        send_message(f"⚠️ Send failed — copy manually:\n\n`{draft}`")
 
     return draft
 
 
+def _execute_send(source: str, sender: str, extra: dict, draft: str) -> bool:
+    """Route the actual send to the right channel. Returns True on success."""
+    if source == "gmail":
+        to_addr = extra.get("reply_to") or sender
+        subject = extra.get("subject", "Re:")
+        try:
+            from truman.integrations.gmail_poller import send_reply
+            return send_reply(to_addr, subject, draft)
+        except Exception as e:
+            print(f"[Handler] Gmail send error: {e}")
+            return False
+
+    elif source == "imessage":
+        handle = extra.get("handle") or sender
+        try:
+            from truman.integrations.imessage_poller import send_imessage
+            return send_imessage(handle, draft)
+        except Exception as e:
+            print(f"[Handler] iMessage send error: {e}")
+            return False
+
+    else:  # whatsapp
+        phone = extra.get("phone") or _extract_phone(sender)
+        if not phone:
+            return False
+        try:
+            from truman.integrations.whatsapp_bridge import send_whatsapp, is_bridge_up
+            if is_bridge_up():
+                return send_whatsapp(phone, draft)
+        except Exception as e:
+            print(f"[Handler] WhatsApp bridge error: {e}")
+        return False
+
+
+# ── Edit flow ────────────────────────────────────────────────────────────────
+
 def execute_edit(msg_id: int) -> None:
-    """
-    Called when Om taps [✏️ Edit].
-    Marks message as waiting for edit — Telegram poller will catch next text
-    from Om and treat it as the new draft.
-    """
+    """Called when Om taps [✏️ Edit]. Next Telegram message = new draft."""
     from truman.delivery.telegram import send_message
     _pending_edits[msg_id] = True
     send_message(
-        f"✏️ *Type your edited reply now.*\n_(Your next message will replace the draft for msg #{msg_id})_"
+        f"✏️ *Type your edited reply now.*\n"
+        f"_(Next message replaces draft for msg #{msg_id})_"
     )
 
 
 def apply_edit(msg_id: int, new_draft: str) -> None:
-    """
-    Called from telegram.py when Om sends a message while a pending edit exists.
-    Saves new draft, re-sends Telegram approval with updated draft.
-    """
+    """Save Om's typed edit and re-fire approval request."""
     _pending_edits.pop(msg_id, None)
     from truman.storage import db
     from truman.delivery.telegram import send_message
@@ -188,9 +245,9 @@ def apply_edit(msg_id: int, new_draft: str) -> None:
         return
     db.set_boss_draft(msg_id, new_draft)
 
-    source_icon = {"whatsapp": "📱", "gmail": "📧", "imessage": "💬"}.get(msg["source"], "📨")
+    icon = {"whatsapp": "📱", "gmail": "📧", "imessage": "💬"}.get(msg["source"], "📨")
     tg_text = (
-        f"{source_icon} *{msg['source'].title()} — {msg['sender']}* _(edited draft)_\n"
+        f"{icon} *{msg['source'].title()} — {msg['sender']}* _(edited draft)_\n"
         f"{'─' * 22}\n"
         f"{msg['text'][:300]}\n"
         f"{'─' * 22}\n"
@@ -205,7 +262,7 @@ def apply_edit(msg_id: int, new_draft: str) -> None:
 
 
 def execute_skip(msg_id: int):
-    """Called when Om taps [⏭ Skip]. Marks handled silently."""
+    """Om tapped [⏭ Skip] — mark handled silently."""
     _pending_edits.pop(msg_id, None)
     from truman.storage import db
     db.set_boss_status(msg_id, "skipped")
@@ -218,26 +275,38 @@ def get_pending_edit_msg_id() -> int | None:
     return None
 
 
-# ── LLM draft ────────────────────────────────────────────────────────────────
+# ── LLM draft — per-contact style learning (Smart A) ─────────────────────────
 
 def _draft_reply(sender: str, text: str) -> str:
-    """Draft a short reply in Om's tone using past approved drafts as style guide."""
+    """
+    Draft a reply in Om's voice.
+    Style learning: pulls last 50 approved replies TO THIS SPECIFIC SENDER first,
+    falls back to last 10 general approved replies if not enough per-contact data.
+    """
     try:
         from truman.core.model_router import run_with_pool
         from langchain_core.messages import HumanMessage, SystemMessage
         from truman.storage import db
 
-        # Pull Om's past approved replies as tone examples (Tone Mirror)
-        examples = db.get_approved_boss_replies(limit=5)
-        style_block = ""
-        if examples:
-            style_block = "\n\nOm's past replies (match this tone exactly):\n" + \
-                          "\n".join(f'- "{r}"' for r in examples)
+        # Per-contact examples (Smart A)
+        contact_examples = db.get_approved_boss_replies_for_sender(sender, limit=50)
+        if len(contact_examples) >= 3:
+            style_block = (
+                f"\n\nOm's past replies to {sender} specifically (match this tone exactly):\n"
+                + "\n".join(f'- "{r}"' for r in contact_examples[:10])
+            )
+        else:
+            # Not enough per-contact data — use general tone
+            general_examples = db.get_approved_boss_replies(limit=10)
+            style_block = ""
+            if general_examples:
+                style_block = "\n\nOm's past replies (match this tone):\n" + \
+                              "\n".join(f'- "{r}"' for r in general_examples)
 
         system = (
             "You are drafting a reply for Om to send to his contact. "
             "Rules: max 2 sentences. lowercase. no greetings. direct. no filler words. "
-            "Sound like a real person, not an AI."
+            "Sound like a real person texting, not an AI."
             + style_block
         )
         user = f'{sender} sent Om:\n"{text}"\n\nWrite Om\'s reply (just the reply text, nothing else):'
@@ -249,10 +318,9 @@ def _draft_reply(sender: str, text: str) -> str:
         return f"_(draft error: {e})_"
 
 
-# ── Helpers ────────────────────────────────────────────────────────────────────
+# ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _extract_phone(sender: str) -> str | None:
     """Try to extract a phone number from a sender string."""
-    import re
     m = re.search(r"\+?\d[\d\s\-().]{7,}\d", sender)
     return m.group(0).replace(" ", "").replace("-", "") if m else None

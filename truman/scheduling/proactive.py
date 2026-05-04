@@ -227,6 +227,13 @@ def start_proactive_push(agent_fn):
                     _web_push("Truman", nudge_text[:120])
                     _push(nudge_text)
 
+                # ── b2. Flush quiet queue when quiet hours end ────────────────
+                try:
+                    from truman.integrations.boss_handler import flush_quiet_queue
+                    flush_quiet_queue()
+                except Exception as e:
+                    print(f"[Proactive] queue flush error: {e}")
+
                 # ── c. Goal nudge at noon — stalled goals only ────────────────
                 if (now.hour == 12 and now.minute <= 2
                         and _fired.get("goal_nudge") != today):

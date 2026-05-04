@@ -29,10 +29,11 @@ import time
 import datetime
 from pathlib import Path
 
-_ENABLE    = os.getenv("ENABLE_IMESSAGE", "0") == "1"
+_ENABLE        = os.getenv("ENABLE_IMESSAGE", "0") == "1"
 _VIP_THRESHOLD = int(os.getenv("IMESSAGE_VIP_THRESHOLD", "0"))
-_DB_PATH   = Path.home() / "Library" / "Messages" / "chat.db"
-_POLL_SECS = 60
+_PUSHCUT_URL   = os.getenv("PUSHCUT_URL", "")        # Pushcut webhook → iOS "Send iMessage" shortcut
+_DB_PATH       = Path.home() / "Library" / "Messages" / "chat.db"
+_POLL_SECS     = 60
 
 # Track which message ROWIDs we've already processed (resets on restart — use DB watermark)
 _seen_rowids: set = set()
@@ -45,16 +46,46 @@ _URGENT_KW = re.compile(
 )
 
 
-# ── AppleScript send ──────────────────────────────────────────────────────────
+# ── Send paths ───────────────────────────────────────────────────────────────
+
+def send_imessage_pushcut(handle: str, text: str) -> bool:
+    """
+    Send iMessage via Pushcut webhook → triggers 'Send iMessage' Shortcut on Om's iPhone.
+    Railway-compatible: no Mac needed. Requires PUSHCUT_URL in env.
+    Pushcut input format: "handle|||text"
+    """
+    if not _PUSHCUT_URL or not handle or not text:
+        return False
+    try:
+        import requests
+        r = requests.post(
+            _PUSHCUT_URL,
+            json={"input": f"{handle}|||{text}"},
+            timeout=10,
+        )
+        ok = r.status_code == 200
+        if not ok:
+            print(f"[iMessage] Pushcut webhook returned {r.status_code}: {r.text[:100]}")
+        return ok
+    except Exception as e:
+        print(f"[iMessage] Pushcut send error: {e}")
+        return False
+
 
 def send_imessage(handle: str, text: str) -> bool:
     """
-    Send an iMessage via AppleScript.
+    Send an iMessage. Tries Pushcut first (Railway-compatible), then AppleScript (Mac only).
     handle — phone (+12223334444) or email (foo@bar.com)
     """
     if not handle or not text:
         return False
-    # Escape double quotes in text
+    # Primary: Pushcut (works on Railway, no Mac required)
+    if _PUSHCUT_URL:
+        ok = send_imessage_pushcut(handle, text)
+        if ok:
+            return True
+        print("[iMessage] Pushcut failed — trying AppleScript fallback")
+    # Fallback: AppleScript (Mac only)
     safe_text = text.replace('"', '\\"')
     script = f'''
 tell application "Messages"
@@ -73,7 +104,7 @@ end tell
             return False
         return True
     except Exception as e:
-        print(f"[iMessage] send error: {e}")
+        print(f"[iMessage] AppleScript send error: {e}")
         return False
 
 

@@ -1212,6 +1212,31 @@ def get_approved_boss_replies(limit: int = 5) -> list:
     return [r[0] for r in rows]
 
 
+def get_approved_boss_replies_for_sender(sender: str, limit: int = 50) -> list:
+    """Per-contact style learning: return Om's approved replies to a specific sender."""
+    with _conn() as c:
+        rows = c.execute(
+            "SELECT draft_reply FROM boss_messages WHERE status = 'approved' "
+            "AND draft_reply IS NOT NULL AND sender = ? ORDER BY id DESC LIMIT ?",
+            (sender, limit)
+        ).fetchall()
+    return [r[0] for r in rows]
+
+
+def get_queued_boss_messages() -> list:
+    """Return messages queued during quiet hours, oldest first."""
+    with _conn() as c:
+        rows = c.execute(
+            "SELECT id, source, sender, text, draft_reply, extra_json FROM boss_messages "
+            "WHERE status = 'queued' ORDER BY id ASC"
+        ).fetchall()
+    return [
+        {"id": r[0], "source": r[1], "sender": r[2], "text": r[3],
+         "draft_reply": r[4], "extra": __import__("json").loads(r[5] or "{}")}
+        for r in rows
+    ]
+
+
 # ── VIP contacts (Phase 15B — iMessage auto-reply) ───────────────────────────
 
 def get_vip_approval_count(identifier: str) -> int:
