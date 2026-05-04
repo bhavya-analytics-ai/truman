@@ -227,15 +227,20 @@ def _handle_important_email(uid: str, sender: str, reply_to: str, subject: str, 
 
 
 def send_reply(to_addr: str, subject: str, body: str) -> bool:
-    """Send a reply via Gmail SMTP. Returns True on success."""
+    """Send a reply via Gmail SMTP STARTTLS port 587 (Railway-compatible). Returns True on success."""
     try:
         msg = MIMEText(body, "plain")
         msg["Subject"] = f"Re: {subject}" if not subject.lower().startswith("re:") else subject
         msg["From"]    = _ADDRESS
         msg["To"]      = to_addr
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as s:
+        # Port 587 + STARTTLS (Railway allows this; port 465 SSL is blocked)
+        with smtplib.SMTP("smtp.gmail.com", 587, timeout=20) as s:
+            s.ehlo()
+            s.starttls()
+            s.ehlo()
             s.login(_ADDRESS, _PASSWORD)
             s.sendmail(_ADDRESS, [to_addr], msg.as_string())
+        print(f"[Gmail] Reply sent to {to_addr}")
         return True
     except Exception as e:
         print(f"[Gmail] SMTP send error: {e}")
@@ -286,13 +291,15 @@ def start():
     """Start background Gmail polling. Call once from proactive.py. Idempotent."""
     global _started
     if not _ENABLE:
+        print("[Gmail] Polling disabled — set ENABLE_GMAIL_POLLING=1 to activate.")
         return
     if not _ADDRESS or not _PASSWORD:
-        print("[Gmail] GMAIL_ADDRESS / GMAIL_APP_PASSWORD not set — polling skipped.")
+        print("[Gmail] GMAIL_ADDRESS / GMAIL_APP_PASSWORD not set — polling skipped. "
+              "Set GMAIL_ADDRESS and GMAIL_APP_PASSWORD env vars on Railway.")
         return
     with _lock:
         if _started:
             return
         _started = True
     threading.Thread(target=_poll_loop, daemon=True, name="gmail-poller").start()
-    print(f"[Gmail] Polling inbox every {_INTERVAL}s → Telegram drafts + replies.")
+    print(f"[Gmail] ✅ Polling inbox ({_ADDRESS}) every {_INTERVAL}s — drafts sent to Telegram.")

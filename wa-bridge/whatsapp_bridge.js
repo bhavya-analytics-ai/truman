@@ -14,7 +14,8 @@
  */
 
 const { Client, LocalAuth } = require("whatsapp-web.js");
-const qrcode  = require("qrcode-terminal");
+const qrcode        = require("qrcode-terminal");
+const qrcodeImage   = require("qrcode");        // PNG generator for /qr endpoint
 const express = require("express");
 const path    = require("path");
 
@@ -22,8 +23,9 @@ const PORT        = parseInt(process.env.PORT || process.env.WA_BRIDGE_PORT || "
 const DATA_DIR    = process.env.WA_SESSION_DIR || "/data/whatsapp-session";
 const READY_TIMEOUT = 60_000; // ms to wait for READY before marking DOWN
 
-let _state  = "QR_PENDING";   // QR_PENDING | CONNECTED | DOWN
-let _client = null;
+let _state   = "QR_PENDING";   // QR_PENDING | CONNECTED | DOWN
+let _client  = null;
+let _lastQr  = null;           // raw QR string — served via GET /qr as PNG
 
 // ── Init WhatsApp client ──────────────────────────────────────────────────────
 function startClient() {
@@ -59,8 +61,9 @@ function startClient() {
   });
 
   _client.on("qr", (qr) => {
-    _state = "QR_PENDING";
-    console.log("[WA Bridge] Scan this QR code in WhatsApp → Linked Devices:");
+    _state  = "QR_PENDING";
+    _lastQr = qr;
+    console.log("[WA Bridge] New QR generated — open /qr in your browser to scan.");
     qrcode.generate(qr, { small: true });
   });
 
@@ -130,6 +133,36 @@ const app = express();
 app.use(express.json());
 
 app.get("/health", (_req, res) => res.json({ ok: true }));
+
+// GET /qr → PNG image of the latest QR code (open in browser to scan with WhatsApp)
+app.get("/qr", async (_req, res) => {
+  if (_state === "CONNECTED") {
+    return res.status(200).send(
+      `<html><body style="background:#0f172a;display:flex;align-items:center;justify-content:center;height:100vh;">
+       <p style="color:#4ade80;font-family:monospace;font-size:2rem;">✅ WhatsApp already connected</p>
+       </body></html>`
+    );
+  }
+  if (!_lastQr) {
+    return res.status(503).send(
+      `<html><body style="background:#0f172a;display:flex;align-items:center;justify-content:center;height:100vh;">
+       <p style="color:#f59e0b;font-family:monospace;font-size:1.5rem;">⏳ QR not yet generated — check back in 10s</p>
+       </body></html>`
+    );
+  }
+  try {
+    const png = await qrcodeImage.toBuffer(_lastQr, {
+      type:          "png",
+      errorCorrectionLevel: "M",
+      margin:        4,
+      color: { dark: "#000000", light: "#ffffff" },
+    });
+    res.set({ "Content-Type": "image/png", "Cache-Control": "no-store" });
+    res.send(png);
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
 
 app.get("/status", (_req, res) => {
   res.json({ ok: _state === "CONNECTED", state: _state });

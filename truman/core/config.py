@@ -101,13 +101,19 @@ WA_BRIDGE_URL = os.getenv("WA_BRIDGE_URL", "http://127.0.0.1:3099")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID   = os.getenv("TELEGRAM_CHAT_ID",   "")
 
-# ── Morning email (Gmail SMTP) — fill in .env ─────────────────────────────────
-# GMAIL_APP_PASSWORD  → Google Account → Security → App Passwords → generate
-# MORNING_EMAIL_FROM  → your Gmail address (sender)
-# MORNING_EMAIL_TO    → where to receive (usually same as FROM)
-GMAIL_APP_PASSWORD  = os.getenv("GMAIL_APP_PASSWORD",  "")
-MORNING_EMAIL_FROM  = os.getenv("MORNING_EMAIL_FROM",  "")
+# ── Morning email (Resend HTTP API — replaces Gmail SMTP which Railway blocks) ─
+# RESEND_API_KEY     → sign up free at resend.com → API Keys → Create → copy key
+# MORNING_EMAIL_FROM → optional, defaults to Truman <brief@truman.resend.dev>
+# MORNING_EMAIL_TO   → where to send the brief (Om's email)
+RESEND_API_KEY      = os.getenv("RESEND_API_KEY",      "")
+MORNING_EMAIL_FROM  = os.getenv("MORNING_EMAIL_FROM",  "Truman <brief@truman.resend.dev>")
 MORNING_EMAIL_TO    = os.getenv("MORNING_EMAIL_TO",    "")
+
+# ── Gmail IMAP polling (Gmail App Password still used for READING inbox) ───────
+# GMAIL_APP_PASSWORD  → Google Account → Security → App Passwords → generate
+# GMAIL_ADDRESS       → your Gmail (falls back to MORNING_EMAIL_FROM if not set)
+GMAIL_APP_PASSWORD  = os.getenv("GMAIL_APP_PASSWORD",  "")
+GMAIL_ADDRESS       = os.getenv("GMAIL_ADDRESS", os.getenv("MORNING_EMAIL_FROM", ""))
 
 # ── Misc ──────────────────────────────────────────────────────────────────────
 os.environ["COGNEE_SKIP_CONNECTION_TEST"] = "true"

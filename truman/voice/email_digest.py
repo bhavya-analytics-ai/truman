@@ -1,29 +1,28 @@
 """
-email_digest.py — Truman morning brief via Gmail HTML email.
+email_digest.py — Truman morning brief via Resend (HTTP API, Railway-compatible).
 
 Sends a beautiful HTML digest at 9am ET. Pulls live data from:
   - sleep_log (last 7 days)
   - goals table (active goals + stall detection)
   - user_prefs (quiet_start/end, brief hour)
-  - Mem0 (top context facts — optional, skipped if slow)
 
-Send via Gmail SMTP App Password (not Om's real password).
+Send via Resend HTTP API (Railway doesn't block HTTP; SMTP port 465 is blocked).
 Kill switch: ENABLE_MORNING_EMAIL=1
+Resend: https://resend.com — free 100 emails/day, one env var: RESEND_API_KEY
 """
 
 import os
-import smtplib
-import ssl
 import datetime
 import traceback
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
+import urllib.request
+import urllib.parse
+import json as _json
 from zoneinfo import ZoneInfo
 
 _ET = ZoneInfo("America/New_York")
 
-GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD", "")
-MORNING_EMAIL_FROM = os.getenv("MORNING_EMAIL_FROM", "")
+RESEND_API_KEY     = os.getenv("RESEND_API_KEY", "")
+MORNING_EMAIL_FROM = os.getenv("MORNING_EMAIL_FROM", "Truman <brief@truman.resend.dev>")
 MORNING_EMAIL_TO   = os.getenv("MORNING_EMAIL_TO",   "")
 
 
@@ -270,35 +269,54 @@ def _focus_card_inner(goals: list, sleep_stats: list) -> str:
 # ── Send ──────────────────────────────────────────────────────────────────────
 
 def send_morning_brief() -> bool:
-    """Build + send the HTML email. Returns True on success."""
+    """Build + send the HTML email via Resend HTTP API. Returns True on success."""
     if os.getenv("ENABLE_MORNING_EMAIL", "1") != "1":
         return False
 
+    _key  = RESEND_API_KEY or os.getenv("RESEND_API_KEY", "")
     _from = MORNING_EMAIL_FROM or os.getenv("MORNING_EMAIL_FROM", "")
     _to   = MORNING_EMAIL_TO   or os.getenv("MORNING_EMAIL_TO", "")
-    _pass = GMAIL_APP_PASSWORD or os.getenv("GMAIL_APP_PASSWORD", "")
 
-    if not all([_from, _to, _pass]):
-        print("[Email] Missing MORNING_EMAIL_FROM / MORNING_EMAIL_TO / GMAIL_APP_PASSWORD — skipping send.")
+    if not _key:
+        print("[Email] RESEND_API_KEY not set — skipping morning brief. "
+              "Sign up at resend.com, get a free API key, add RESEND_API_KEY to Railway.")
+        return False
+    if not _to:
+        print("[Email] MORNING_EMAIL_TO not set — skipping morning brief.")
         return False
 
     try:
-        now   = datetime.datetime.now(_ET)
-        html  = build_html(now)
-        msg   = MIMEMultipart("alternative")
-        msg["Subject"] = f"Truman Brief — {now.strftime('%A, %b %d')}"
-        msg["From"]    = f"Truman <{_from}>"
-        msg["To"]      = _to
-        msg.attach(MIMEText(html, "html"))
+        now     = datetime.datetime.now(_ET)
+        html    = build_html(now)
+        subject = f"Truman Brief — {now.strftime('%A, %b %d')}"
 
-        ctx = ssl.create_default_context()
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=ctx) as server:
-            server.login(_from, _pass)
-            server.sendmail(_from, _to, msg.as_string())
+        payload = _json.dumps({
+            "from":    _from or "Truman <brief@truman.resend.dev>",
+            "to":      [_to],
+            "subject": subject,
+            "html":    html,
+        }).encode("utf-8")
 
-        print(f"[Email] Morning brief sent to {_to}")
+        req = urllib.request.Request(
+            "https://api.resend.com/emails",
+            data    = payload,
+            headers = {
+                "Authorization": f"Bearer {_key}",
+                "Content-Type":  "application/json",
+            },
+            method  = "POST",
+        )
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            body = resp.read().decode("utf-8")
+            data = _json.loads(body)
+            print(f"[Email] Morning brief sent via Resend → id={data.get('id', '?')} to {_to}")
         return True
 
+    except urllib.error.HTTPError as e:
+        err_body = e.read().decode("utf-8", errors="replace")
+        print(f"[Email] Resend HTTP error {e.code}: {err_body}")
+        traceback.print_exc()
+        return False
     except Exception as e:
         print(f"[Email] Send failed: {e}")
         traceback.print_exc()
