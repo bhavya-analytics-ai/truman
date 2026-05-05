@@ -56,6 +56,16 @@ Separate from BUILD_LOG.md intentionally — BUILD_LOG is for product history, t
 - `log_eval()` + `get_eval_summary()` helpers in db.py
 - ENABLE_EVAL=1 kill switch
 
+### Phase 6 — Control Panel (`d46af46`)
+- New tab inside existing `dashboard.html` — no second dashboard, no new pages
+- 6 new endpoints in `orb.py`: `/api/control/flags` (GET + PATCH), `/api/control/pools`, `/api/control/eval`, `/api/control/storage`, `/api/control/status`
+- **Flags tab**: toggle any of 18 ENABLE_* at runtime (os.environ + user_prefs), no restart needed
+- **Pools tab**: 6 pools with primary/fallback model names + full router priority chain (8 rules in order)
+- **Eval tab**: good/weak/bad score distribution, per-pool breakdown, recent bad/weak rows
+- **Storage tab**: all SQLite table row counts + DB file size in MB
+- Auto-refresh every 30s while open, lazy load per tab switch, manual refresh button in footer
+- Zero performance impact on chat — all endpoints are read-only queries, flag PATCH only hits env + user_prefs
+
 ---
 
 ## Notes
