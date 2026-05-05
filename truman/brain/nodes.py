@@ -533,6 +533,28 @@ def evaluate_output(state: TrumanState) -> dict:
            summary=f"score={score} action={action}",
            result=str(issues), duration_ms=ms)
 
+        # ── Log every eval result to eval_log (background) ──────────────────
+        try:
+            import threading
+            from truman.storage.db import log_eval as _log_eval
+            threading.Thread(
+                target=_log_eval,
+                kwargs=dict(
+                    turn_id=turn_id,
+                    session_id=state.get("session_id", ""),
+                    model=state.get("model_label", ""),
+                    pool=state.get("chosen_pool", ""),
+                    score=score,
+                    issues=issues,
+                    reason=reason,
+                    action=action,
+                    retry_fired=0,   # updated below if retry fires
+                ),
+                daemon=True,
+            ).start()
+        except Exception:
+            pass
+
         # ── Log weak as optimization candidate ───────────────────────────────
         if score == "weak":
             try:
@@ -589,6 +611,23 @@ def evaluate_output(state: TrumanState) -> dict:
                 new_model     = retry_result.get("model", state.get("model_label", ""))
                 retry_ms = int((time.time() - t0) * 1000)
                 print(f"[EVAL] retry done  model={new_model}  latency={retry_ms}ms")
+
+                # log retry outcome
+                try:
+                    import threading
+                    from truman.storage.db import log_eval as _log_eval
+                    threading.Thread(
+                        target=_log_eval,
+                        kwargs=dict(
+                            turn_id=turn_id, session_id=state.get("session_id",""),
+                            model=new_model, pool=state.get("chosen_pool",""),
+                            score=score, issues=issues, reason=reason,
+                            action=action, retry_fired=1, score_after="unknown",
+                        ),
+                        daemon=True,
+                    ).start()
+                except Exception:
+                    pass
 
                 return {
                     "response":    new_response,

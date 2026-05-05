@@ -137,6 +137,26 @@ CREATE INDEX IF NOT EXISTS idx_events_date   ON events(date);
 CREATE INDEX IF NOT EXISTS idx_events_kind   ON events(kind);
 CREATE INDEX IF NOT EXISTS idx_events_status ON events(status);
 
+-- ── Eval log (Phase 5 — quality scoring per turn) ────────────────────────────
+CREATE TABLE IF NOT EXISTS eval_log (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    ts          TEXT    NOT NULL,
+    date        TEXT    GENERATED ALWAYS AS (substr(ts, 1, 10)) VIRTUAL,
+    turn_id     TEXT,
+    session_id  TEXT,
+    model       TEXT,
+    pool        TEXT,
+    score       TEXT    NOT NULL,  -- 'good' | 'weak' | 'bad' | 'skip'
+    issues      TEXT,              -- JSON array of issue codes
+    reason      TEXT,
+    action      TEXT,              -- 'accept' | 'retry'
+    retry_fired INTEGER NOT NULL DEFAULT 0,
+    score_after TEXT               -- score after retry (if fired)
+);
+CREATE INDEX IF NOT EXISTS idx_eval_log_date  ON eval_log(date);
+CREATE INDEX IF NOT EXISTS idx_eval_log_score ON eval_log(score);
+CREATE INDEX IF NOT EXISTS idx_eval_log_model ON eval_log(model);
+
 -- ── Episodic memory (daily events from mic/screen/feeds) ──────────────────────
 CREATE TABLE IF NOT EXISTS memory_episodic (
     id         TEXT    PRIMARY KEY,
@@ -1357,3 +1377,55 @@ def is_reply_contact(sender: str, extra: dict = None) -> bool:
         if pattern in name or pattern in phone or pattern in email:
             return True
     return False
+
+
+# ── Eval log (Phase 5 — quality scoring) ─────────────────────────────────────
+
+def log_eval(
+    turn_id:     str,
+    session_id:  str,
+    model:       str,
+    pool:        str,
+    score:       str,
+    issues:      list,
+    reason:      str  = "",
+    action:      str  = "accept",
+    retry_fired: int  = 0,
+    score_after: str  = None,
+) -> None:
+    """Insert one row per turn into eval_log. Fire-and-forget from a thread."""
+    try:
+        with _conn() as c:
+            c.execute(
+                """INSERT INTO eval_log
+                   (ts, turn_id, session_id, model, pool, score, issues, reason,
+                    action, retry_fired, score_after)
+                   VALUES (datetime('now'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    turn_id, session_id, model, pool, score,
+                    json.dumps(issues), reason, action, retry_fired, score_after,
+                ),
+            )
+    except Exception:
+        pass  # eval logging never crashes the system
+
+
+def get_eval_summary(days: int = 7, limit: int = 10) -> list[dict]:
+    """
+    Top recurring issues per model/pool in the last N days.
+    Used for future dashboard + tuning.
+    """
+    try:
+        with _conn() as c:
+            rows = c.execute(
+                """SELECT model, pool, score, issues, COUNT(*) as n
+                   FROM eval_log
+                   WHERE date >= date('now', ?)
+                   GROUP BY model, pool, score, issues
+                   ORDER BY n DESC
+                   LIMIT ?""",
+                (f"-{days} days", limit),
+            ).fetchall()
+            return [dict(r) for r in rows]
+    except Exception:
+        return []
