@@ -1,11 +1,12 @@
 """
 github/server.py — GitHub skill.
-ingest_repo:   clone + ingest into Cognee, tagged by dataset so searches scope per-repo
+ingest_repo:   clone + extract patterns into learned_skills (no Cognee)
 list_repos:    show all repos Truman has ingested (from memory_repos table)
 list_repo:     list files in a specific cloned repo
 read_file:     read a file from a cloned repo
 search_in_repo: search text across a cloned repo's files
 """
+from __future__ import annotations
 import os
 import subprocess
 import shutil
@@ -198,37 +199,106 @@ class GitHubSkill(SkillBase):
             self._log_event(repo_name, status="warn", error=f"{git_status} but no text files", elapsed_ms=int((_time.time()-t0)*1000))
             return
 
-        # mark ingesting (Cognee step doesn't expose granular progress)
-        _db.repo_progress(repo_name, progress=count, total=total, stage="building concept graph")
+        # mark extracting patterns (LLM-based, replaces Cognee)
+        _db.repo_progress(repo_name, progress=count, total=total, stage="extracting patterns")
 
         try:
-            from truman.brain.concepts import ingest
-            full_text = f"REPO: {url}\n\n" + "\n\n---\n\n".join(files_text)
-            ingest(full_text, dataset=f"repo_{repo_name}")
+            if os.environ.get("ENABLE_REPO_LEARNING", "1") == "1":
+                self._extract_patterns(repo_name, clone_path, files_text, t0)
             _db.repo_done(repo_name, file_count=count)
             self._log_event(repo_name, status="ok",
                             error=None,
-                            detail=f"{git_status} + ingested ({count} files)",
+                            detail=f"{git_status} + extracted patterns ({count} files)",
                             elapsed_ms=int((_time.time()-t0)*1000))
             try:
                 from truman.storage.notifications import push
-                push(f"✅ done — ingested {count} files from **{repo_name}**. ask me anything about it.", kind="repo_done")
+                push(f"✅ done — learned {count} files from **{repo_name}**. ask me anything about it.", kind="repo_done")
             except Exception:
                 pass
         except Exception as e:
-            _db.repo_failed(repo_name, f"Cognee ingest failed: {e}")
+            # extraction failed but files are cloned — mark done anyway
+            _db.repo_done(repo_name, file_count=count)
             self._log_event(repo_name, status="warn",
-                            error=f"Cognee ingest failed: {e}",
-                            detail=f"{git_status} ({count} files), graph not updated",
+                            error=f"pattern extraction failed: {e}",
+                            detail=f"{git_status} ({count} files), patterns not stored",
                             elapsed_ms=int((_time.time()-t0)*1000))
             try:
                 from truman.storage.notifications import push
-                push(f"❌ ingest failed for **{repo_name}**: {str(e)[:120]}", kind="repo_failed")
+                push(f"⚠️ cloned **{repo_name}** ({count} files) but pattern extraction failed: {str(e)[:80]}", kind="repo_done")
             except Exception:
                 pass
 
-    def _log_event(self, repo_name: str, status: str, error: str | None = None,
-                   detail: str | None = None, elapsed_ms: int = 0) -> None:
+    def _extract_patterns(self, repo_name: str, clone_path: str,
+                          files_text: list, t0: float) -> None:
+        """
+        Pick the most important files (README + entry points, max 8),
+        call LLM to extract key patterns, store in learned_skills table.
+        Fire-and-forget: any exception is caught by caller.
+        """
+        import json as _json
+        from truman.storage import db as _db
+
+        # Priority: README first, then short files close to root
+        priority = []
+        rest = []
+        for text in files_text:
+            header = text.split("\n", 1)[0]  # "# path/to/file"
+            fname = header.lstrip("# ").strip()
+            depth = fname.count("/")
+            if fname.lower().startswith("readme"):
+                priority.insert(0, (0, fname, text))
+            elif depth <= 1:
+                priority.append((depth, fname, text))
+            else:
+                rest.append((depth, fname, text))
+
+        priority.sort(key=lambda x: x[0])
+        rest.sort(key=lambda x: x[0])
+        candidates = priority + rest
+
+        # Clear old patterns for fresh re-ingest
+        _db.delete_skills_for_repo(repo_name)
+
+        skill_count = 0
+        for _, fname, content in candidates[:8]:
+            try:
+                from truman.core.model_router import run_with_pool
+                prompt = (
+                    f"Analyze this file from the '{repo_name}' repo and extract 3-5 key patterns, "
+                    "tools, APIs, or capabilities it defines. Return ONLY a JSON array, no prose:\n"
+                    '[{"pattern":"<short name>","kind":"tool|pattern|api|concept|config","description":"<1 sentence>"}]\n\n'
+                    f"File: {fname}\n\n{content[:3000]}"
+                )
+                result = run_with_pool(
+                    messages=[
+                        {"role": "system", "content": "You extract structured patterns from code files. Return only valid JSON."},
+                        {"role": "user",   "content": prompt},
+                    ],
+                    pool="general",
+                    temperature=0.1,
+                )
+                raw = result.get("content", "").strip()
+                # extract JSON array from response
+                start = raw.find("[")
+                end   = raw.rfind("]") + 1
+                if start >= 0 and end > start:
+                    items = _json.loads(raw[start:end])
+                    for item in (items if isinstance(items, list) else []):
+                        p = str(item.get("pattern", "")).strip()
+                        if p:
+                            _db.save_learned_skill(
+                                repo_name=repo_name,
+                                file_path=fname,
+                                pattern=p,
+                                kind=str(item.get("kind", "pattern")),
+                                description=str(item.get("description", "")),
+                            )
+                            skill_count += 1
+            except Exception:
+                continue  # skip this file, keep going
+
+    def _log_event(self, repo_name: str, status: str, error=None,
+                   detail=None, elapsed_ms: int = 0) -> None:
         try:
             from truman.storage import db as _db
             import json as _j

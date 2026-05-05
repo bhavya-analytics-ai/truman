@@ -946,7 +946,7 @@ def api_control_storage():
             "sessions", "turns", "events", "eval_log", "tool_calls",
             "user_facts", "memory_goals", "persona_rules", "reminders",
             "memory_repos", "memory_episodic", "memory_skills",
-            "user_prefs", "push_subs", "trace_events", "attachments",
+            "learned_skills", "user_prefs", "push_subs", "trace_events", "attachments",
         ]
         rows_out = []
         with db._conn() as c:
@@ -963,6 +963,34 @@ def api_control_storage():
         except Exception:
             size_mb = -1
         return jsonify({"tables": rows_out, "size_mb": size_mb, "path": db.DB_PATH})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ── Repo Brain — skills endpoints ────────────────────────────────────────────
+
+@app.route("/api/skills/<repo_name>")
+def api_skills_for_repo(repo_name):
+    """Return all learned skill patterns for a given repo."""
+    try:
+        from truman.storage.db import list_skills_for_repo
+        skills = list_skills_for_repo(repo_name)
+        return jsonify({"repo": repo_name, "skills": skills, "count": len(skills)})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/skills/search")
+def api_skills_search():
+    """Search learned skills by keyword. ?q=<query>"""
+    try:
+        from flask import request as freq
+        from truman.storage.db import search_learned_skills
+        q = freq.args.get("q", "").strip()
+        if not q:
+            return jsonify({"results": []})
+        hits = search_learned_skills(q, limit=10)
+        return jsonify({"query": q, "results": hits})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 

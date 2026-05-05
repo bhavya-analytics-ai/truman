@@ -23,6 +23,7 @@ class TrumanState(TypedDict):
     skill_name:      Optional[str]   # route_skill — which skill ran
 
     goals_context:   str             # load_goals — top active goals
+    skills_context:  str             # recall_skills — learned patterns from repos
 
     # ── Risk gate ────────────────────────────────────────────────────────────
     risk_tier:         str           # safe | caution | risky

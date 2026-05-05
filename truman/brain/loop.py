@@ -29,6 +29,7 @@ def _build_graph():
     g.add_node("classify_mood",  nodes.classify_mood)
     g.add_node("load_memory",    nodes.load_memory)
     g.add_node("load_goals",     nodes.load_goals)
+    g.add_node("recall_skills",  nodes.recall_skills)
     g.add_node("detect_pool",    nodes.detect_pool)
     g.add_node("detect_tool",    nodes.detect_tool)
     g.add_node("risk_gate",      nodes.risk_gate)
@@ -41,7 +42,8 @@ def _build_graph():
     g.set_entry_point("classify_mood")
     g.add_edge("classify_mood",   "load_memory")
     g.add_edge("load_memory",     "load_goals")
-    g.add_edge("load_goals",      "detect_pool")
+    g.add_edge("load_goals",      "recall_skills")
+    g.add_edge("recall_skills",   "detect_pool")
     g.add_edge("detect_pool",     "detect_tool")
     g.add_edge("detect_tool",     "risk_gate")
     g.add_edge("risk_gate",       "route_skill")
@@ -98,6 +100,7 @@ def run(user_input: str, session_id: str = "default", pool_hint: str = None, att
         "mood":             "neutral",
         "memory_context":   "",
         "goals_context":    "",
+        "skills_context":   "",
         "risk_tier":          "safe",
         "pending_action_id":  None,
         "awaiting_confirm":   False,

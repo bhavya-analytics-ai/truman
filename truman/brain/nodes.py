@@ -105,6 +105,44 @@ def load_goals(state: TrumanState) -> dict:
         return {"goals_context": "", "node_errors": errs}
 
 
+# ── Node 3c: recall_skills ───────────────────────────────────────────────────
+def recall_skills(state: TrumanState) -> dict:
+    """
+    Search learned_skills table for patterns relevant to the current message.
+    Appends a short LEARNED SKILLS block to memory_context if matches found.
+    SUPPORT node — fails soft, never blocks the loop.
+    """
+    import os
+    t0 = time.time()
+    if os.environ.get("ENABLE_REPO_LEARNING", "1") != "1":
+        return {"skills_context": ""}
+    user_input = state.get("user_input", "").strip()
+    # skip for short greetings / single-word messages
+    if len(user_input.split()) < 3:
+        return {"skills_context": ""}
+    try:
+        from truman.storage.db import search_learned_skills
+        hits = search_learned_skills(user_input, limit=4)
+        ms = int((time.time()-t0)*1000)
+        if not hits:
+            _t(state, "recall_skills", "end", summary="no skill matches", duration_ms=ms)
+            return {"skills_context": ""}
+        lines = ["LEARNED FROM REPOS:"]
+        for h in hits:
+            repo = h["repo_name"]
+            pat  = h["pattern"]
+            desc = h["description"] or ""
+            lines.append(f"- [{repo}] {pat}: {desc}")
+        ctx = "\n".join(lines)
+        _t(state, "recall_skills", "end", summary=f"{len(hits)} skills recalled", result=ctx, duration_ms=ms)
+        return {"skills_context": ctx}
+    except Exception as e:
+        _t(state, "recall_skills", "error", summary=str(e))
+        errs = dict(state.get("node_errors") or {})
+        errs["recall_skills"] = str(e)
+        return {"skills_context": "", "node_errors": errs}
+
+
 # ── Node 3: detect_pool ───────────────────────────────────────────────────────
 def detect_pool(state: TrumanState) -> dict:
     t0 = time.time()

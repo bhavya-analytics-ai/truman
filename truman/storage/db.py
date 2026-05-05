@@ -293,6 +293,19 @@ CREATE TABLE IF NOT EXISTS memory_repos (
     error       TEXT
 );
 
+-- ── Repo brain — extracted skill patterns ──────────────────────────────────
+CREATE TABLE IF NOT EXISTS learned_skills (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    repo_name   TEXT NOT NULL,
+    file_path   TEXT,
+    pattern     TEXT NOT NULL,
+    kind        TEXT,           -- "tool" | "pattern" | "api" | "concept" | "config"
+    description TEXT,
+    created_at  TEXT DEFAULT (strftime('%Y-%m-%dT%H:%M:%S', 'now'))
+);
+CREATE INDEX IF NOT EXISTS idx_ls_repo    ON learned_skills(repo_name);
+CREATE INDEX IF NOT EXISTS idx_ls_pattern ON learned_skills(pattern);
+
 -- ── Web push subscriptions (Phase 14 — iPhone PWA notifications) ────────────
 CREATE TABLE IF NOT EXISTS push_subs (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -820,6 +833,56 @@ def active_repo_tasks() -> list[dict]:
           ORDER BY last_pulled DESC
         """).fetchall()
     return [dict(r) for r in rows]
+
+
+# ── Repo brain — learned_skills helpers ─────────────────────────────────────
+def save_learned_skill(repo_name: str, file_path: str, pattern: str,
+                       kind: str = "pattern", description: str = "") -> None:
+    """Upsert a learned skill pattern. If (repo_name, pattern) exists, update description."""
+    with _conn() as c:
+        existing = c.execute(
+            "SELECT id FROM learned_skills WHERE repo_name=? AND pattern=?",
+            (repo_name, pattern)
+        ).fetchone()
+        if existing:
+            c.execute(
+                "UPDATE learned_skills SET description=?, kind=?, file_path=? WHERE id=?",
+                (description, kind, file_path, existing["id"])
+            )
+        else:
+            c.execute(
+                "INSERT INTO learned_skills(repo_name,file_path,pattern,kind,description) VALUES(?,?,?,?,?)",
+                (repo_name, file_path, pattern, kind, description)
+            )
+
+
+def search_learned_skills(query: str, limit: int = 5) -> list[dict]:
+    """Simple keyword search across pattern + description. Returns top matches."""
+    kw = f"%{query.lower()}%"
+    with _conn() as c:
+        rows = c.execute("""
+            SELECT repo_name, file_path, pattern, kind, description
+              FROM learned_skills
+             WHERE lower(pattern) LIKE ? OR lower(description) LIKE ?
+          ORDER BY id DESC
+             LIMIT ?
+        """, (kw, kw, limit)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def list_skills_for_repo(repo_name: str) -> list[dict]:
+    with _conn() as c:
+        rows = c.execute("""
+            SELECT file_path, pattern, kind, description, created_at
+              FROM learned_skills WHERE repo_name=?
+          ORDER BY id ASC
+        """, (repo_name,)).fetchall()
+    return [dict(r) for r in rows]
+
+
+def delete_skills_for_repo(repo_name: str) -> None:
+    with _conn() as c:
+        c.execute("DELETE FROM learned_skills WHERE repo_name=?", (repo_name,))
 
 
 # ── Kill switch (file-based — Truman cannot disable this) ────────────────────

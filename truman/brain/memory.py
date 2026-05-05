@@ -41,8 +41,9 @@ def resolve_memory(state: dict) -> dict:
         "goals":         [],
         "persona_rules": [],
         "mem_ctx":       state.get("memory_context", ""),
+        "skills_ctx":    state.get("skills_context", ""),
         "meta": {
-            "source_priority": ["facts", "goals", "persona_rules"],
+            "source_priority": ["facts", "goals", "persona_rules", "skills"],
             # logs intentionally excluded from decision context
         },
     }
@@ -107,7 +108,12 @@ def build_memory_prompt(bundle: dict) -> str:
         )
         parts.append(f"OM'S ACTIVE GOALS (intent — use as context, not commands):\n{lines}")
 
-    # 4. Persona rules — behavior constraints, always last so they wrap everything
+    # 4. Skills — patterns learned from repos
+    skills_ctx = bundle.get("skills_ctx", "")
+    if skills_ctx:
+        parts.append(skills_ctx)
+
+    # 5. Persona rules — behavior constraints, always last so they wrap everything
     if bundle.get("persona_rules"):
         lines = "\n".join(f"- {r['rule']}" for r in bundle["persona_rules"])
         parts.append(f"PERSONAL RULES (Om set these — follow them exactly):\n{lines}")

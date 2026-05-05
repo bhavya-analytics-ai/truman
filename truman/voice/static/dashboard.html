@@ -487,6 +487,7 @@
     <button class="mem-tab active" id="mem-tab-facts" onclick="switchMemTab('facts')">Facts</button>
     <button class="mem-tab" id="mem-tab-rules" onclick="switchMemTab('rules')">Rules</button>
     <button class="mem-tab" id="mem-tab-contacts" onclick="switchMemTab('contacts')">Contacts</button>
+    <button class="mem-tab" id="mem-tab-skills" onclick="switchMemTab('skills')">Skills</button>
   </div>
   <!-- Facts tab -->
   <div class="mem-body" id="mem-body" data-tab="facts">
@@ -501,6 +502,15 @@
     <div style="color:var(--text3);padding:12px 16px;font-size:11px;border-bottom:1px solid var(--border)">Only these contacts trigger Telegram pings. Empty = everyone gets through.</div>
     <div id="contacts-list"></div>
   </div>
+  <!-- Skills tab — repo brain -->
+  <div class="mem-body" id="skills-body" data-tab="skills" style="display:none">
+    <div style="color:var(--text3);padding:8px 16px 4px;font-size:11px;border-bottom:1px solid var(--border)">Patterns learned from ingested repos. Used automatically each turn.</div>
+    <div id="skills-repo-select" style="padding:8px 12px;border-bottom:1px solid var(--border);display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+      <span style="font-size:11px;color:var(--text3)">repo:</span>
+      <div id="skills-repo-list" style="display:flex;gap:6px;flex-wrap:wrap"></div>
+    </div>
+    <div id="skills-list" style="overflow-y:auto;flex:1"></div>
+  </div>
   <div class="mem-add" id="mem-add-facts">
     <input type="text" id="mem-input" placeholder="add a fact manually..." maxlength="300">
     <button class="mem-add-btn" onclick="addFactManual()">+ add</button>
@@ -512,6 +522,9 @@
   <div class="mem-add" id="mem-add-contacts" style="display:none">
     <input type="text" id="contact-input" placeholder="add contact name or number..." maxlength="100">
     <button class="mem-add-btn" onclick="addContactManual()">+ add</button>
+  </div>
+  <div class="mem-add" id="mem-add-skills" style="display:none">
+    <input type="text" id="skills-search-input" placeholder="search patterns..." maxlength="100" oninput="searchSkills(this.value)">
   </div>
 </div>
 
@@ -1854,18 +1867,89 @@ let _activeMemTab = 'facts';
 
 function switchMemTab(tab) {
   _activeMemTab = tab;
-  document.getElementById('mem-tab-facts').classList.toggle('active', tab === 'facts');
-  document.getElementById('mem-tab-rules').classList.toggle('active', tab === 'rules');
-  document.getElementById('mem-tab-contacts').classList.toggle('active', tab === 'contacts');
-  document.getElementById('mem-body').style.display      = tab === 'facts'    ? '' : 'none';
-  document.getElementById('rules-body').style.display    = tab === 'rules'    ? '' : 'none';
-  document.getElementById('contacts-body').style.display = tab === 'contacts' ? '' : 'none';
+  ['facts','rules','contacts','skills'].forEach(t => {
+    document.getElementById('mem-tab-' + t).classList.toggle('active', tab === t);
+  });
+  document.getElementById('mem-body').style.display         = tab === 'facts'    ? '' : 'none';
+  document.getElementById('rules-body').style.display       = tab === 'rules'    ? '' : 'none';
+  document.getElementById('contacts-body').style.display    = tab === 'contacts' ? '' : 'none';
+  document.getElementById('skills-body').style.display      = tab === 'skills'   ? '' : 'none';
   document.getElementById('mem-add-facts').style.display    = tab === 'facts'    ? '' : 'none';
   document.getElementById('mem-add-rules').style.display    = tab === 'rules'    ? '' : 'none';
   document.getElementById('mem-add-contacts').style.display = tab === 'contacts' ? '' : 'none';
+  document.getElementById('mem-add-skills').style.display   = tab === 'skills'   ? '' : 'none';
   if (tab === 'rules') refreshRules();
   else if (tab === 'contacts') refreshContacts();
+  else if (tab === 'skills') refreshSkills();
   else refreshFacts();
+}
+
+// ── Skills tab ────────────────────────────────────────────────────────────────
+let _skillsRepo = null;
+
+async function refreshSkills(repo) {
+  try {
+    // Build repo list from memory_repos
+    const reposResp = await fetch('/api/tasks');
+    const reposData = await reposResp.json();
+    const allRepos = (reposData.repos || []).filter(r => r.status === 'done');
+    const repoBar  = document.getElementById('skills-repo-list');
+    if (repoBar && allRepos.length) {
+      if (!_skillsRepo) _skillsRepo = allRepos[0].name;
+      if (repo) _skillsRepo = repo;
+      repoBar.innerHTML = allRepos.map(r =>
+        `<button onclick="refreshSkills('${r.name}')" style="font-size:11px;padding:2px 8px;border-radius:4px;border:1px solid var(--border);background:${_skillsRepo===r.name?'var(--accent)':'var(--bg2)'};color:${_skillsRepo===r.name?'#fff':'var(--text2)'};cursor:pointer">${r.name}</button>`
+      ).join('');
+    }
+    if (!_skillsRepo) {
+      document.getElementById('skills-list').innerHTML =
+        '<div style="color:var(--text3);padding:24px;text-align:center;font-size:12px">no repos ingested yet — give Truman a GitHub URL</div>';
+      return;
+    }
+    const resp = await fetch(`/api/skills/${encodeURIComponent(_skillsRepo)}`);
+    const data = await resp.json();
+    const list = document.getElementById('skills-list');
+    if (!data.skills || !data.skills.length) {
+      list.innerHTML = '<div style="color:var(--text3);padding:24px;text-align:center;font-size:12px">no patterns extracted yet</div>';
+      return;
+    }
+    const kindColor = {tool:'#4CAF50',pattern:'#2196F3',api:'#FF9800',concept:'#9C27B0',config:'#607D8B'};
+    list.innerHTML = data.skills.map(s => `
+      <div style="padding:8px 14px;border-bottom:1px solid var(--border)">
+        <div style="display:flex;gap:6px;align-items:center">
+          <span style="font-size:10px;padding:1px 6px;border-radius:10px;background:${kindColor[s.kind]||'#555'};color:#fff;flex-shrink:0">${s.kind||'?'}</span>
+          <span style="font-size:12px;font-weight:600;color:var(--text1)">${s.pattern}</span>
+        </div>
+        ${s.description ? `<div style="font-size:11px;color:var(--text3);margin-top:2px">${s.description}</div>` : ''}
+        ${s.file_path ? `<div style="font-size:10px;color:var(--text3);opacity:.6;margin-top:1px">${s.file_path}</div>` : ''}
+      </div>`).join('');
+  } catch(e) {
+    document.getElementById('skills-list').innerHTML =
+      `<div style="color:var(--text3);padding:16px;font-size:12px">error: ${e.message}</div>`;
+  }
+}
+
+async function searchSkills(q) {
+  if (!q.trim()) { return refreshSkills(); }
+  try {
+    const resp = await fetch(`/api/skills/search?q=${encodeURIComponent(q)}`);
+    const data = await resp.json();
+    const list = document.getElementById('skills-list');
+    if (!data.results || !data.results.length) {
+      list.innerHTML = '<div style="color:var(--text3);padding:16px;text-align:center;font-size:12px">no matches</div>';
+      return;
+    }
+    const kindColor = {tool:'#4CAF50',pattern:'#2196F3',api:'#FF9800',concept:'#9C27B0',config:'#607D8B'};
+    list.innerHTML = data.results.map(s => `
+      <div style="padding:8px 14px;border-bottom:1px solid var(--border)">
+        <div style="display:flex;gap:6px;align-items:center">
+          <span style="font-size:10px;padding:1px 6px;border-radius:10px;background:${kindColor[s.kind]||'#555'};color:#fff;flex-shrink:0">${s.kind||'?'}</span>
+          <span style="font-size:12px;font-weight:600;color:var(--text1)">${s.pattern}</span>
+          <span style="font-size:10px;color:var(--text3)">[${s.repo_name}]</span>
+        </div>
+        ${s.description ? `<div style="font-size:11px;color:var(--text3);margin-top:2px">${s.description}</div>` : ''}
+      </div>`).join('');
+  } catch(e) {}
 }
 
 async function refreshContacts() {
