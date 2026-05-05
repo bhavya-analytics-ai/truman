@@ -622,13 +622,14 @@
 <!-- Model picker -->
 <div style="padding:4px 14px 2px;background:var(--bg2);border-top:1px solid var(--border);display:flex;align-items:center;gap:8px;flex-shrink:0;">
   <span style="font-size:10px;color:var(--text3);white-space:nowrap;">model</span>
-  <select class="hdr-select" id="model-select" onchange="setModel(this.value)" style="flex:0 0 auto;max-width:260px;">
-    <option value="">🟢 auto (truman picks)</option>
-    <option value="general">⚡ deepseek v3.2 — fast, general chat</option>
-    <option value="reasoning">🧠 llama 3.1 70b — deep thinking, long answers</option>
-    <option value="fast">💨 llama 3.1 8b — instant, short replies</option>
-    <option value="coding">🎯 qwen 2.5 72b — code &amp; reasoning</option>
-    <option value="creative">🎨 mistral large — creative writing</option>
+  <select class="hdr-select" id="model-select" onchange="setModel(this.value)" style="flex:0 0 auto;max-width:300px;">
+    <option value="" selected>🟢 auto — truman picks (recommended)</option>
+    <option value="general">⚡ general — llama 3.3 70b — balanced chat (~2s)</option>
+    <option value="reasoning">🧠 reasoning — kimi k2 thinking — deep think (~4-6s)</option>
+    <option value="coding">💻 coding — qwen3 coder 480b — code &amp; technical (~3s)</option>
+    <option value="agentic">🛠 agentic — qwen3 coder 480b — multi-step tools (~3s)</option>
+    <option value="vision">👁 vision — llama 3.2 90b vision — images &amp; screenshots (~3-4s)</option>
+    <option value="docs">📄 docs — llama 4 maverick — PDFs &amp; spreadsheets (~2-3s)</option>
   </select>
 </div>
 
