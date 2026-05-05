@@ -750,6 +750,223 @@ def api_drop_attachments(session_id):
         return jsonify({"error": str(e)}), 500
 
 
+# ── Control Panel API (Phase 5 — monitoring + runtime flags) ─────────────────
+
+_FLAG_META = {
+    "ENABLE_LANGGRAPH":     "LangGraph 12-node brain loop (disable → legacy agent fallback)",
+    "ENABLE_MCP":           "MCP tool server — parent switch for all MCP tools",
+    "ENABLE_MCP_FILES":     "File read/write tools via MCP",
+    "ENABLE_MCP_WEB":       "Web search + fetch via MCP",
+    "ENABLE_MCP_GITHUB":    "GitHub tools via MCP",
+    "ENABLE_GOALS":         "Load active goals into LLM context each turn",
+    "ENABLE_RISK_GATE":     "Block risky requests before they reach the LLM",
+    "ENABLE_PROACTIVE":     "Morning brief + idle nudge scheduler",
+    "ENABLE_MORNING_EMAIL": "Send morning brief email via Resend",
+    "ENABLE_TELEGRAM":      "Telegram bot polling + message delivery",
+    "ENABLE_MAC_BANNER":    "Mac notification banners via Mac bridge",
+    "ENABLE_SELF_CORRECT":  "Self-correction retry layer",
+    "ENABLE_EVAL":          "Hybrid output evaluator — rule check + LLM eval",
+    "ENABLE_WEB_PUSH":      "Browser push notifications (VAPID)",
+    "ENABLE_TG_MEDIA":      "Telegram media (images/files) support",
+    "ENABLE_BOSS_FLOW":     "Boss/WhatsApp message intake via iPhone Shortcut",
+    "ENABLE_GMAIL_POLLING": "Gmail IMAP triage + reply (5min polling)",
+    "ENABLE_IMESSAGE":      "iMessage polling (requires Mac bridge)",
+}
+
+
+@app.route("/api/control/status")
+def api_control_status():
+    """System health snapshot for the control panel."""
+    try:
+        import time as _time
+        from truman.storage import db
+        # DB table row counts
+        tables = ["sessions", "turns", "events", "eval_log", "tool_calls",
+                  "user_facts", "memory_goals", "persona_rules", "reminders",
+                  "memory_repos", "push_subs", "trace_events"]
+        counts = {}
+        with db._conn() as c:
+            for t in tables:
+                try:
+                    row = c.execute(f"SELECT COUNT(*) FROM {t}").fetchone()
+                    counts[t] = row[0] if row else 0
+                except Exception:
+                    counts[t] = -1
+            # last turn ts
+            last_row = c.execute(
+                "SELECT ts FROM turns ORDER BY ts DESC LIMIT 1"
+            ).fetchone()
+            last_turn = last_row[0] if last_row else None
+            # last eval score
+            last_eval = c.execute(
+                "SELECT score, model, pool FROM eval_log ORDER BY ts DESC LIMIT 1"
+            ).fetchone()
+
+        return jsonify({
+            "ok": True,
+            "db_path": db.DB_PATH,
+            "table_counts": counts,
+            "last_turn": last_turn,
+            "last_eval": dict(last_eval) if last_eval else None,
+            "mac_connected": bool(_mac_ws),
+        })
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+
+@app.route("/api/control/flags", methods=["GET"])
+def api_control_flags_get():
+    """Return all ENABLE_* flags: current runtime value + description."""
+    try:
+        from truman.storage import db
+        prefs = db.get_all_prefs()
+        flags = []
+        for key, desc in _FLAG_META.items():
+            env_val = os.environ.get(key, "1")
+            # user_prefs can override at runtime (key stored lowercase)
+            pref_val = prefs.get(key.lower())
+            current = pref_val if pref_val is not None else env_val
+            flags.append({
+                "key": key,
+                "value": current,
+                "on": current not in ("0", "false", ""),
+                "description": desc,
+                "overridden": pref_val is not None,
+            })
+        return jsonify({"flags": flags})
+    except Exception as e:
+        return jsonify({"flags": [], "error": str(e)}), 500
+
+
+@app.route("/api/control/flags/<key>", methods=["PATCH"])
+def api_control_flags_patch(key):
+    """Toggle or set an ENABLE_* flag at runtime. Saved to user_prefs + os.environ."""
+    if key not in _FLAG_META:
+        return jsonify({"error": "unknown flag"}), 400
+    try:
+        from truman.storage import db
+        data = request.get_json(force=True) or {}
+        # Accept {"on": true/false} or {"value": "1"/"0"}
+        if "on" in data:
+            val = "1" if data["on"] else "0"
+        else:
+            val = str(data.get("value", "1"))
+        # Apply immediately to running process
+        os.environ[key] = val
+        # Persist so it survives a reload (but not a Railway redeploy which resets env)
+        db.set_pref(key.lower(), val)
+        return jsonify({"ok": True, "key": key, "value": val, "on": val not in ("0", "false")})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/control/pools")
+def api_control_pools():
+    """Return current pool configuration (6 pools, primary + fallback each)."""
+    try:
+        from truman.core import config as cfg
+        def _parse(raw: str):
+            parts = [m.strip() for m in raw.split(",")]
+            def _fmt(m):
+                # nvidia:provider/model-name → just model-name for display
+                if ":" in m:
+                    m = m.split(":", 1)[1]
+                # provider/model → model
+                if "/" in m:
+                    m = m.split("/", 1)[1]
+                return m
+            return {
+                "primary":  _fmt(parts[0]) if parts else "",
+                "fallback": _fmt(parts[1]) if len(parts) > 1 else "",
+                "raw": raw,
+            }
+        pools = {
+            "general":   _parse(cfg.POOL_GENERAL),
+            "coding":    _parse(cfg.POOL_CODING),
+            "reasoning": _parse(cfg.POOL_REASONING),
+            "agentic":   _parse(cfg.POOL_AGENTIC),
+            "vision":    _parse(cfg.POOL_VISION),
+            "docs":      _parse(cfg.POOL_DOCS),
+        }
+        return jsonify({"pools": pools})
+    except Exception as e:
+        return jsonify({"pools": {}, "error": str(e)}), 500
+
+
+@app.route("/api/control/eval")
+def api_control_eval():
+    """Return eval_log stats: recent score breakdown + recurring issues."""
+    try:
+        from truman.storage import db
+        days = int(request.args.get("days", 7))
+        with db._conn() as c:
+            # Score distribution
+            dist = c.execute(
+                """SELECT score, COUNT(*) as n FROM eval_log
+                   WHERE date >= date('now', ?) GROUP BY score ORDER BY n DESC""",
+                (f"-{days} days",)
+            ).fetchall()
+            # Per-pool breakdown
+            by_pool = c.execute(
+                """SELECT pool, score, COUNT(*) as n FROM eval_log
+                   WHERE date >= date('now', ?)
+                   GROUP BY pool, score ORDER BY pool, n DESC""",
+                (f"-{days} days",)
+            ).fetchall()
+            # Retries fired
+            retries = c.execute(
+                """SELECT COUNT(*) FROM eval_log
+                   WHERE retry_fired=1 AND date >= date('now', ?)""",
+                (f"-{days} days",)
+            ).fetchone()[0]
+            # Recent bad/weak
+            recent = c.execute(
+                """SELECT ts, model, pool, score, issues, reason FROM eval_log
+                   WHERE score IN ('bad','weak') AND date >= date('now', ?)
+                   ORDER BY ts DESC LIMIT 10""",
+                (f"-{days} days",)
+            ).fetchall()
+        return jsonify({
+            "days": days,
+            "distribution": [dict(r) for r in dist],
+            "by_pool": [dict(r) for r in by_pool],
+            "retries_fired": retries,
+            "recent_issues": [dict(r) for r in recent],
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/control/storage")
+def api_control_storage():
+    """Return SQLite stats: table row counts + DB file size."""
+    try:
+        from truman.storage import db
+        tables = [
+            "sessions", "turns", "events", "eval_log", "tool_calls",
+            "user_facts", "memory_goals", "persona_rules", "reminders",
+            "memory_repos", "memory_episodic", "memory_skills",
+            "user_prefs", "push_subs", "trace_events", "attachments",
+        ]
+        rows_out = []
+        with db._conn() as c:
+            for t in tables:
+                try:
+                    n = c.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0]
+                    rows_out.append({"table": t, "rows": n})
+                except Exception:
+                    pass  # table may not exist yet
+        # DB file size
+        try:
+            size_bytes = os.path.getsize(db.DB_PATH)
+            size_mb = round(size_bytes / 1024 / 1024, 2)
+        except Exception:
+            size_mb = -1
+        return jsonify({"tables": rows_out, "size_mb": size_mb, "path": db.DB_PATH})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 # ── Phase 15: Boss / WhatsApp intake ─────────────────────────────────────────
 
 @app.route("/api/boss_message", methods=["POST"])

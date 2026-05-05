@@ -279,6 +279,8 @@
     /* memory panel: full width on mobile */
     .memory-sidebar { width:100vw; right:-100vw; }
     .memory-sidebar.open { right:0; }
+    .ctrl-sidebar { width:100vw; right:-100vw; }
+    .ctrl-sidebar.open { right:0; }
     /* header: tighter */
     .header { padding:0 10px; }
     .hdr-right { gap:4px; }
@@ -373,6 +375,58 @@
   .mem-add input:focus { border-color:#f59e0b; }
   .mem-add-btn { background:#f59e0b22; border:1px solid #f59e0b55; border-radius:8px; color:#f59e0b; font-size:11px; padding:6px 12px; cursor:pointer; white-space:nowrap; }
   .mem-add-btn:hover { background:#f59e0b33; }
+
+  /* ── Control Panel ───────────────────────────────────────────────────────── */
+  .ctrl-sidebar { position:fixed; top:0; right:-460px; width:440px; height:100dvh; background:var(--bg); border-left:1px solid var(--border); z-index:192; display:flex; flex-direction:column; transition:right 0.28s ease; }
+  .ctrl-sidebar.open { right:0; }
+  .ctrl-hdr { padding:14px 16px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; flex-shrink:0; background:var(--bg2); }
+  .ctrl-hdr h2 { font-size:13px; color:#6ee7b7; font-weight:600; letter-spacing:0.05em; }
+  .ctrl-close { background:none; border:none; color:var(--text3); font-size:16px; cursor:pointer; }
+  .ctrl-close:hover { color:var(--text); }
+  .ctrl-tabs { display:flex; border-bottom:1px solid var(--border); background:var(--bg2); flex-shrink:0; }
+  .ctrl-tab { flex:1; background:none; border:none; border-bottom:2px solid transparent; color:var(--text3); font-size:11px; padding:8px 0; cursor:pointer; letter-spacing:0.05em; font-family:inherit; }
+  .ctrl-tab.active { color:#6ee7b7; border-bottom-color:#6ee7b7; }
+  .ctrl-tab:hover { color:var(--text); }
+  .ctrl-body { overflow-y:auto; flex:1; }
+  .ctrl-body::-webkit-scrollbar { width:3px; }
+  .ctrl-body::-webkit-scrollbar-thumb { background:var(--border2); }
+  /* Flags tab */
+  .flag-row { display:flex; align-items:flex-start; gap:10px; padding:10px 14px; border-bottom:1px solid var(--border); }
+  .flag-row:hover { background:var(--bg2); }
+  .flag-info { flex:1; min-width:0; }
+  .flag-key { font-size:11px; font-family:monospace; color:#6ee7b7; font-weight:600; }
+  .flag-desc { font-size:10px; color:var(--text2); margin-top:2px; line-height:1.4; }
+  .flag-toggle { position:relative; flex-shrink:0; width:34px; height:18px; }
+  .flag-toggle input { opacity:0; width:0; height:0; position:absolute; }
+  .flag-slider { position:absolute; inset:0; border-radius:9px; background:var(--border2); cursor:pointer; transition:background 0.2s; }
+  .flag-slider::after { content:''; position:absolute; width:12px; height:12px; border-radius:50%; background:#fff; left:3px; top:3px; transition:transform 0.2s; }
+  .flag-toggle input:checked + .flag-slider { background:#6ee7b7; }
+  .flag-toggle input:checked + .flag-slider::after { transform:translateX(16px); }
+  /* Pools tab */
+  .pool-card { margin:10px 12px; background:var(--bg2); border:1px solid var(--border); border-radius:10px; overflow:hidden; }
+  .pool-name { padding:8px 12px 4px; font-size:10px; font-weight:700; letter-spacing:0.1em; color:#6ee7b7; text-transform:uppercase; }
+  .pool-row { padding:4px 12px 8px; display:flex; flex-direction:column; gap:3px; }
+  .pool-model { font-size:11px; color:var(--text); font-family:monospace; }
+  .pool-label { font-size:10px; color:var(--text3); }
+  /* Eval tab */
+  .eval-stat { display:flex; align-items:center; justify-content:space-between; padding:8px 14px; border-bottom:1px solid var(--border); }
+  .eval-stat-label { font-size:11px; color:var(--text2); }
+  .eval-stat-val { font-size:13px; font-weight:700; }
+  .eval-score-good { color:#22c55e; }
+  .eval-score-weak { color:#f59e0b; }
+  .eval-score-bad  { color:#ef4444; }
+  .eval-issue-row { padding:8px 14px; border-bottom:1px solid var(--border); font-size:11px; }
+  .eval-issue-meta { color:var(--text2); font-size:10px; margin-top:2px; font-family:monospace; }
+  /* Storage tab */
+  .storage-grid { display:grid; grid-template-columns:1fr auto; gap:0; }
+  .storage-row { display:contents; }
+  .storage-row > span { padding:7px 14px; border-bottom:1px solid var(--border); font-size:11px; }
+  .storage-row > span:first-child { color:var(--text); font-family:monospace; }
+  .storage-row > span:last-child { color:var(--text2); text-align:right; font-variant-numeric:tabular-nums; }
+  .ctrl-section-hdr { padding:10px 14px 6px; font-size:10px; font-weight:700; letter-spacing:0.1em; color:var(--text3); text-transform:uppercase; background:var(--bg2); border-bottom:1px solid var(--border); }
+  .ctrl-refresh-bar { padding:6px 14px; font-size:10px; color:var(--text3); border-top:1px solid var(--border); background:var(--bg2); flex-shrink:0; display:flex; justify-content:space-between; align-items:center; }
+  .ctrl-refresh-btn { background:none; border:1px solid var(--border2); border-radius:5px; color:var(--text3); font-size:10px; padding:2px 7px; cursor:pointer; }
+  .ctrl-refresh-btn:hover { border-color:#6ee7b7; color:#6ee7b7; }
 
   /* Pin button */
   .pin-btn { background:none; border:none; color:var(--text3); font-size:12px; cursor:pointer; padding:0 3px; opacity:0; transition:opacity 0.15s; line-height:1; }
@@ -472,6 +526,40 @@
   </div>
 </div>
 
+<!-- Control Panel -->
+<div class="ctrl-sidebar" id="ctrl-sidebar">
+  <div class="ctrl-hdr">
+    <h2>⚙ CONTROL PANEL</h2>
+    <button class="ctrl-close" onclick="closeControl()">✕</button>
+  </div>
+  <div class="ctrl-tabs">
+    <button class="ctrl-tab active" id="ctrl-tab-flags" onclick="switchCtrlTab('flags')">Flags</button>
+    <button class="ctrl-tab" id="ctrl-tab-pools" onclick="switchCtrlTab('pools')">Pools</button>
+    <button class="ctrl-tab" id="ctrl-tab-eval" onclick="switchCtrlTab('eval')">Eval</button>
+    <button class="ctrl-tab" id="ctrl-tab-storage" onclick="switchCtrlTab('storage')">Storage</button>
+  </div>
+  <!-- Flags tab -->
+  <div class="ctrl-body" id="ctrl-body-flags">
+    <div style="padding:20px;text-align:center;color:var(--text3);font-size:12px">loading flags…</div>
+  </div>
+  <!-- Pools tab -->
+  <div class="ctrl-body" id="ctrl-body-pools" style="display:none">
+    <div style="padding:20px;text-align:center;color:var(--text3);font-size:12px">loading pools…</div>
+  </div>
+  <!-- Eval tab -->
+  <div class="ctrl-body" id="ctrl-body-eval" style="display:none">
+    <div style="padding:20px;text-align:center;color:var(--text3);font-size:12px">loading eval data…</div>
+  </div>
+  <!-- Storage tab -->
+  <div class="ctrl-body" id="ctrl-body-storage" style="display:none">
+    <div style="padding:20px;text-align:center;color:var(--text3);font-size:12px">loading storage stats…</div>
+  </div>
+  <div class="ctrl-refresh-bar">
+    <span id="ctrl-last-refresh">never refreshed</span>
+    <button class="ctrl-refresh-btn" onclick="refreshCtrl(true)">↻ refresh</button>
+  </div>
+</div>
+
 <!-- Scroll to bottom -->
 <button class="scroll-btn" id="scroll-btn" onclick="scrollToBottom()" title="scroll to bottom">↓</button>
 
@@ -495,6 +583,7 @@
     </select>
     <button class="activity-btn" id="memory-btn" onclick="toggleMemory()" title="pinned facts about Om">memory</button>
     <button class="activity-btn" id="activity-btn" onclick="toggleActivity()" title="Truman's brain activity">activity</button>
+    <button class="activity-btn" id="ctrl-btn" onclick="toggleControl()" title="Control panel — flags, pools, eval, storage" style="color:#6ee7b7;">control</button>
     <button class="hdr-btn" onclick="exportChats()" title="download all chats as JSON">export</button>
     <label class="hdr-btn" style="cursor:pointer" title="restore chats from JSON">import<input type="file" accept=".json" style="display:none" onchange="importChats(event)"></label>
     <button class="hdr-btn" onclick="newSession()">+ new</button>
@@ -2225,6 +2314,184 @@ function _buildActionRow(ev, rowId) {
     row.addEventListener('click', () => row.classList.toggle('expanded'));
   }
   return row;
+}
+
+// ── Control Panel ─────────────────────────────────────────────────────────────
+let ctrlOpen = false;
+let _ctrlTab = 'flags';
+let _ctrlTimer = null;
+const _CTRL_REFRESH_MS = 30000;
+
+function toggleControl() { ctrlOpen ? closeControl() : openControl(); }
+
+async function openControl() {
+  ctrlOpen = true;
+  document.getElementById('ctrl-sidebar').classList.add('open');
+  document.getElementById('ctrl-btn').style.color = '#6ee7b7';
+  await refreshCtrl(true);
+  _ctrlTimer = setInterval(() => refreshCtrl(false), _CTRL_REFRESH_MS);
+}
+
+function closeControl() {
+  ctrlOpen = false;
+  document.getElementById('ctrl-sidebar').classList.remove('open');
+  clearInterval(_ctrlTimer);
+  _ctrlTimer = null;
+}
+
+function switchCtrlTab(tab) {
+  _ctrlTab = tab;
+  ['flags','pools','eval','storage'].forEach(t => {
+    document.getElementById('ctrl-tab-'+t).classList.toggle('active', t===tab);
+    document.getElementById('ctrl-body-'+t).style.display = t===tab ? '' : 'none';
+  });
+  refreshCtrl(true);
+}
+
+async function refreshCtrl(force) {
+  if (!ctrlOpen) return;
+  try {
+    if (_ctrlTab === 'flags')   await _loadCtrlFlags();
+    if (_ctrlTab === 'pools')   await _loadCtrlPools();
+    if (_ctrlTab === 'eval')    await _loadCtrlEval();
+    if (_ctrlTab === 'storage') await _loadCtrlStorage();
+    const now = new Date();
+    document.getElementById('ctrl-last-refresh').textContent =
+      'refreshed ' + now.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  } catch(e) { console.warn('ctrl refresh error', e); }
+}
+
+async function _loadCtrlFlags() {
+  const body = document.getElementById('ctrl-body-flags');
+  try {
+    const r = await fetch('/api/control/flags');
+    const d = await r.json();
+    if (!d.flags || !d.flags.length) { body.innerHTML = '<div style="padding:20px;color:var(--text3);text-align:center;font-size:12px">no flags found</div>'; return; }
+    body.innerHTML = d.flags.map(f => `
+      <div class="flag-row">
+        <div class="flag-info">
+          <div class="flag-key">${f.key.replace('ENABLE_','')}</div>
+          <div class="flag-desc">${f.description}</div>
+        </div>
+        <label class="flag-toggle" title="${f.key}">
+          <input type="checkbox" ${f.on ? 'checked' : ''} onchange="toggleFlag('${f.key}', this.checked)">
+          <span class="flag-slider"></span>
+        </label>
+      </div>`).join('');
+  } catch(e) { body.innerHTML = `<div style="padding:20px;color:#ef4444;font-size:12px">error: ${e}</div>`; }
+}
+
+async function toggleFlag(key, on) {
+  try {
+    await fetch('/api/control/flags/'+key, {
+      method:'PATCH', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({on})
+    });
+    showToast(`${key.replace('ENABLE_','')} → ${on ? 'ON' : 'OFF'}`);
+  } catch(e) { showToast('toggle failed'); }
+}
+
+async function _loadCtrlPools() {
+  const body = document.getElementById('ctrl-body-pools');
+  try {
+    const r = await fetch('/api/control/pools');
+    const d = await r.json();
+    if (!d.pools) { body.innerHTML = '<div style="padding:20px;color:var(--text3);text-align:center">no pools</div>'; return; }
+    const ROUTING = [
+      ['has_image', 'vision'],
+      ['tool_detected', 'agentic'],
+      ['doc_file (pdf/docx/xlsx)', 'docs'],
+      ['code action + code fence', 'coding'],
+      ['explain/why + code ctx', 'coding'],
+      ['explain/why + no code', 'reasoning'],
+      ['raw stack trace', 'coding'],
+      ['default', 'general'],
+    ];
+    const poolColors = {general:'#a78bfa',coding:'#60a5fa',reasoning:'#f472b6',agentic:'#fb923c',vision:'#34d399',docs:'#fbbf24'};
+    body.innerHTML = Object.entries(d.pools).map(([name, p]) => `
+      <div class="pool-card">
+        <div class="pool-name" style="color:${poolColors[name]||'#6ee7b7'}">${name}</div>
+        <div class="pool-row">
+          <div><span class="pool-label">primary  </span><span class="pool-model">${p.primary}</span></div>
+          <div><span class="pool-label">fallback </span><span class="pool-model" style="color:var(--text2)">${p.fallback}</span></div>
+        </div>
+      </div>`).join('') +
+    `<div class="ctrl-section-hdr" style="margin-top:8px">Router priority chain</div>` +
+    ROUTING.map(([trigger, pool], i) => `
+      <div class="flag-row" style="padding:7px 14px">
+        <div style="font-size:10px;color:var(--text3);min-width:18px">${i+1}.</div>
+        <div style="flex:1;font-size:11px;color:var(--text)">${trigger}</div>
+        <div style="font-size:11px;font-weight:600;color:${poolColors[pool]||'#6ee7b7'}">${pool}</div>
+      </div>`).join('');
+  } catch(e) { body.innerHTML = `<div style="padding:20px;color:#ef4444;font-size:12px">error: ${e}</div>`; }
+}
+
+async function _loadCtrlEval() {
+  const body = document.getElementById('ctrl-body-eval');
+  try {
+    const r = await fetch('/api/control/eval?days=7');
+    const d = await r.json();
+    if (d.error) throw new Error(d.error);
+    const dist = d.distribution || [];
+    const total = dist.reduce((s, x) => s + x.n, 0);
+    const getN = (score) => (dist.find(x => x.score===score)||{n:0}).n;
+    const good = getN('good'), weak = getN('weak'), bad = getN('bad');
+    const pct = n => total ? Math.round(n/total*100) : 0;
+
+    // By-pool table
+    const poolMap = {};
+    (d.by_pool||[]).forEach(r => {
+      if (!poolMap[r.pool]) poolMap[r.pool] = {};
+      poolMap[r.pool][r.score] = r.n;
+    });
+
+    body.innerHTML = `
+      <div class="ctrl-section-hdr">Last 7 days</div>
+      <div class="eval-stat"><span class="eval-stat-label">total evaluated</span><span class="eval-stat-val" style="color:var(--text)">${total}</span></div>
+      <div class="eval-stat"><span class="eval-stat-label">good</span><span class="eval-stat-val eval-score-good">${good} <span style="font-size:10px;font-weight:400;color:#16a34a">(${pct(good)}%)</span></span></div>
+      <div class="eval-stat"><span class="eval-stat-label">weak</span><span class="eval-stat-val eval-score-weak">${weak} <span style="font-size:10px;font-weight:400;color:#d97706">(${pct(weak)}%)</span></span></div>
+      <div class="eval-stat"><span class="eval-stat-label">bad</span><span class="eval-stat-val eval-score-bad">${bad} <span style="font-size:10px;font-weight:400;color:#dc2626">(${pct(bad)}%)</span></span></div>
+      <div class="eval-stat"><span class="eval-stat-label">retries fired</span><span class="eval-stat-val" style="color:#f59e0b">${d.retries_fired}</span></div>
+      ${Object.keys(poolMap).length ? `
+        <div class="ctrl-section-hdr">By pool</div>
+        ${Object.entries(poolMap).map(([pool, scores]) => `
+          <div class="eval-stat">
+            <span class="eval-stat-label">${pool}</span>
+            <span style="font-size:11px;display:flex;gap:8px">
+              <span class="eval-score-good">${scores.good||0}g</span>
+              <span class="eval-score-weak">${scores.weak||0}w</span>
+              <span class="eval-score-bad">${scores.bad||0}b</span>
+            </span>
+          </div>`).join('')}` : ''}
+      ${d.recent_issues && d.recent_issues.length ? `
+        <div class="ctrl-section-hdr">Recent bad/weak</div>
+        ${d.recent_issues.map(row => {
+          let issues = [];
+          try { issues = JSON.parse(row.issues||'[]'); } catch(e){}
+          return `<div class="eval-issue-row">
+            <div style="color:${row.score==='bad'?'#ef4444':'#f59e0b'}">${row.score.toUpperCase()} — ${issues.join(', ')||row.reason||'—'}</div>
+            <div class="eval-issue-meta">${row.pool} · ${row.model} · ${(row.ts||'').slice(0,16)}</div>
+          </div>`;}).join('')}` : ''}`;
+  } catch(e) { body.innerHTML = `<div style="padding:20px;color:#ef4444;font-size:12px">error: ${e}</div>`; }
+}
+
+async function _loadCtrlStorage() {
+  const body = document.getElementById('ctrl-body-storage');
+  try {
+    const r = await fetch('/api/control/storage');
+    const d = await r.json();
+    if (d.error) throw new Error(d.error);
+    const fmt = n => n >= 1000 ? (n/1000).toFixed(1)+'k' : n;
+    body.innerHTML = `
+      <div class="ctrl-section-hdr">SQLite · ${d.path ? d.path.split('/').pop() : 'truman.db'} · ${d.size_mb} MB</div>
+      <div class="storage-grid">
+        ${(d.tables||[]).map(t => `
+          <div class="storage-row">
+            <span>${t.table}</span>
+            <span>${fmt(t.rows)}</span>
+          </div>`).join('')}
+      </div>`;
+  } catch(e) { body.innerHTML = `<div style="padding:20px;color:#ef4444;font-size:12px">error: ${e}</div>`; }
 }
 
 window._sseTraceHandler = function(data) {
