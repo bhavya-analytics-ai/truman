@@ -1609,3 +1609,28 @@ Beth birthday-planning brief delivered May 3 9am ET via Telegram. Phase 4 (load_
 - Om scan WA Bridge QR then re-enable `ENABLE_GMAIL_POLLING=1` after testing
 - Phase 16: Ambient Awareness (location triggers, Pushcut HTTP actions)
 
+
+---
+
+## Cleaning Session — 2026-05-05 (commit `d46af46`)
+
+### Phase 6 — Control Panel
+
+**What:** Single-tab control panel inside existing dashboard.html. Full system visibility + runtime flag control without a restart.
+
+**API endpoints added to `orb.py`:**
+- `GET /api/control/flags` — all 18 ENABLE_* flags with descriptions + live on/off state
+- `PATCH /api/control/flags/<key>` — toggle any flag at runtime (sets os.environ + user_prefs, no restart needed)
+- `GET /api/control/pools` — 6 pool configs, primary + fallback model names
+- `GET /api/control/eval` — eval_log stats: score distribution, per-pool breakdown, recent bad/weak turns
+- `GET /api/control/storage` — row count per SQLite table + DB file size
+- `GET /api/control/status` — last turn ts, last eval score, mac bridge state, table counts
+
+**Dashboard tab:**
+- "control" button in header (teal, distinct from memory/activity)
+- 440px slide-in panel from right, mobile = full-width
+- **Flags** — toggle any ENABLE_* with a live switch (no restart). 18 flags total
+- **Pools** — 6 pools with primary/fallback names + full router priority chain (8 rules)
+- **Eval** — good/weak/bad counts with %, retries fired, per-pool breakdown, 10 recent bad/weak rows
+- **Storage** — all 15+ SQLite tables with row counts + DB path + file size in MB
+- Auto-refreshes every 30s while open, lazy loads per tab switch, manual refresh button
