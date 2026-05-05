@@ -821,18 +821,24 @@ def list_repos() -> list[dict]:
     return [dict(r) for r in rows]
 
 def active_repo_tasks() -> list[dict]:
-    """Return only repos that are currently cloning/ingesting OR finished in last 30s.
-    The recently-finished window lets the dashboard show a 'done' confirmation briefly."""
+    """Return only repos that are currently cloning/ingesting OR finished/failed recently."""
     with _conn() as c:
         rows = c.execute("""
             SELECT name, url, file_count, status, progress, total, stage, error,
                    last_pulled
               FROM memory_repos
-             WHERE status IN ('cloning', 'ingesting', 'failed')
-                OR (status = 'done' AND datetime(last_pulled) > datetime('now', 'localtime', '-30 seconds'))
+             WHERE status IN ('cloning', 'ingesting')
+                OR (status = 'failed' AND datetime(last_pulled) > datetime('now', 'localtime', '-10 minutes'))
+                OR (status = 'done'   AND datetime(last_pulled) > datetime('now', 'localtime', '-30 seconds'))
           ORDER BY last_pulled DESC
         """).fetchall()
     return [dict(r) for r in rows]
+
+
+def dismiss_repo_task(name: str) -> None:
+    """Mark a repo as dismissed so it no longer shows in the task strip."""
+    with _conn() as c:
+        c.execute("UPDATE memory_repos SET status='dismissed' WHERE name=?", (name,))
 
 
 # ── Repo brain — learned_skills helpers ─────────────────────────────────────

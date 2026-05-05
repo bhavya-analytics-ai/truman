@@ -347,6 +347,17 @@ def api_tasks():
         return jsonify({"tasks": [], "error": str(e)})
 
 
+@app.route("/api/tasks/<name>/dismiss", methods=["POST"])
+def api_task_dismiss(name):
+    """Dismiss a failed/stuck task from the task strip."""
+    try:
+        from truman.storage.db import dismiss_repo_task
+        dismiss_repo_task(name)
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/api/power", methods=["GET", "POST"])
 def api_power():
     """Om's master kill switch. GET=status, POST=toggle. Truman has no tool for this."""

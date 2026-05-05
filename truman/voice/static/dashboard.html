@@ -786,7 +786,10 @@ function renderTasks(tasks) {
     const icon = t.status === 'done' ? '✓' : (t.status === 'failed' ? '✕' : '◐');
     const stage = t.status === 'done' ? `done · ${t.files} files`
       : (t.status === 'failed' ? (t.error || 'failed') : `${t.stage || 'working'} · ${t.progress}/${t.total || '?'}`);
-    return `<div class="task-row">
+    const dismissBtn = (t.status === 'failed' || t.status === 'done')
+      ? `<button onclick="dismissTask('${t.name}')" title="dismiss" style="background:none;border:none;color:var(--text3);font-size:14px;cursor:pointer;padding:0 4px;line-height:1;flex-shrink:0">×</button>`
+      : '';
+    return `<div class="task-row" id="task-row-${t.name}">
       <div class="task-icon ${cls}">${icon}</div>
       <div class="task-info">
         <div class="task-title">★ ${t.kind}: ${t.name}</div>
@@ -794,8 +797,18 @@ function renderTasks(tasks) {
         <div class="task-bar"><div class="task-bar-fill ${cls === 'fail' ? 'fail' : (cls === 'done' ? 'done' : '')}" style="width:${pct}%"></div></div>
       </div>
       <div class="task-pct ${cls}">${pct}%</div>
+      ${dismissBtn}
     </div>`;
   }).join('');
+}
+
+async function dismissTask(name) {
+  try {
+    await fetch(`/api/tasks/${encodeURIComponent(name)}/dismiss`, {method:'POST'});
+    const row = document.getElementById('task-row-' + name);
+    if (row) row.remove();
+    if (!tasksStrip.querySelector('.task-row')) tasksStrip.classList.remove('visible');
+  } catch(e) {}
 }
 
 function startTasksPoll() {
