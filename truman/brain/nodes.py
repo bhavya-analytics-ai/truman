@@ -61,6 +61,21 @@ def self_awareness_node(state: TrumanState) -> dict:
     return state
 
 
+# ── Node 0c: tool_retrieval ───────────────────────────────────────────────────
+def tool_retrieval_node(state: TrumanState) -> dict:
+    """Retrieve top-K tools relevant to this message."""
+    from truman.brain.tool_retrieval import retrieve
+    try:
+        routing = state.get("routing") or {}
+        tier = routing.get("tier", "normal")
+        pool = routing.get("pool", "general")
+        state["retrieved_tools"] = retrieve(state.get("user_input", ""), tier, pool)
+    except Exception as e:
+        state.setdefault("node_errors", {})["tool_retrieval"] = str(e)
+        state["retrieved_tools"] = []
+    return state
+
+
 # ── Node 1: classify_mood ─────────────────────────────────────────────────────
 def classify_mood(state: TrumanState) -> dict:
     _t(state, "classify_mood", "start", summary=f'"{state["user_input"][:60]}"')
@@ -456,11 +471,18 @@ def call_llm(state: TrumanState) -> dict:
         mem_bundle  = resolve_memory(state)
         memory_block = build_memory_prompt(mem_bundle)
 
-        system_content = (
-            SYSTEM + clock_line
-            + (f"\n\n{memory_block}" if memory_block else "")
-            + last_session_ctx + mood_line + persona_reminder
-        )
+        # Use dynamic system prompt if self_state is available, else fall back to static
+        self_state = state.get("self_state") or {}
+        if self_state:
+            from truman.brain.self_awareness import render_system_prompt
+            system_content = render_system_prompt(self_state, memory_block)
+            system_content += clock_line + last_session_ctx + mood_line + persona_reminder
+        else:
+            system_content = (
+                SYSTEM + clock_line
+                + (f"\n\n{memory_block}" if memory_block else "")
+                + last_session_ctx + mood_line + persona_reminder
+            )
 
         # node errors context (so Truman can mention if tools silently failed)
         node_errors = state.get("node_errors") or {}
@@ -527,9 +549,12 @@ def call_llm(state: TrumanState) -> dict:
         dyn_tool_calls: list = []
         from truman.text.agent import _call_llm_with_tools, _is_complex
         from truman.tools.all_tools import TOOLS as _NATIVE_TOOLS
-        _tool_map = {t.name: t for t in _NATIVE_TOOLS}
+        # Use semantically retrieved tools (top-K) — fall back to all if empty
+        _retrieved = state.get("retrieved_tools") or []
+        _bound_tools = _retrieved if _retrieved else _NATIVE_TOOLS
+        _tool_map = {t.name: t for t in _bound_tools}
         raw, model_label, dyn_tool_calls = _call_llm_with_tools(
-            messages, _NATIVE_TOOLS, _tool_map,
+            messages, _bound_tools, _tool_map,
             complex_msg=_is_complex(user_input),
         )
 
@@ -559,6 +584,7 @@ def call_llm(state: TrumanState) -> dict:
             "response":        response,
             "model_label":     model_label,
             "tool_calls_made": existing_calls + dyn_tool_calls,
+            "llm_tool_calls":  dyn_tool_calls,  # captured for risk_gate inspection
         }
     except Exception as e:
         _t(state, "call_llm", "error", summary=str(e))
