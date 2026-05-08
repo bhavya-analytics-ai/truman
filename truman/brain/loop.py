@@ -26,6 +26,7 @@ from truman.brain import nodes
 def _build_graph():
     g = StateGraph(TrumanState)
 
+    g.add_node("tier_router",     nodes.tier_router_node)
     g.add_node("classify_mood",  nodes.classify_mood)
     g.add_node("load_memory",    nodes.load_memory)
     g.add_node("load_goals",     nodes.load_goals)
@@ -39,7 +40,8 @@ def _build_graph():
     g.add_node("evaluate_output", nodes.evaluate_output)
     g.add_node("save_memory",     nodes.save_memory)
 
-    g.set_entry_point("classify_mood")
+    g.set_entry_point("tier_router")
+    g.add_edge("tier_router",     "classify_mood")
     g.add_edge("classify_mood",   "load_memory")
     g.add_edge("load_memory",     "load_goals")
     g.add_edge("load_goals",      "recall_skills")
@@ -119,6 +121,11 @@ def run(user_input: str, session_id: str = "default", pool_hint: str = None, att
         "eval_issues":      [],
         "eval_action":      "accept",
         "eval_type":        "none",
+        # smart routing fields
+        "routing":          {},
+        "self_state":       {},
+        "retrieved_tools":  [],
+        "llm_tool_calls":   [],
     }
 
     final_state = get_graph().invoke(initial_state)

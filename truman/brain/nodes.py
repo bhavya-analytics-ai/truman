@@ -28,6 +28,27 @@ def _t(state: TrumanState, node: str, status: str,
         pass
 
 
+# ── Node 0: tier_router ──────────────────────────────────────────────────────
+def tier_router_node(state: TrumanState) -> dict:
+    """First node — classifies tier, pool, runtime. Replaces detect_pool."""
+    from truman.brain.tier_router import classify_tier
+    try:
+        decision = classify_tier(
+            state.get("user_input", ""),
+            image_count=len(state.get("attach_ids", []) or []),
+        )
+        state["routing"] = decision
+        # Also set chosen_pool for backward compat with existing nodes
+        state["chosen_pool"] = decision.get("pool", "general")
+    except Exception as e:
+        state.setdefault("node_errors", {})["tier_router"] = str(e)
+        state["routing"] = {"tier": "normal", "pool": "general",
+                            "runtime": "local", "hints": ["fallback"],
+                            "skip_llm_eval": False}
+        state["chosen_pool"] = "general"
+    return state
+
+
 # ── Node 1: classify_mood ─────────────────────────────────────────────────────
 def classify_mood(state: TrumanState) -> dict:
     _t(state, "classify_mood", "start", summary=f'"{state["user_input"][:60]}"')
