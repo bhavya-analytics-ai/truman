@@ -6,9 +6,28 @@ def test_classify_trivial_greeting():
     assert d["tier"] == "trivial"
 
 
+def test_classify_trivial_yoo_repeated_chars():
+    assert tier_router.classify_tier("yoo")["tier"] == "trivial"
+    assert tier_router.classify_tier("yooo")["tier"] == "trivial"
+    assert tier_router.classify_tier("heyyy")["tier"] == "trivial"
+
+
+def test_classify_trivial_greeting_with_whats_up():
+    assert tier_router.classify_tier("yo what's up")["tier"] == "trivial"
+    assert tier_router.classify_tier("hey sup")["tier"] == "trivial"
+    assert tier_router.classify_tier("yo. what's up?")["tier"] == "trivial"
+
+
 def test_classify_trivial_thanks():
     d = tier_router.classify_tier("thanks man")
     assert d["tier"] == "trivial"
+
+
+def test_classify_trivial_reactions():
+    assert tier_router.classify_tier("lmao")["tier"] == "trivial"
+    assert tier_router.classify_tier("facts")["tier"] == "trivial"
+    assert tier_router.classify_tier("bet")["tier"] == "trivial"
+    assert tier_router.classify_tier("fr fr")["tier"] == "trivial"
 
 
 def test_classify_trivial_simple_math():

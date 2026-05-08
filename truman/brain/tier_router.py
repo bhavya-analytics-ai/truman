@@ -11,12 +11,25 @@ Regex first (fast), tiny LLM fallback if regex is unsure.
 import re
 from truman.core.runtime import is_railway
 
+# Normalize repeated chars before pattern matching (yooo→yo, heyyy→hey, wassss→was)
+def _normalize(msg: str) -> str:
+    import re as _re
+    return _re.sub(r'(.)\1{2,}', r'\1\1', msg).strip()
+
+
 # Regex patterns — each maps to (tier, pool, reason)
 _TRIVIAL_PATTERNS = [
-    (r"^\s*(yo|hi|hey|sup|hello|hola|gm|gn|good\s*(morning|night))\s*[!?.]*\s*$", "greeting"),
-    (r"^\s*(thanks?|ty|thx|thank you|cool|nice|ok|okay|sure|got it|sweet|lol|ok cool|sounds good|fair enough|makes sense)\s*(man|bro|dude|mate|yo|boss)?\s*[!?.]*\s*$", "ack"),
+    # greetings — bare, with punct, or with "what's up / sup / how are you" tail
+    (r"^\s*(y+o+|h+i+|h+e+y+|sup|hello+|hola|gm|gn|good\s*(morning|night))"
+     r"([.!?,]*\s*(what'?s?\s*(up|good|happening)?|how\s+(are\s+)?you|sup|man|bro|dude|mate|boss)?)"
+     r"\s*[!?.]*\s*$", "greeting"),
+    # acks / one-word reactions (including "fr fr", "lol lol", etc.)
+    (r"^\s*(thanks?|ty|thx|thank\s+you|cool+|nice+|ok+a*y*|sure+|got\s+it|sweet|"
+     r"lol+(\s+lol+)*|ok\s+cool|sounds\s+good|fair\s+enough|makes\s+sense|"
+     r"word|bet|facts?|true|fr(\s+fr)*|nah|yep|yup|nope|lmao+|haha+|hehe+|no\s+way|aight)\s*"
+     r"(man|bro|dude|mate|yo+|boss|g|fam)?\s*[!?.]*\s*$", "ack"),
     (r"^\s*what'?s?\s*\d+\s*[+\-*/]\s*\d+\s*[?]?\s*$", "simple_math"),
-    (r"^\s*\?\s*$", "qmark_only"),
+    (r"^\s*[!?.]+\s*$", "punct_only"),
 ]
 
 _COMPLEX_KEYWORDS = [
@@ -57,15 +70,16 @@ def classify_tier(message: str, image_count: int = 0) -> dict:
       5. Default → normal tier, general pool
     """
     msg = (message or "").strip()
+    norm = _normalize(msg)          # collapse repeated chars: yooo→yo, heyyy→hey
     runtime = "railway" if is_railway() else "local"
 
     # 1. Vision
     if image_count > 0:
         return _decision("complex", "vision", runtime, ["has_image"], skip_llm_eval=False)
 
-    # 2. Trivial
+    # 2. Trivial — check both original and normalized form
     for pat, reason in _TRIVIAL_PATTERNS:
-        if re.match(pat, msg, re.IGNORECASE):
+        if re.match(pat, msg, re.IGNORECASE) or re.match(pat, norm, re.IGNORECASE):
             return _decision("trivial", "general", runtime, [f"trivial:{reason}"], skip_llm_eval=True)
 
     # 3. Complex
