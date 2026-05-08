@@ -485,27 +485,20 @@ def call_llm(state: TrumanState) -> dict:
         t0 = time.time()
 
         # ── TOOL AGENCY FIX ───────────────────────────────────────────────────
-        # If a tool already ran (via regex/detect_tool, route_skill, or
-        # risk-gate confirmation), we just need a response — no bind_tools.
-        # If nothing ran yet, give the LLM full tool agency via bind_tools so
-        # it can pick the right tool dynamically instead of regex guessing.
+        # Always bind tools so LLM has agency. If a tool already ran via
+        # regex/detect_tool, route_skill, or risk-gate, its result is already
+        # baked into `messages` — but the LLM can still call additional tools
+        # (e.g. override an incorrect regex pick by calling the right tool).
+        # Risk-gate awaiting_confirm path is handled at the top of this node
+        # and never reaches here.
         dyn_tool_calls: list = []
-        tool_result_preset = bool(tool_result)
-
-        if not tool_result_preset:
-            # ── Primary path: LLM picks + executes tools in a loop ────────────
-            from truman.text.agent import _call_llm_with_tools, _is_complex
-            from truman.tools.all_tools import TOOLS as _NATIVE_TOOLS
-            _tool_map = {t.name: t for t in _NATIVE_TOOLS}
-            raw, model_label, dyn_tool_calls = _call_llm_with_tools(
-                messages, _NATIVE_TOOLS, _tool_map,
-                complex_msg=_is_complex(user_input),
-            )
-        else:
-            # ── Response-only path: tool result known, just wrap it ───────────
-            result = run_with_pool(messages, pool=chosen_pool, user_message=user_input)
-            raw = result["content"]
-            model_label = result["model"]
+        from truman.text.agent import _call_llm_with_tools, _is_complex
+        from truman.tools.all_tools import TOOLS as _NATIVE_TOOLS
+        _tool_map = {t.name: t for t in _NATIVE_TOOLS}
+        raw, model_label, dyn_tool_calls = _call_llm_with_tools(
+            messages, _NATIVE_TOOLS, _tool_map,
+            complex_msg=_is_complex(user_input),
+        )
 
         total_lat = round(time.time() - t0, 1)
         print(f"[MODEL] model={model_label}  pool={chosen_pool}  total={total_lat}s  dyn_tools={len(dyn_tool_calls)}")
