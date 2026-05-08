@@ -11,6 +11,7 @@ Architecture:
 import re
 import time
 import json
+import os as _os
 from collections import deque, defaultdict
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -19,6 +20,39 @@ from langchain_openai import ChatOpenAI
 from truman.core.config import MEM0_API_KEY, NVIDIA_API_KEY, NVIDIA_BASE_URL
 from truman.core.persona import SYSTEM
 from truman.core.model_router import detect_pool, get_session_model, short_label
+
+# ── Transient errors that justify LangGraph → legacy fallback ─────────────────
+import httpx as _httpx
+try:
+    import openai as _openai
+    _OPENAI_TRANSIENT = (_openai.APIConnectionError, _openai.RateLimitError)
+except Exception:
+    _OPENAI_TRANSIENT = ()
+
+try:
+    from langgraph.errors import GraphRecursionError as _GraphRecursionError
+except Exception:
+    _GraphRecursionError = None
+
+_TRANSIENT_BASE = (_httpx.TimeoutException, _httpx.ConnectError) + _OPENAI_TRANSIENT
+TRANSIENT_ERRORS = (_TRANSIENT_BASE + (_GraphRecursionError,)) if _GraphRecursionError else _TRANSIENT_BASE
+
+
+def log_fallback_event(reason: str, exception_type: str = "", message: str = "") -> None:
+    """Log a LangGraph→legacy fallback to events table for telemetry."""
+    try:
+        from truman.storage import db as _db
+        import json as _json
+        with _db._conn() as c:
+            c.execute(
+                "INSERT INTO events (kind, data, ts) VALUES (?, ?, datetime('now'))",
+                ("langgraph_fallback",
+                 _json.dumps({"reason": reason,
+                              "exception_type": exception_type,
+                              "message": message[:200]})),
+            )
+    except Exception:
+        pass  # never crash on telemetry
 
 
 # ── Session tool result cache (last 3 results per session) ───────────────────
@@ -554,8 +588,6 @@ def _run_legacy(user_input: str, mood: str = "", pool: str | None = None, sessio
     }
 
 
-import os as _os
-
 def run(user_input: str, mood: str = "", pool: str | None = None, session_id: str = "default", attach_ids: list = None) -> dict:
     """
     Primary entry point.
@@ -569,28 +601,19 @@ def run(user_input: str, mood: str = "", pool: str | None = None, session_id: st
         try:
             from truman.brain.loop import run as lg_run
             return lg_run(user_input, session_id=session_id, pool_hint=pool, attach_ids=attach_ids or [])
-        except (ImportError, AttributeError, TypeError, SyntaxError, NameError) as e:
-            # Code-level bug — don't silently fall back, surface it so we can fix it
-            import traceback as _tb
-            print(f"[LangGraph] CODE BUG — re-raising (not falling back):\n{_tb.format_exc()}")
-            raise
+        except TRANSIENT_ERRORS as e:
+            # Network/timeout — safe to fall back to legacy
+            log_fallback_event(reason="transient",
+                               exception_type=type(e).__name__,
+                               message=str(e))
+            print(f"[LangGraph→legacy] transient: {type(e).__name__}: {e}")
         except Exception as e:
-            # Runtime error (network, timeout, model failure) — fall back to legacy
-            import traceback as _tb
-            print(f"[LangGraph] runtime error, falling back to legacy: {type(e).__name__}: {e}\n{_tb.format_exc()}")
-            # emit error event so it shows in drawer
-            try:
-                import threading
-                from truman.storage import db as _db
-                threading.Thread(
-                    target=_db.log_event_db,
-                    kwargs=dict(kind="chat", source="text", session_id=session_id,
-                                status="error", error=f"LangGraph {type(e).__name__}: {e}",
-                                detail=f'{{"msg":"{user_input[:80]}"}}'),
-                    daemon=True,
-                ).start()
-            except Exception:
-                pass
+            # Non-transient bug — log + re-raise so we can see and fix it
+            log_fallback_event(reason="bug",
+                               exception_type=type(e).__name__,
+                               message=str(e))
+            print(f"[LangGraph] BUG (re-raising): {type(e).__name__}: {e}")
+            raise
 
     # fallback: original sequential logic
     return _run_legacy(user_input, mood=mood, pool=pool, session_id=session_id)
