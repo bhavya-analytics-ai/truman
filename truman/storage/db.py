@@ -348,6 +348,16 @@ CREATE TABLE IF NOT EXISTS trace_events (
     result_json TEXT                       -- JSON: output preview
 );
 
+-- ── Tool embeddings cache (for semantic retrieval) ───────────────────────────
+CREATE TABLE IF NOT EXISTS tool_embeddings (
+    tool_name    TEXT PRIMARY KEY,
+    description  TEXT NOT NULL,
+    desc_hash    TEXT NOT NULL,
+    vector       BLOB NOT NULL,
+    embedded_at  TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_tool_emb_hash ON tool_embeddings(desc_hash);
+
 -- ── Unified timeline view (all memory types in one query) ─────────────────────
 CREATE VIEW IF NOT EXISTS memory_all AS
     SELECT id, ts, date, source, 'turn'       AS kind, content  AS body FROM turns
