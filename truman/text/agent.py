@@ -221,6 +221,56 @@ def _call_llm(messages: list, complex_msg: bool = False, temperature: float = 0.
     return "", "none"
 
 
+def _call_llm_with_tools(messages: list, tools: list, tool_map: dict,
+                          complex_msg: bool = False, temperature: float = 0.7,
+                          max_iters: int = 4):
+    """LLM with bind_tools — LLM dynamically chooses + calls tools in a loop.
+
+    Returns (final_text, model_label, tool_calls_made).
+    Falls back to plain _call_llm if tool calling fails on all models.
+    """
+    from langchain_core.messages import ToolMessage
+    t1 = 18 if complex_msg else 12
+    t2 = 22 if complex_msg else 15
+    timeouts = [t1, t2]
+    tool_calls_made: list = []
+
+    for i, (model, label) in enumerate(_CHAT_MODELS):
+        try:
+            llm = ChatOpenAI(model=model, api_key=NVIDIA_API_KEY, base_url=NVIDIA_BASE_URL,
+                             temperature=temperature, timeout=timeouts[i])
+            llm_with_tools = llm.bind_tools(tools)
+            working_msgs = list(messages)
+
+            for _ in range(max_iters):
+                resp = llm_with_tools.invoke(working_msgs)
+                calls = getattr(resp, "tool_calls", None) or []
+                if not calls:
+                    return resp.content or "", label, tool_calls_made
+                working_msgs.append(resp)
+                for call in calls:
+                    name = call.get("name") if isinstance(call, dict) else getattr(call, "name", None)
+                    args = call.get("args", {}) if isinstance(call, dict) else getattr(call, "args", {})
+                    call_id = call.get("id") if isinstance(call, dict) else getattr(call, "id", "")
+                    tool_calls_made.append({"name": name})
+                    if name in tool_map:
+                        try:
+                            result = tool_map[name].invoke(args)
+                        except Exception as e:
+                            result = f"tool error: {e}"
+                    else:
+                        result = f"unknown tool: {name}"
+                    working_msgs.append(ToolMessage(content=str(result)[:8000], tool_call_id=call_id or name))
+            # max iters hit — return last response
+            return getattr(resp, "content", "") or "", label, tool_calls_made
+        except Exception as e:
+            print(f"[LLM tools] {label} failed: {e}")
+            continue
+    # All tool-capable attempts failed → fall back to plain
+    text, label = _call_llm(messages, complex_msg=complex_msg, temperature=temperature)
+    return text, label, tool_calls_made
+
+
 # ── Tool intent detection ─────────────────────────────────────────────────────
 _TOOL_PATTERNS = [
     (re.compile(r"\b(search|look up|find|google|news|current|latest|what.*happening)\b", re.I), "web_search"),
@@ -447,7 +497,13 @@ def _run_legacy(user_input: str, mood: str = "", pool: str | None = None, sessio
         messages.append(HumanMessage(content=user_input))
 
     try:
-        raw_text, model_label = _call_llm(messages, complex_msg=_is_complex(user_input))
+        # Always bind tools so LLM can call any tool dynamically.
+        # Regex pre-execution above is just a head-start hint — the LLM can
+        # still call additional tools (e.g. gitnexus__*) on top of it.
+        raw_text, model_label, dyn_calls = _call_llm_with_tools(
+            messages, TOOLS, tool_map, complex_msg=_is_complex(user_input)
+        )
+        tool_calls_made.extend(dyn_calls)
         final_text = strip_markdown(raw_text)
     except Exception as e:
         error_str = str(e)
@@ -513,8 +569,15 @@ def run(user_input: str, mood: str = "", pool: str | None = None, session_id: st
         try:
             from truman.brain.loop import run as lg_run
             return lg_run(user_input, session_id=session_id, pool_hint=pool, attach_ids=attach_ids or [])
+        except (ImportError, AttributeError, TypeError, SyntaxError, NameError) as e:
+            # Code-level bug — don't silently fall back, surface it so we can fix it
+            import traceback as _tb
+            print(f"[LangGraph] CODE BUG — re-raising (not falling back):\n{_tb.format_exc()}")
+            raise
         except Exception as e:
-            print(f"[LangGraph] failed, falling back to legacy: {e}")
+            # Runtime error (network, timeout, model failure) — fall back to legacy
+            import traceback as _tb
+            print(f"[LangGraph] runtime error, falling back to legacy: {type(e).__name__}: {e}\n{_tb.format_exc()}")
             # emit error event so it shows in drawer
             try:
                 import threading
@@ -522,7 +585,7 @@ def run(user_input: str, mood: str = "", pool: str | None = None, session_id: st
                 threading.Thread(
                     target=_db.log_event_db,
                     kwargs=dict(kind="chat", source="text", session_id=session_id,
-                                status="error", error=f"LangGraph failed: {e}",
+                                status="error", error=f"LangGraph {type(e).__name__}: {e}",
                                 detail=f'{{"msg":"{user_input[:80]}"}}'),
                     daemon=True,
                 ).start()

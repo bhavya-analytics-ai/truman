@@ -432,7 +432,8 @@ def call_llm(state: TrumanState) -> dict:
         # node errors context (so Truman can mention if tools silently failed)
         node_errors = state.get("node_errors") or {}
         if node_errors:
-            system_content += f"\n\n[INTERNAL: some steps had soft failures: {node_errors}]"
+            failed_nodes = ", ".join(node_errors.keys())
+            system_content += f"\n\nINTERNAL NOTE: these nodes had soft failures this turn: {failed_nodes}. If the user's request is affected by one of these, mention it naturally in your reply."
 
         # Build full message list via multimodal/call.py (L3 — type-aware builder)
         attach_ids  = state.get("attach_ids") or []
@@ -482,12 +483,32 @@ def call_llm(state: TrumanState) -> dict:
         _t(state, "call_llm", "start", summary=f"calling {chosen_pool} pool",
            args={"pool": chosen_pool, "tool_result": bool(tool_result)})
         t0 = time.time()
-        result = run_with_pool(messages, pool=chosen_pool, user_message=user_input)
-        raw = result["content"]
-        model_label = result["model"]
-        latency_info = result.get("latency", {})
-        total_lat = latency_info.get("total", round(time.time() - t0, 1))
-        print(f"[MODEL] model={model_label}  pool={chosen_pool}  total={total_lat}s")
+
+        # ── TOOL AGENCY FIX ───────────────────────────────────────────────────
+        # If a tool already ran (via regex/detect_tool, route_skill, or
+        # risk-gate confirmation), we just need a response — no bind_tools.
+        # If nothing ran yet, give the LLM full tool agency via bind_tools so
+        # it can pick the right tool dynamically instead of regex guessing.
+        dyn_tool_calls: list = []
+        tool_result_preset = bool(tool_result)
+
+        if not tool_result_preset:
+            # ── Primary path: LLM picks + executes tools in a loop ────────────
+            from truman.text.agent import _call_llm_with_tools, _is_complex
+            from truman.tools.all_tools import TOOLS as _NATIVE_TOOLS
+            _tool_map = {t.name: t for t in _NATIVE_TOOLS}
+            raw, model_label, dyn_tool_calls = _call_llm_with_tools(
+                messages, _NATIVE_TOOLS, _tool_map,
+                complex_msg=_is_complex(user_input),
+            )
+        else:
+            # ── Response-only path: tool result known, just wrap it ───────────
+            result = run_with_pool(messages, pool=chosen_pool, user_message=user_input)
+            raw = result["content"]
+            model_label = result["model"]
+
+        total_lat = round(time.time() - t0, 1)
+        print(f"[MODEL] model={model_label}  pool={chosen_pool}  total={total_lat}s  dyn_tools={len(dyn_tool_calls)}")
         response = strip_markdown(raw)
         # strip hallucinated tool/model blocks
         response = _re.sub(r'\[Tool result[^\]]*\][:\s]*[^\n]*\n?', '', response)
@@ -503,9 +524,16 @@ def call_llm(state: TrumanState) -> dict:
             _chat_histories[session_id] = chat_history[-32:]
 
         ms = int((time.time()-t0)*1000)
-        _t(state, "call_llm", "end", summary=f"{model_label} → {len(response)} chars",
+        _t(state, "call_llm", "end", summary=f"{model_label} → {len(response)} chars  dyn_tools={len(dyn_tool_calls)}",
            result=response[:200], duration_ms=ms)
-        return {"response": response, "model_label": model_label}
+
+        # merge any tools the LLM called dynamically into tool_calls_made
+        existing_calls = list(state.get("tool_calls_made") or [])
+        return {
+            "response":        response,
+            "model_label":     model_label,
+            "tool_calls_made": existing_calls + dyn_tool_calls,
+        }
     except Exception as e:
         _t(state, "call_llm", "error", summary=str(e))
         errs = dict(state.get("node_errors") or {})

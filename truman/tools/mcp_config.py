@@ -15,4 +15,9 @@ the MCP tools alongside the natives.
 # Add MCP server entries here when building project servers (Phase 5).
 # Format: {"server_id": {"command": "...", "args": [...]}}
 # Each entry mounts its tools into Truman's TOOLS list at boot.
-MCP_SERVERS: dict = {}
+MCP_SERVERS: dict = {
+    "gitnexus": {
+        "command": "gitnexus",
+        "args": ["mcp"],
+    },
+}
