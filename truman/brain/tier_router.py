@@ -14,7 +14,7 @@ from truman.core.runtime import is_railway
 # Regex patterns — each maps to (tier, pool, reason)
 _TRIVIAL_PATTERNS = [
     (r"^\s*(yo|hi|hey|sup|hello|hola|gm|gn|good\s*(morning|night))\s*[!?.]*\s*$", "greeting"),
-    (r"^\s*(thanks?|ty|thx|thank you|cool|nice|ok|okay|sure|got it|sweet|lol)\s*(man|bro|dude|mate|yo|boss)?\s*[!?.]*\s*$", "ack"),
+    (r"^\s*(thanks?|ty|thx|thank you|cool|nice|ok|okay|sure|got it|sweet|lol|ok cool|sounds good|fair enough|makes sense)\s*(man|bro|dude|mate|yo|boss)?\s*[!?.]*\s*$", "ack"),
     (r"^\s*what'?s?\s*\d+\s*[+\-*/]\s*\d+\s*[?]?\s*$", "simple_math"),
     (r"^\s*\?\s*$", "qmark_only"),
 ]
