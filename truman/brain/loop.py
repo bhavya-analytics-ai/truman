@@ -46,10 +46,7 @@ def _build_graph():
     g.add_node("load_goals",      nodes.load_goals)
     g.add_node("recall_skills",  nodes.recall_skills)
     g.add_node("detect_pool",    nodes.detect_pool)
-    g.add_node("detect_tool",    nodes.detect_tool)
-    g.add_node("risk_gate",      nodes.risk_gate)
-    g.add_node("route_skill",    nodes.route_skill)
-    g.add_node("execute_tool",   nodes.execute_tool)
+    g.add_node("risk_gate",      nodes.risk_gate)    # handles "do it" confirmations
     g.add_node("call_llm",        nodes.call_llm)
     g.add_node("risk_gate_node",  nodes.risk_gate_node)
     g.add_node("evaluate_output", nodes.evaluate_output)
@@ -67,12 +64,8 @@ def _build_graph():
     )
     g.add_edge("load_goals",      "recall_skills")
     g.add_edge("recall_skills",   "detect_pool")
-    g.add_edge("detect_pool",     "detect_tool")
-    g.add_edge("detect_tool",     "risk_gate")
-    g.add_edge("risk_gate",       "route_skill")
-    # route_skill → execute_tool (if skill ran, execute_tool is a no-op)
-    g.add_edge("route_skill",     "execute_tool")
-    g.add_edge("execute_tool",    "call_llm")
+    g.add_edge("detect_pool",     "risk_gate")     # risk_gate handles "do it" confirmations
+    g.add_edge("risk_gate",       "call_llm")
     g.add_conditional_edges(
         "call_llm",
         _route_after_call_llm,
