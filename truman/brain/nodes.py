@@ -594,6 +594,7 @@ def call_llm(state: TrumanState) -> dict:
         raw, model_label, dyn_tool_calls = _call_llm_with_tools(
             messages, _bound_tools, _tool_map,
             complex_msg=_is_complex(user_input),
+            pool=chosen_pool,
         )
 
         total_lat = round(time.time() - t0, 1)

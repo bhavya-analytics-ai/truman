@@ -45,8 +45,8 @@ def log_fallback_event(reason: str, exception_type: str = "", message: str = "")
         import json as _json
         with _db._conn() as c:
             c.execute(
-                "INSERT INTO events (kind, data, ts) VALUES (?, ?, datetime('now'))",
-                ("langgraph_fallback",
+                "INSERT INTO events (kind, status, detail, ts) VALUES (?, ?, ?, datetime('now'))",
+                ("langgraph_fallback", "error",
                  _json.dumps({"reason": reason,
                               "exception_type": exception_type,
                               "message": message[:200]})),
@@ -231,11 +231,21 @@ def _is_complex(msg: str) -> bool:
     return len(msg.split()) > 20 or bool(_TASK_KW.search(msg))
 
 
-# ── LLM — NVIDIA only, no groq ───────────────────────────────────────────────
+# ── LLM — NVIDIA only, pool-aware model selection ───────────────────────────
+# general/reasoning → llama-70b (fast, solid), coding/agentic → kimi-k2 (deep)
 _CHAT_MODELS = [
-    ("moonshotai/kimi-k2-instruct", "kimi-k2"),
-    ("stepfun-ai/step-3.5-flash",   "step-flash"),
+    ("meta/llama-3.3-70b-instruct",  "llama70"),
+    ("moonshotai/kimi-k2-instruct",  "kimi-k2"),
 ]
+
+_POOL_CHAT_MODELS: dict[str, list] = {
+    "general":   [("meta/llama-3.3-70b-instruct", "llama70"),  ("moonshotai/kimi-k2-instruct", "kimi-k2")],
+    "reasoning": [("moonshotai/kimi-k2-instruct", "kimi-k2"),  ("meta/llama-3.3-70b-instruct", "llama70")],
+    "coding":    [("moonshotai/kimi-k2-instruct", "kimi-k2"),  ("stepfun-ai/step-3.5-flash",   "step-flash")],
+    "agentic":   [("moonshotai/kimi-k2-instruct", "kimi-k2"),  ("stepfun-ai/step-3.5-flash",   "step-flash")],
+    "docs":      [("meta/llama-3.3-70b-instruct", "llama70"),  ("moonshotai/kimi-k2-instruct", "kimi-k2")],
+    "vision":    [("meta/llama-3.2-90b-vision-instruct", "llama-vision"), ("meta/llama-4-scout-17b-16e-instruct", "scout")],
+}
 
 def _call_llm(messages: list, complex_msg: bool = False, temperature: float = 0.7):
     """Try each model in order, return (response_text, model_label)."""
@@ -245,8 +255,9 @@ def _call_llm(messages: list, complex_msg: bool = False, temperature: float = 0.
 
     for i, (model, label) in enumerate(_CHAT_MODELS):
         try:
+            t = timeouts[i] if i < len(timeouts) else timeouts[-1]
             llm = ChatOpenAI(model=model, api_key=NVIDIA_API_KEY, base_url=NVIDIA_BASE_URL,
-                             temperature=temperature, timeout=timeouts[i])
+                             temperature=temperature, timeout=t)
             resp = llm.invoke(messages)
             return resp.content or "", label
         except Exception as e:
@@ -257,22 +268,25 @@ def _call_llm(messages: list, complex_msg: bool = False, temperature: float = 0.
 
 def _call_llm_with_tools(messages: list, tools: list, tool_map: dict,
                           complex_msg: bool = False, temperature: float = 0.7,
-                          max_iters: int = 4):
+                          max_iters: int = 4, pool: str = "general"):
     """LLM with bind_tools — LLM dynamically chooses + calls tools in a loop.
 
     Returns (final_text, model_label, tool_calls_made).
     Falls back to plain _call_llm if tool calling fails on all models.
+    pool selects the model priority list (general→llama70, coding→kimi-k2, etc.)
     """
     from langchain_core.messages import ToolMessage
     t1 = 18 if complex_msg else 12
     t2 = 22 if complex_msg else 15
     timeouts = [t1, t2]
     tool_calls_made: list = []
+    model_list = _POOL_CHAT_MODELS.get(pool, _CHAT_MODELS)
 
-    for i, (model, label) in enumerate(_CHAT_MODELS):
+    for i, (model, label) in enumerate(model_list):
         try:
+            timeout = timeouts[i] if i < len(timeouts) else timeouts[-1]
             llm = ChatOpenAI(model=model, api_key=NVIDIA_API_KEY, base_url=NVIDIA_BASE_URL,
-                             temperature=temperature, timeout=timeouts[i])
+                             temperature=temperature, timeout=timeout)
             llm_with_tools = llm.bind_tools(tools)
             working_msgs = list(messages)
 
