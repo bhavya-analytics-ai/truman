@@ -23,6 +23,18 @@ from truman.brain.state import TrumanState
 from truman.brain import nodes
 
 
+def _route_after_tool_retrieval(state: dict) -> str:
+    """Trivial tier skips load_goals + recall_skills — go straight to detect_pool."""
+    tier = (state.get("routing") or {}).get("tier", "normal")
+    return "detect_pool" if tier == "trivial" else "load_goals"
+
+
+def _route_after_call_llm(state: dict) -> str:
+    """Trivial tier skips post-LLM risk gate — go straight to evaluate_output."""
+    tier = (state.get("routing") or {}).get("tier", "normal")
+    return "evaluate_output" if tier == "trivial" else "risk_gate_node"
+
+
 def _build_graph():
     g = StateGraph(TrumanState)
 
@@ -48,7 +60,11 @@ def _build_graph():
     g.add_edge("classify_mood",   "load_memory")
     g.add_edge("load_memory",     "self_awareness")
     g.add_edge("self_awareness",  "tool_retrieval")
-    g.add_edge("tool_retrieval",  "load_goals")
+    g.add_conditional_edges(
+        "tool_retrieval",
+        _route_after_tool_retrieval,
+        {"load_goals": "load_goals", "detect_pool": "detect_pool"},
+    )
     g.add_edge("load_goals",      "recall_skills")
     g.add_edge("recall_skills",   "detect_pool")
     g.add_edge("detect_pool",     "detect_tool")
@@ -57,7 +73,11 @@ def _build_graph():
     # route_skill → execute_tool (if skill ran, execute_tool is a no-op)
     g.add_edge("route_skill",     "execute_tool")
     g.add_edge("execute_tool",    "call_llm")
-    g.add_edge("call_llm",        "risk_gate_node")     # post-LLM risk inspection
+    g.add_conditional_edges(
+        "call_llm",
+        _route_after_call_llm,
+        {"risk_gate_node": "risk_gate_node", "evaluate_output": "evaluate_output"},
+    )
     g.add_edge("risk_gate_node",  "evaluate_output")   # eval before save — no bad drafts in memory
     g.add_edge("evaluate_output", "save_memory")
     g.add_edge("save_memory",     END)
