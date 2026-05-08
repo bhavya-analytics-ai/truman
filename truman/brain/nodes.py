@@ -340,6 +340,44 @@ def risk_gate(state: TrumanState) -> dict:
         return {"risk_tier": "safe", "awaiting_confirm": False, "node_errors": errs}
 
 
+# ── Node 4c: risk_gate_node (post-LLM version) ───────────────────────────────
+def risk_gate_node(state: TrumanState) -> dict:
+    """Post-LLM risk gate — inspects what the LLM picked, not regex.
+    Replaces the pre-LLM risk_gate once detect_tool is removed (Phase B8).
+    """
+    import os
+    if os.environ.get("ENABLE_RISK_GATE", "1") != "1":
+        return {"risk_tier": "safe", "awaiting_confirm": False}
+    try:
+        from truman.storage.db import save_pending_action
+        from truman.core.risk import get_tier
+
+        tool_calls = state.get("llm_tool_calls") or []
+        if not tool_calls:
+            return state  # nothing to gate
+
+        for tc in tool_calls:
+            name = tc.get("name") or tc.get("tool_name", "")
+            if not name:
+                continue
+            tier = get_tier(name)
+            if tier == "risky":
+                args = tc.get("args", {})
+                pid = save_pending_action(name, args, state.get("user_input", ""))
+                return {
+                    "awaiting_confirm":  True,
+                    "pending_action_id": pid,
+                    "risk_tier":         "risky",
+                    "response": (
+                        f"want me to run `{name}`? say 'do it' to confirm or 'cancel'."
+                    ),
+                }
+        return state
+    except Exception as e:
+        state.setdefault("node_errors", {})["risk_gate_node"] = str(e)
+        return state
+
+
 # ── Node 4b: route_skill ─────────────────────────────────────────────────────
 def route_skill(state: TrumanState) -> dict:
     """

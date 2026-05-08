@@ -39,6 +39,7 @@ def _build_graph():
     g.add_node("route_skill",    nodes.route_skill)
     g.add_node("execute_tool",   nodes.execute_tool)
     g.add_node("call_llm",        nodes.call_llm)
+    g.add_node("risk_gate_node",  nodes.risk_gate_node)
     g.add_node("evaluate_output", nodes.evaluate_output)
     g.add_node("save_memory",     nodes.save_memory)
 
@@ -56,7 +57,8 @@ def _build_graph():
     # route_skill → execute_tool (if skill ran, execute_tool is a no-op)
     g.add_edge("route_skill",     "execute_tool")
     g.add_edge("execute_tool",    "call_llm")
-    g.add_edge("call_llm",        "evaluate_output")   # eval before save — no bad drafts in memory
+    g.add_edge("call_llm",        "risk_gate_node")     # post-LLM risk inspection
+    g.add_edge("risk_gate_node",  "evaluate_output")   # eval before save — no bad drafts in memory
     g.add_edge("evaluate_output", "save_memory")
     g.add_edge("save_memory",     END)
 
