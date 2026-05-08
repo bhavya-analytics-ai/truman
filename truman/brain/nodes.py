@@ -49,6 +49,18 @@ def tier_router_node(state: TrumanState) -> dict:
     return state
 
 
+# ── Node 0b: self_awareness ───────────────────────────────────────────────────
+def self_awareness_node(state: TrumanState) -> dict:
+    """Build per-turn SelfState dict for dynamic system prompt."""
+    from truman.brain.self_awareness import build_self_state
+    try:
+        state["self_state"] = build_self_state(state)
+    except Exception as e:
+        state.setdefault("node_errors", {})["self_awareness"] = str(e)
+        state["self_state"] = {}
+    return state
+
+
 # ── Node 1: classify_mood ─────────────────────────────────────────────────────
 def classify_mood(state: TrumanState) -> dict:
     _t(state, "classify_mood", "start", summary=f'"{state["user_input"][:60]}"')
