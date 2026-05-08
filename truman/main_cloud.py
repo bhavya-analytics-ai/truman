@@ -72,6 +72,15 @@ def main():
             except Exception as e:
                 print(f"[MCP] mount failed for {sid}: {e}")
 
+    # Smart routing: embed all tools at boot for semantic retrieval
+    try:
+        from truman.brain.tool_retrieval import init_tool_embeddings
+        from truman.tools.all_tools import TOOLS as _ALL_TOOLS
+        init_tool_embeddings(_ALL_TOOLS, [])
+        print(f"[Smart Routing] Embedded {len(_ALL_TOOLS)} tools for retrieval")
+    except Exception as e:
+        print(f"[Smart Routing] init_tool_embeddings failed: {e}")
+
     # ── [CORE] Message handling infrastructure ────────────────────────────────
     agent.get_agent()   # warm up brain — must be first
 
