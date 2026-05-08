@@ -44,6 +44,12 @@ class TrumanState(TypedDict):
     eval_action: str             # "accept" | "retry"
     eval_type:   str             # "rule" | "llm" | "none"
 
+    # ── Smart routing (Phase 1 redo) ─────────────────────────────────────────
+    routing:         dict            # RoutingDecision from tier_router
+    self_state:      dict            # built by self_awareness node
+    retrieved_tools: list            # top-K from tool_retrieval
+    llm_tool_calls:  list            # what LLM picked, inspected by risk_gate
+
     # ── Error tracking ───────────────────────────────────────────────────────
     node_errors:     dict            # {node_name: error_str} — soft failures
     fatal_error:     str             # if whole graph failed
