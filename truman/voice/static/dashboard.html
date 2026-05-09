@@ -1074,7 +1074,6 @@ async function renameSession(bid, currentLabel) {
 }
 
 async function deleteSession(bid) {
-  if (!confirm('delete this chat?')) return;
   delete _msgCache[bid];
   _saveCache();
   try { await fetch(`/api/sessions/${bid}`, {method:'DELETE'}); } catch(e) {}
