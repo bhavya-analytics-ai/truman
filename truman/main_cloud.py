@@ -56,9 +56,8 @@ def _noop_speak(text):
     print(f"[Cloud TTS] {text}")
 
 
-def main():
-    port = int(os.environ.get("PORT", 5001))
-
+def _background_init():
+    """Heavy init in background so Flask binds first and healthcheck passes."""
     # Mount MCP servers if configured
     from truman.tools.mcp_config import MCP_SERVERS
     if MCP_SERVERS:
@@ -82,7 +81,7 @@ def main():
         print(f"[Smart Routing] init_tool_embeddings failed: {e}")
 
     # ── [CORE] Message handling infrastructure ────────────────────────────────
-    agent.get_agent()   # warm up brain — must be first
+    agent.get_agent()   # warm up brain
 
     # [CORE] Telegram poller — primary inbound channel (works when Mac is off)
     try:
@@ -105,10 +104,18 @@ def main():
             print(f"[Cloud] Gmail poller failed to start: {e}")
 
     realtime.start()    # [SUPPORT] WebRTC audio bridge
+    print("[Cloud] Background init complete.")
+
+
+def main():
+    port = int(os.environ.get("PORT", 5001))
+
+    # Kick off all heavy init in background — Flask binds immediately so
+    # Railway's healthcheck passes before agent warmup finishes.
+    threading.Thread(target=_background_init, daemon=False, name="startup-init").start()
 
     print(f"[Cloud] Truman running on port {port}")
-    # On Railway, Flask must run in the main thread (blocks) so the process stays alive.
-    # orb.run() uses a daemon thread (fine locally), but Railway exits when main() returns.
+    # Flask runs in the main thread (blocks) so the process stays alive.
     import logging
     logging.getLogger("werkzeug").setLevel(logging.ERROR)
     orb.app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False, threaded=True)
