@@ -548,8 +548,12 @@ def delete_session(browser_id: str) -> None:
     with _conn() as c:
         row = c.execute("SELECT id FROM sessions WHERE browser_id = ?", (browser_id,)).fetchone()
         if row:
-            c.execute("DELETE FROM turns WHERE session_id = ?", (row["id"],))
-            c.execute("DELETE FROM sessions WHERE id = ?", (row["id"],))
+            sid = row["id"]
+            # Clear all child rows that reference sessions(id) to avoid FK violation
+            c.execute("DELETE FROM turns             WHERE session_id = ?", (sid,))
+            c.execute("DELETE FROM session_summaries WHERE session_id = ?", (sid,))
+            c.execute("DELETE FROM tool_calls        WHERE session_id = ?", (sid,))
+            c.execute("DELETE FROM sessions          WHERE id         = ?", (sid,))
 
 
 def get_sessions_by_day() -> list[dict]:
