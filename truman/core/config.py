@@ -63,6 +63,7 @@ def get_llm(temperature: float = 0.7, json_mode: bool = False):
 # ── Feature flags (Railway vars override) ────────────────────────────────────
 # Set these in Railway env panel — defaults safe for production
 import os as _os
+_os.environ.setdefault("ENABLE_CLAUDE_SHAPE","1")   # Phase 1: single-call chat path (0=rollback to LangGraph)
 _os.environ.setdefault("ENABLE_LANGGRAPH",   "1")
 _os.environ.setdefault("ENABLE_MCP",         "1")
 _os.environ.setdefault("ENABLE_MCP_FILES",   "1")

@@ -605,29 +605,46 @@ def _run_legacy(user_input: str, mood: str = "", pool: str | None = None, sessio
 def run(user_input: str, mood: str = "", pool: str | None = None, session_id: str = "default", attach_ids: list = None) -> dict:
     """
     Primary entry point.
-    Tries LangGraph brain loop first (ENABLE_LANGGRAPH=1, default on).
-    Falls back to legacy sequential run() if anything goes wrong.
-    All failures surface in the events drawer.
+    ENABLE_CLAUDE_SHAPE=1 (default) → single-call claude-shape path
+    ENABLE_CLAUDE_SHAPE=0 → LangGraph path (rollback)
+    ENABLE_LANGGRAPH=0   → legacy sequential path
     """
-    use_lg = _os.environ.get("ENABLE_LANGGRAPH", "1") == "1"
+    use_claude_shape = _os.environ.get("ENABLE_CLAUDE_SHAPE", "1") == "1"
 
+    # Claude-shape: one LLM call, tools fire natively. Multimodal still uses LangGraph.
+    if use_claude_shape and not (attach_ids or []):
+        try:
+            from truman.text.chat import chat as _chat
+            result = _chat(user_input, session_id=session_id, pool=pool)
+            return {
+                "response":     result["response"],
+                "model":        result["model"],
+                "pool":         result["pool"],
+                "tool_calls":   result["tool_calls"],
+                "mood":         "neutral",
+                "warnings":     [],
+                "skill":        "",
+                "attachments":  [],
+            }
+        except Exception as e:
+            print(f"[claude-shape→legacy] {type(e).__name__}: {e}")
+            # fall through to LangGraph
+
+    use_lg = _os.environ.get("ENABLE_LANGGRAPH", "1") == "1"
     if use_lg:
         try:
             from truman.brain.loop import run as lg_run
             return lg_run(user_input, session_id=session_id, pool_hint=pool, attach_ids=attach_ids or [])
         except TRANSIENT_ERRORS as e:
-            # Network/timeout — safe to fall back to legacy
             log_fallback_event(reason="transient",
                                exception_type=type(e).__name__,
                                message=str(e))
             print(f"[LangGraph→legacy] transient: {type(e).__name__}: {e}")
         except Exception as e:
-            # Non-transient bug — log + re-raise so we can see and fix it
             log_fallback_event(reason="bug",
                                exception_type=type(e).__name__,
                                message=str(e))
             print(f"[LangGraph] BUG (re-raising): {type(e).__name__}: {e}")
             raise
 
-    # fallback: original sequential logic
     return _run_legacy(user_input, mood=mood, pool=pool, session_id=session_id)
