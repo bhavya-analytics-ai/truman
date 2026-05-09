@@ -20,26 +20,33 @@ def _persist_turn(turn: dict[str, Any]) -> None:
     response = turn.get("response", "")
     model = turn.get("model", "")
     pool = turn.get("pool", "general")
+    session_int: int | None = None
 
     # Persist user + assistant turns
     try:
         from truman.storage import db
-        db.log_turn(session_id, "user", user_input)
-        db.log_turn(session_id, "assistant", response)
+        # session_id from chat() is a string (e.g. "default") — resolve to int
+        session_int = db.get_or_create_session(session_id)
+        db.log_turn(session_int, "user", user_input)
+        db.log_turn(session_int, "assistant", response)
     except Exception as e:
         print(f"[save] log_turn failed: {e}")
 
     # Async eval — log only, no retry blocking
     try:
-        from truman.brain.eval import evaluate_response
-        score, action, issues, reason = evaluate_response(user_input, response, complex_msg=False)
+        import uuid as _uuid
+        from truman.brain.eval import evaluate
+        result = evaluate(str(_uuid.uuid4()), user_input, response)
+        score = result.get("score", "good")
+        action = result.get("action", "accept")
+        issues = result.get("issues", [])
+        reason = result.get("reason", "")
         print(f"[EVAL bg] score={score}  issues={issues}")
         try:
             from truman.storage import db
-            import uuid
             db.log_eval(
-                turn_id=str(uuid.uuid4()),
-                session_id=session_id,
+                turn_id=str(_uuid.uuid4()),
+                session_id=session_int,
                 model=model,
                 pool=pool,
                 score=score,
