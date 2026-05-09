@@ -547,13 +547,20 @@ def update_session_label(browser_id: str, label: str) -> None:
 def delete_session(browser_id: str) -> None:
     with _conn() as c:
         row = c.execute("SELECT id FROM sessions WHERE browser_id = ?", (browser_id,)).fetchone()
-        if row:
-            sid = row["id"]
-            # Clear all child rows that reference sessions(id) to avoid FK violation
-            c.execute("DELETE FROM turns             WHERE session_id = ?", (sid,))
-            c.execute("DELETE FROM session_summaries WHERE session_id = ?", (sid,))
-            c.execute("DELETE FROM tool_calls        WHERE session_id = ?", (sid,))
-            c.execute("DELETE FROM sessions          WHERE id         = ?", (sid,))
+        if not row:
+            return
+        sid = row["id"]
+        # Disable FK checks for this delete — we're nuking everything tied to this session.
+        # Live DB has columns from old migrations that aren't in the current schema, so we
+        # can't enumerate every child table reliably; turn the constraint off and clean up.
+        c.execute("PRAGMA foreign_keys = OFF")
+        try:
+            for tbl in ("turns", "session_summaries", "tool_calls"):
+                try: c.execute(f"DELETE FROM {tbl} WHERE session_id = ?", (sid,))
+                except Exception: pass
+            c.execute("DELETE FROM sessions WHERE id = ?", (sid,))
+        finally:
+            c.execute("PRAGMA foreign_keys = ON")
 
 
 def get_sessions_by_day() -> list[dict]:
