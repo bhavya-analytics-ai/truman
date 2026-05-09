@@ -70,6 +70,11 @@ def state_endpoint():
 
 @app.route("/")
 def index():
+    return send_from_directory(STATIC_DIR, "dashboard.html")
+
+
+@app.route("/orb")
+def orb_page():
     return send_from_directory(STATIC_DIR, "orb.html")
 
 

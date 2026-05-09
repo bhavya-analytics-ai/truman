@@ -530,14 +530,13 @@ def recent_turns(n: int = 10) -> list[dict]:
 def get_or_create_session(browser_id: str, label: str = None) -> int:
     """Return SQLite integer id for a browser session UUID, creating if needed."""
     with _conn() as c:
-        row = c.execute("SELECT id FROM sessions WHERE browser_id = ?", (browser_id,)).fetchone()
-        if row:
-            return row["id"]
-        cur = c.execute(
-            "INSERT INTO sessions(started_at, browser_id, label) VALUES (?, ?, ?)",
+        # INSERT OR IGNORE avoids race condition when two threads hit simultaneously
+        c.execute(
+            "INSERT OR IGNORE INTO sessions(started_at, browser_id, label) VALUES (?, ?, ?)",
             (_now(), browser_id, label),
         )
-        return cur.lastrowid
+        row = c.execute("SELECT id FROM sessions WHERE browser_id = ?", (browser_id,)).fetchone()
+        return row["id"] if row else 0
 
 
 def update_session_label(browser_id: str, label: str) -> None:

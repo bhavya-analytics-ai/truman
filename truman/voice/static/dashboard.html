@@ -101,6 +101,9 @@
   .ssb-sess.active .ssb-sess-label { color: var(--accent2); }
   .ssb-sess-preview { font-size: 10px; color: var(--text3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 1px; }
   .ssb-sess-count { font-size: 9px; color: var(--text3); flex-shrink: 0; margin-top: 4px; }
+  .ssb-sess-del { display: none; font-size: 11px; color: var(--text3); flex-shrink: 0; padding: 0 2px; line-height: 1; margin-top: 2px; cursor: pointer; }
+  .ssb-sess-del:hover { color: #ef4444; }
+  .ssb-sess:hover .ssb-sess-del { display: block; }
 
   /* Hover preview popup */
   .ssb-popup { position: fixed; left: 224px; background: var(--bg3); border: 1px solid var(--border2); border-radius: 8px; padding: 10px 12px; max-width: 240px; z-index: 300; box-shadow: 0 4px 16px rgba(0,0,0,0.5); pointer-events: none; }
@@ -986,7 +989,8 @@ function _buildSessRow(s) {
       <div class="ssb-sess-label">${label.replace(/&/g,'&amp;').replace(/</g,'&lt;')}</div>
       ${preview ? `<div class="ssb-sess-preview">${preview.replace(/&/g,'&amp;').replace(/</g,'&lt;')}</div>` : ''}
     </div>
-    <div class="ssb-sess-count">${count > 0 ? count+'↕' : ''}</div>`;
+    <div class="ssb-sess-count">${count > 0 ? count+'↕' : ''}</div>
+    <div class="ssb-sess-del" title="delete" onclick="event.stopPropagation();deleteSession('${s.browser_id}')">✕</div>`;
 
   row.onclick = () => openSession(s.browser_id);
   row.oncontextmenu = (e) => { e.preventDefault(); showCtxMenu(e, s.browser_id, label); };
