@@ -548,7 +548,8 @@ def delete_session(browser_id: str) -> None:
     # Use a raw connection with FK checks DISABLED for this op only.
     # Live DB has child columns from past migrations that aren't in the current schema —
     # we can't enumerate every dependent table, so just nuke the session row + obvious children.
-    c = sqlite3.connect(DB_PATH, timeout=5.0)
+    # isolation_level=None → autocommit; PRAGMA foreign_keys works only outside a transaction.
+    c = sqlite3.connect(DB_PATH, timeout=5.0, isolation_level=None)
     c.row_factory = sqlite3.Row
     c.execute("PRAGMA foreign_keys = OFF")
     try:
@@ -556,11 +557,18 @@ def delete_session(browser_id: str) -> None:
         if not row:
             return
         sid = row["id"]
+        c.execute("BEGIN")
         for tbl in ("turns", "session_summaries", "tool_calls"):
             try: c.execute(f"DELETE FROM {tbl} WHERE session_id = ?", (sid,))
-            except Exception: pass
+            except Exception as e: print(f"[delete_session] {tbl}: {e}")
         c.execute("DELETE FROM sessions WHERE id = ?", (sid,))
-        c.commit()
+        c.execute("COMMIT")
+        print(f"[delete_session] removed sid={sid} browser_id={browser_id}")
+    except Exception as e:
+        print(f"[delete_session] FAILED: {e}")
+        try: c.execute("ROLLBACK")
+        except Exception: pass
+        raise
     finally:
         c.close()
 
