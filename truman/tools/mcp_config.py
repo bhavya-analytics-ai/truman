@@ -15,7 +15,14 @@ the MCP tools alongside the natives.
 # Add MCP server entries here when building project servers (Phase 5).
 # Format: {"server_id": {"command": "...", "args": [...]}}
 # Each entry mounts its tools into Truman's TOOLS list at boot.
-MCP_SERVERS: dict = {
+import os as _os
+
+def _is_railway() -> bool:
+    return bool(_os.getenv("RAILWAY_ENVIRONMENT") or _os.getenv("RAILWAY_SERVICE_NAME"))
+
+# Gitnexus is a local code-intelligence tool — no Node.js on Railway.
+# Mount only in local dev where the gitnexus binary exists.
+MCP_SERVERS: dict = {} if _is_railway() else {
     "gitnexus": {
         "command": "gitnexus",
         "args": ["mcp"],
