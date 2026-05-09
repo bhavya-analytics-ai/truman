@@ -197,6 +197,7 @@
   .tool-chip.done { border-color: #22c55e44; color: #86efac; animation: none; }
   .tool-chip.error { border-color: #ef444444; color: #fca5a5; animation: none; }
   .tool-chip-result { font-size: 10px; opacity: 0.7; max-width: 200px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  .tool-chip-step { font-size: 9px; opacity: 0.55; margin-left: 4px; font-variant-numeric: tabular-nums; }
   /* Streaming cursor */
   @keyframes blink { 0%,100%{opacity:1}50%{opacity:0} }
   .stream-cursor::after { content: '▍'; animation: blink 0.8s infinite; margin-left: 1px; font-size: 0.85em; color: var(--accent); }
@@ -1464,6 +1465,8 @@ async function send() {
   let streamStart  = Date.now();
   let timerHandle  = null;
   const activeChips = {};   // tool name → chip element
+  let _toolStepCounter = 0; // how many tool_call_start events fired this turn
+  const _chipList = [];     // ordered list of chip elements for relabeling at done
 
   function _startTimer() {
     timerHandle = setInterval(() => {
@@ -1582,18 +1585,21 @@ async function send() {
       if (atBottom) messages.scrollTop = messages.scrollHeight;
 
     } else if (ev.type === 'tool_call_start') {
-      psTool.textContent = '⚙ ' + ev.name;
+      _toolStepCounter++;
+      psTool.textContent = '⚙ ' + ev.name + ' (step ' + _toolStepCounter + ')';
       psTool.classList.add('active');
 
       const chip = document.createElement('div');
       chip.className = 'tool-chip running';
-      chip.innerHTML = `<span>⚙ ${ev.name}</span>`;
+      const stepSpan = `<span class="tool-chip-step">step ${_toolStepCounter}</span>`;
+      chip.innerHTML = `<span>⚙ ${ev.name}${stepSpan}</span>`;
       const argsStr = ev.args && Object.keys(ev.args).length
         ? ' ' + JSON.stringify(ev.args).slice(0, 60)
         : '';
       if (argsStr) chip.innerHTML += `<span class="tool-chip-result">${argsStr}</span>`;
       streamBubble.appendChild(chip);
       activeChips[ev.name] = chip;
+      _chipList.push(chip);
       messages.scrollTop = messages.scrollHeight;
 
     } else if (ev.type === 'tool_call_end') {
@@ -1610,6 +1616,13 @@ async function send() {
 
     } else if (ev.type === 'done') {
       finalMeta = { model: ev.model, pool: ev.pool, tool_calls: ev.tool_calls };
+      // Relabel step chips with final total now that we know how many fired
+      if (_chipList.length > 1) {
+        _chipList.forEach((c, i) => {
+          const stepEl = c.querySelector('.tool-chip-step');
+          if (stepEl) stepEl.textContent = `step ${i + 1}/${_chipList.length}`;
+        });
+      }
       _finishStream(false);
 
     } else if (ev.type === 'error') {

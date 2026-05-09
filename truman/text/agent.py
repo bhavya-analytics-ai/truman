@@ -338,6 +338,7 @@ def _call_llm_with_tools_stream(messages: list, tools: list, tool_map: dict,
     client = OpenAI(api_key=NVIDIA_API_KEY, base_url=NVIDIA_BASE_URL,
                     timeout=18 if complex_msg else 12)
     working_msgs = _lc_messages_to_openai(messages)
+    _turn_cache: dict = {}   # (name, args_json) → result — dedup identical calls within one turn
 
     for model_idx, (model, label) in enumerate(model_list):
         try:
@@ -404,9 +405,14 @@ def _call_llm_with_tools_stream(messages: list, tools: list, tool_map: dict,
                     yield {"type": "tool_call_start", "name": tc["name"], "args": args}
                     t_tool = time.time()
 
-                    if tc["name"] in tool_map:
+                    cache_key = (tc["name"], json.dumps(args, sort_keys=True))
+                    if cache_key in _turn_cache:
+                        result = _turn_cache[cache_key]
+                        print(f"[tool-dedup] {tc['name']} already ran this turn — returning cached result")
+                    elif tc["name"] in tool_map:
                         try:
                             result = tool_map[tc["name"]].invoke(args)
+                            _turn_cache[cache_key] = str(result)
                         except Exception as e:
                             result = f"tool error: {e}"
                     else:
