@@ -68,19 +68,22 @@ def state_endpoint():
     return jsonify({"state": get_state()})
 
 
+def _no_cache(resp):
+    resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+    resp.headers["Pragma"] = "no-cache"
+    return resp
+
 @app.route("/")
 def index():
-    return send_from_directory(STATIC_DIR, "dashboard.html")
-
+    return _no_cache(send_from_directory(STATIC_DIR, "dashboard.html"))
 
 @app.route("/orb")
 def orb_page():
-    return send_from_directory(STATIC_DIR, "orb.html")
-
+    return _no_cache(send_from_directory(STATIC_DIR, "orb.html"))
 
 @app.route("/dashboard")
 def dashboard():
-    return send_from_directory(STATIC_DIR, "dashboard.html")
+    return _no_cache(send_from_directory(STATIC_DIR, "dashboard.html"))
 
 
 # ── PWA static assets (Phase 14) ─────────────────────────────────────────────
