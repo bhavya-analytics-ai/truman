@@ -316,6 +316,53 @@ def api_chat():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/chat/stream", methods=["GET"])
+def api_chat_stream():
+    """
+    SSE endpoint for real-time token streaming.
+    Query params: message, session_id (optional), pool (optional)
+    Emits newline-delimited JSON events:
+      data: {"type":"process","pool":"...","model":"..."}
+      data: {"type":"token","delta":"..."}
+      data: {"type":"tool_call_start","name":"...","args":{}}
+      data: {"type":"tool_call_end","name":"...","result":"...","elapsed_ms":0}
+      data: {"type":"done","model":"...","pool":"...","tool_calls":[],"latency_ms":0}
+    """
+    from flask import Response, stream_with_context
+    from truman.text.chat import chat_stream
+
+    user_input = (request.args.get("message") or "").strip()
+    session_id = (request.args.get("session_id") or "default").strip()
+    pool_hint  = request.args.get("pool") or None
+
+    if not user_input:
+        def _empty():
+            yield 'data: {"type":"done","model":"none","pool":"general","tool_calls":[],"latency_ms":0}\n\n'
+        return Response(stream_with_context(_empty()), mimetype="text/event-stream",
+                        headers={"Cache-Control": "no-cache",
+                                 "X-Accel-Buffering": "no",
+                                 "Connection": "keep-alive"})
+
+    def _generate():
+        try:
+            for event in chat_stream(user_input, session_id=session_id, pool=pool_hint):
+                import json as _json
+                yield f"data: {_json.dumps(event)}\n\n"
+        except Exception as e:
+            import json as _json
+            yield f'data: {_json.dumps({"type":"error","message":str(e)})}\n\n'
+
+    return Response(
+        stream_with_context(_generate()),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control":    "no-cache",
+            "X-Accel-Buffering": "no",
+            "Connection":       "keep-alive",
+        },
+    )
+
+
 @app.route("/api/logs")
 def api_logs():
     from truman.text.agent import get_error_log

@@ -266,6 +266,184 @@ def _call_llm(messages: list, complex_msg: bool = False, temperature: float = 0.
     return "", "none"
 
 
+def _lc_messages_to_openai(messages: list) -> list:
+    """Convert LangChain message objects (or dicts) to plain OpenAI-format dicts."""
+    from langchain_core.messages import ToolMessage as _ToolMessage
+    result = []
+    for m in messages:
+        if isinstance(m, dict):
+            result.append(m)
+            continue
+        mtype = getattr(m, "type", None)
+        if mtype == "system":
+            result.append({"role": "system", "content": m.content})
+        elif mtype == "human":
+            result.append({"role": "user", "content": m.content})
+        elif mtype == "ai":
+            msg: dict = {"role": "assistant", "content": m.content or ""}
+            tc = getattr(m, "tool_calls", None)
+            if tc:
+                msg["tool_calls"] = [
+                    {"id": c.get("id", ""), "type": "function",
+                     "function": {"name": c.get("name", ""), "arguments": json.dumps(c.get("args", {}))}}
+                    for c in tc
+                ]
+            result.append(msg)
+        elif mtype == "tool" or isinstance(m, _ToolMessage):
+            result.append({"role": "tool",
+                            "tool_call_id": getattr(m, "tool_call_id", ""),
+                            "content": m.content})
+    return result
+
+
+def _call_llm_with_tools_stream(messages: list, tools: list, tool_map: dict,
+                                 complex_msg: bool = False, pool: str = "general"):
+    """
+    Streaming LLM with tools. Yields SSE event dicts:
+      {"type": "tool_call_start", "name": str, "args": dict}
+      {"type": "tool_call_end",   "name": str, "result": str, "elapsed_ms": int}
+      {"type": "token",           "delta": str}
+      {"type": "done",            "model": str, "pool": str,
+                                  "tool_calls": list, "latency_ms": int}
+
+    Uses raw OpenAI client (stream=True) on NVIDIA NIM.
+    Falls back through model list if primary errors before first token.
+    Handles tool calls: fires tool events, executes, then streams final response.
+    """
+    from openai import OpenAI
+
+    t_start = time.time()
+    model_list = _POOL_CHAT_MODELS.get(pool, _CHAT_MODELS)
+    tool_calls_made: list = []
+    model_label = "none"
+
+    # Build OpenAI-format tools schema from LangChain StructuredTools
+    openai_tools = []
+    for t in tools:
+        try:
+            schema = t.args_schema.model_json_schema() if t.args_schema else {}
+            # Remove title field — NIM is strict about unknown fields
+            schema.pop("title", None)
+            openai_tools.append({
+                "type": "function",
+                "function": {
+                    "name": t.name,
+                    "description": (t.description or "")[:512],
+                    "parameters": schema,
+                },
+            })
+        except Exception:
+            pass
+
+    client = OpenAI(api_key=NVIDIA_API_KEY, base_url=NVIDIA_BASE_URL,
+                    timeout=18 if complex_msg else 12)
+    working_msgs = _lc_messages_to_openai(messages)
+
+    for model_idx, (model, label) in enumerate(model_list):
+        try:
+            for iteration in range(4):   # max tool loop iterations
+                kwargs: dict = dict(model=model, messages=working_msgs, stream=True)
+                if openai_tools:
+                    kwargs["tools"] = openai_tools
+
+                stream = client.chat.completions.create(**kwargs)
+
+                content_parts: list[str] = []
+                pending_tcs: dict[int, dict] = {}   # index → partial tool call
+                finish_reason = None
+
+                for chunk in stream:
+                    if not chunk.choices:
+                        continue
+                    delta = chunk.choices[0].delta
+                    finish_reason = chunk.choices[0].finish_reason or finish_reason
+
+                    if delta.content:
+                        content_parts.append(delta.content)
+                        yield {"type": "token", "delta": delta.content}
+
+                    if getattr(delta, "tool_calls", None):
+                        for tc_delta in delta.tool_calls:
+                            idx = tc_delta.index
+                            if idx not in pending_tcs:
+                                pending_tcs[idx] = {"id": "", "name": "", "arguments": ""}
+                            if tc_delta.id:
+                                pending_tcs[idx]["id"] = tc_delta.id
+                            if tc_delta.function:
+                                if tc_delta.function.name:
+                                    pending_tcs[idx]["name"] += tc_delta.function.name
+                                if tc_delta.function.arguments:
+                                    pending_tcs[idx]["arguments"] += tc_delta.function.arguments
+
+                model_label = label
+
+                if not pending_tcs:
+                    # No tool calls — we're done streaming
+                    break
+
+                # ── Execute tool calls ─────────────────────────────────────
+                # Append assistant turn with tool_calls to working_msgs
+                working_msgs.append({
+                    "role": "assistant",
+                    "content": "".join(content_parts) or None,
+                    "tool_calls": [
+                        {"id": tc["id"], "type": "function",
+                         "function": {"name": tc["name"], "arguments": tc["arguments"]}}
+                        for tc in pending_tcs.values() if tc["name"]
+                    ],
+                })
+
+                for tc in pending_tcs.values():
+                    if not tc["name"]:
+                        continue
+                    try:
+                        args = json.loads(tc["arguments"]) if tc["arguments"] else {}
+                    except Exception:
+                        args = {}
+
+                    yield {"type": "tool_call_start", "name": tc["name"], "args": args}
+                    t_tool = time.time()
+
+                    if tc["name"] in tool_map:
+                        try:
+                            result = tool_map[tc["name"]].invoke(args)
+                        except Exception as e:
+                            result = f"tool error: {e}"
+                    else:
+                        result = f"unknown tool: {tc['name']}"
+
+                    tool_elapsed = int((time.time() - t_tool) * 1000)
+                    tool_calls_made.append({"name": tc["name"]})
+
+                    yield {"type": "tool_call_end", "name": tc["name"],
+                           "result": str(result)[:500], "elapsed_ms": tool_elapsed}
+
+                    working_msgs.append({
+                        "role": "tool",
+                        "tool_call_id": tc["id"],
+                        "content": str(result)[:8000],
+                    })
+                # loop again → model streams final answer
+
+            yield {
+                "type": "done", "model": model_label, "pool": pool,
+                "tool_calls": tool_calls_made,
+                "latency_ms": int((time.time() - t_start) * 1000),
+            }
+            return
+
+        except Exception as e:
+            print(f"[LLM stream] {label} failed: {e}")
+            continue
+
+    # All models failed — emit done with no content
+    yield {
+        "type": "done", "model": "none", "pool": pool,
+        "tool_calls": tool_calls_made,
+        "latency_ms": int((time.time() - t_start) * 1000),
+    }
+
+
 def _call_llm_with_tools(messages: list, tools: list, tool_map: dict,
                           complex_msg: bool = False, temperature: float = 0.7,
                           max_iters: int = 4, pool: str = "general"):

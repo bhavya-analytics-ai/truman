@@ -184,6 +184,23 @@
   @keyframes pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(124,58,237,0.4); } 50% { box-shadow: 0 0 0 8px rgba(124,58,237,0); } }
   svg { pointer-events: none; }
 
+  /* Process strip */
+  .process-strip { padding: 4px 14px 2px; background: var(--bg2); border-top: 1px solid var(--border); display: flex; align-items: center; gap: 10px; font-size: 11px; color: var(--text3); min-height: 22px; flex-shrink: 0; transition: opacity 0.3s; }
+  .process-strip.idle { opacity: 0.35; }
+  .ps-pill { background: var(--bg3); border: 1px solid var(--border2); border-radius: 4px; padding: 1px 6px; font-size: 10px; }
+  .ps-tool { color: #fbbf24; display: none; }
+  .ps-tool.active { display: inline; animation: statusFade 1s infinite; }
+  .ps-timer { margin-left: auto; font-variant-numeric: tabular-nums; }
+  /* Tool chips */
+  .tool-chip { display: inline-flex; align-items: center; gap: 5px; background: var(--bg3); border: 1px solid var(--border2); border-radius: 6px; padding: 3px 8px; font-size: 11px; margin: 3px 2px 0; color: var(--text2); transition: all 0.3s; }
+  .tool-chip.running { border-color: #3b82f6; color: #93c5fd; animation: statusFade 1.2s infinite; }
+  .tool-chip.done { border-color: #22c55e44; color: #86efac; animation: none; }
+  .tool-chip.error { border-color: #ef444444; color: #fca5a5; animation: none; }
+  .tool-chip-result { font-size: 10px; opacity: 0.7; max-width: 200px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  /* Streaming cursor */
+  @keyframes blink { 0%,100%{opacity:1}50%{opacity:0} }
+  .stream-cursor::after { content: '▍'; animation: blink 0.8s infinite; margin-left: 1px; font-size: 0.85em; color: var(--accent); }
+
   /* Tasks strip */
   .tasks-strip { padding:0 14px; background:var(--bg);border-bottom:1px solid var(--border);display:none;flex-direction:column;gap:0;max-height:180px;overflow-y:auto;flex-shrink:0; }
   .tasks-strip.visible { display:flex; padding:6px 14px; }
@@ -652,6 +669,13 @@
 <!-- Attachment chips (files staged here until Send) -->
 <div class="attach-bar" id="attach-bar"></div>
 
+<div class="process-strip idle" id="process-strip">
+  <span class="ps-pill" id="ps-pool">general</span>
+  <span class="ps-pill" id="ps-model">llama70</span>
+  <span class="ps-tool" id="ps-tool"></span>
+  <span id="ps-tokens"></span>
+  <span class="ps-timer" id="ps-timer"></span>
+</div>
 <div class="input-area">
   <textarea id="input" placeholder="say something..." rows="1"></textarea>
   <input type="file" id="file-input" style="display:none" multiple accept=".py,.js,.ts,.html,.css,.json,.md,.txt,.csv,.xml,.yaml,.yml,.sh,.pdf,.docx,.xlsx,.pptx,.png,.jpg,.jpeg,.gif,.webp,.bmp,image/*">
@@ -1428,48 +1452,172 @@ async function send() {
     if (el) el.textContent = autoLabel;
   }
 
-  const toolCycle = ['web_search','recall','search_history','remember'];
-  let ti = 0;
-  const toolInterval = setInterval(() => { status.setTool(toolCycle[ti++ % toolCycle.length]); }, 3000);
+  // ── Streaming via SSE ─────────────────────────────────────────────────────
+  const strip   = document.getElementById('process-strip');
+  const psPool  = document.getElementById('ps-pool');
+  const psModel = document.getElementById('ps-model');
+  const psTool  = document.getElementById('ps-tool');
+  const psTokens= document.getElementById('ps-tokens');
+  const psTimer = document.getElementById('ps-timer');
 
-  try {
-    const r = await fetch('/api/chat', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({message: sendText, session_id: currentSessionId(), ...(sendPool && {pool: sendPool})})
-    });
-    const d = await r.json();
-    clearInterval(toolInterval);
+  let streamTokens = 0;
+  let streamStart  = Date.now();
+  let timerHandle  = null;
+  const activeChips = {};   // tool name → chip element
+
+  function _startTimer() {
+    timerHandle = setInterval(() => {
+      psTimer.textContent = ((Date.now() - streamStart) / 1000).toFixed(1) + 's';
+    }, 100);
+  }
+  function _stopTimer() {
+    if (timerHandle) { clearInterval(timerHandle); timerHandle = null; }
+  }
+
+  strip.classList.remove('idle');
+  _startTimer();
+
+  // Create streaming bubble immediately so tokens appear as they land
+  const streamDiv = document.createElement('div');
+  streamDiv.className = 'msg truman';
+  const streamBubble = document.createElement('div');
+  streamBubble.className = 'bubble stream-cursor';
+  streamDiv.appendChild(streamBubble);
+  messages.appendChild(streamDiv);
+  messages.scrollTop = messages.scrollHeight;
+
+  let fullText = '';
+  let finalMeta = null;
+
+  const params = new URLSearchParams({
+    message:    sendText,
+    session_id: currentSessionId(),
+    ...(sendPool ? {pool: sendPool} : {}),
+  });
+
+  const es = new EventSource('/api/chat/stream?' + params.toString());
+
+  function _finishStream(error) {
+    es.close();
+    _stopTimer();
     status.remove();
-    if (d.error) {
-      setStatus('error', 'error');
-      addMsg('truman', 'error: ' + d.error, null);
-      setTimeout(() => setStatus('idle','idle'), 4000);
+    streamBubble.classList.remove('stream-cursor');
+
+    if (error || !fullText.trim()) {
+      streamDiv.parentNode && streamDiv.parentNode.removeChild(streamDiv);
+      if (error) addMsg('truman', 'stream error — check terminal', null);
+      else       addMsg('truman', '(no response — try again)', null);
+      setStatus('error','error');
+      setTimeout(() => setStatus('idle','idle'), 3000);
+      strip.classList.add('idle');
+      psTimer.textContent = '';
+      psTokens.textContent = '';
       _localTurnInFlight = false;
       return;
     }
-    const respText = (d.response || '').trim();
-    if (!respText) { setStatus('idle','idle'); addMsg('truman', '(no response — try again)', null); _localTurnInFlight = false; return; }
-    addMsg('truman', respText, {model: d.model || 'deepseek-v3.2', pool: d.pool || 'general', tool_calls: d.tool_calls});
-    updatePanelFromResponse(d, sendText || text, respText);
-    setStatus('idle', 'idle');
-    // update context tray with active sticky attachments
-    if (d.attachments) _renderContextTray(d.attachments);
-    // delay flag reset so SSE broadcast (arriving ~50ms later) is still suppressed
-    setTimeout(() => { _localTurnInFlight = false; }, 300);
-    macDot.className = 'mac-dot' + (d.mac === 'connected' ? ' on' : '');
-    macStatus.textContent = d.mac === 'connected' ? 'mac online' : 'mac offline';
+
+    // Replace raw streamed text with full markdown render
+    streamBubble.innerHTML = renderMarkdown(fullText);
+
+    // Append meta badges
+    if (finalMeta) {
+      const m = document.createElement('div');
+      m.className = 'meta';
+      if (finalMeta.model && finalMeta.model !== 'none') {
+        const b = document.createElement('span');
+        b.className = 'badge';
+        b.textContent = finalMeta.model.split('/').pop().replace(':free','');
+        m.appendChild(b);
+      }
+      if (finalMeta.pool) {
+        const b = document.createElement('span');
+        b.className = 'badge pool-' + finalMeta.pool;
+        b.textContent = finalMeta.pool;
+        m.appendChild(b);
+      }
+      if (finalMeta.tool_calls && finalMeta.tool_calls.length) {
+        finalMeta.tool_calls.forEach(tc => {
+          const b = document.createElement('span');
+          b.className = 'badge tool';
+          b.textContent = '⚙ ' + (tc.name || tc);
+          m.appendChild(b);
+        });
+      }
+      streamDiv.appendChild(m);
+    }
+
+    const ts = document.createElement('span');
+    ts.className = 'msg-ts';
+    ts.textContent = _nowTs();
+    streamDiv.appendChild(ts);
+
+    messages.scrollTop = messages.scrollHeight;
+    updatePanelFromResponse(finalMeta || {}, sendText || text, fullText);
+    setStatus('idle','idle');
+    strip.classList.add('idle');
+    psTimer.textContent = '';
+    psTokens.textContent = '';
+    psTool.classList.remove('active');
     const pb = document.getElementById('pool-badge');
-    if (d.pool) { pb.textContent = d.pool; pb.style.display = 'inline'; }
+    if (finalMeta && finalMeta.pool) { pb.textContent = finalMeta.pool; pb.style.display = 'inline'; }
     if (drawerOpen) refreshDrawer();
-  } catch(e) {
-    clearInterval(toolInterval);
-    status.remove();
-    _localTurnInFlight = false;
-    setStatus('error', 'error');
-    setTimeout(() => setStatus('idle','idle'), 4000);
-    addMsg('truman', 'server error — check the terminal', null);
+    setTimeout(() => { _localTurnInFlight = false; }, 300);
   }
+
+  es.onmessage = (e) => {
+    let ev;
+    try { ev = JSON.parse(e.data); } catch { return; }
+
+    if (ev.type === 'process') {
+      psPool.textContent  = ev.pool  || 'general';
+      psModel.textContent = ev.model || '';
+
+    } else if (ev.type === 'token') {
+      fullText += ev.delta;
+      streamTokens++;
+      // append raw text node for speed — markdown render happens at done
+      streamBubble.appendChild(document.createTextNode(ev.delta));
+      psTokens.textContent = streamTokens + ' tok';
+      const atBottom = messages.scrollHeight - messages.scrollTop - messages.clientHeight < 140;
+      if (atBottom) messages.scrollTop = messages.scrollHeight;
+
+    } else if (ev.type === 'tool_call_start') {
+      psTool.textContent = '⚙ ' + ev.name;
+      psTool.classList.add('active');
+
+      const chip = document.createElement('div');
+      chip.className = 'tool-chip running';
+      chip.innerHTML = `<span>⚙ ${ev.name}</span>`;
+      const argsStr = ev.args && Object.keys(ev.args).length
+        ? ' ' + JSON.stringify(ev.args).slice(0, 60)
+        : '';
+      if (argsStr) chip.innerHTML += `<span class="tool-chip-result">${argsStr}</span>`;
+      streamBubble.appendChild(chip);
+      activeChips[ev.name] = chip;
+      messages.scrollTop = messages.scrollHeight;
+
+    } else if (ev.type === 'tool_call_end') {
+      psTool.classList.remove('active');
+      const chip = activeChips[ev.name];
+      if (chip) {
+        chip.className = 'tool-chip done';
+        const resultSpan = chip.querySelector('.tool-chip-result') || document.createElement('span');
+        resultSpan.className = 'tool-chip-result';
+        resultSpan.textContent = ' · ' + (ev.result || '').slice(0, 60);
+        if (!chip.querySelector('.tool-chip-result')) chip.appendChild(resultSpan);
+        else resultSpan.textContent = ' · ' + (ev.result || '').slice(0, 60) + '  ' + ev.elapsed_ms + 'ms';
+      }
+
+    } else if (ev.type === 'done') {
+      finalMeta = { model: ev.model, pool: ev.pool, tool_calls: ev.tool_calls };
+      _finishStream(false);
+
+    } else if (ev.type === 'error') {
+      _finishStream(true);
+    }
+  };
+
+  es.onerror = () => _finishStream(true);
 }
 
 // ── Context tray — shows active sticky attachments (L4/L6) ───────────────────
