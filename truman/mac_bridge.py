@@ -103,6 +103,113 @@ def _write_file(path: str, content: str) -> str:
     return f"Written {len(content)} chars to {p}"
 
 
+_CHROME_PROFILE = os.path.expanduser(
+    "~/Library/Application Support/Google/Chrome"
+)
+
+def _scrape_with_browser(url: str, timeout: int = 30) -> str:
+    """
+    Scrape a URL using Om's Chrome cookies — inherits all his logins
+    (LinkedIn, Twitter, Reddit, etc).
+    Runs Playwright in a separate thread (mac_bridge is async; asyncio.run
+    can't be called from inside a running loop).
+    """
+    import concurrent.futures
+
+    def _run_in_thread():
+        import asyncio
+
+        async def _scrape():
+            try:
+                from playwright.async_api import async_playwright
+            except ImportError:
+                return "playwright not installed on Mac"
+
+            async with async_playwright() as p:
+                # Use a dedicated Truman browser dir so Chrome lock doesn't block us
+                truman_profile = os.path.expanduser("~/.truman_browser")
+                try:
+                    ctx = await p.chromium.launch_persistent_context(
+                        user_data_dir=truman_profile,
+                        channel="chrome",
+                        headless=True,
+                        args=["--disable-blink-features=AutomationControlled"],
+                    )
+                except Exception:
+                    # Chrome not found — use bundled chromium (no auth, but works for non-auth sites)
+                    browser = await p.chromium.launch(headless=True)
+                    ctx = await browser.new_context()
+
+                page = await ctx.new_page()
+                try:
+                    await page.goto(url, timeout=timeout * 1000, wait_until="domcontentloaded")
+                    await page.wait_for_timeout(2000)
+                    content = await page.evaluate("""() => {
+                        ['script','style','nav','footer','header','aside'].forEach(sel => {
+                            document.querySelectorAll(sel).forEach(el => el.remove());
+                        });
+                        return document.body ? document.body.innerText : '';
+                    }""")
+                    title = await page.title()
+                    return f"# {title}\n\n{content[:8000]}"
+                finally:
+                    await page.close()  # close page only — keep context/cookies alive
+
+        return asyncio.run(_scrape())
+
+    try:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
+            future = ex.submit(_run_in_thread)
+            return future.result(timeout=timeout + 10)
+    except concurrent.futures.TimeoutError:
+        return f"browser scrape timed out after {timeout}s"
+    except Exception as e:
+        return f"browser scrape failed: {e}"
+
+
+def _open_login_browser(url: str = "https://www.linkedin.com") -> str:
+    """
+    Open a visible Chrome window using Truman's dedicated profile (~/.truman_browser).
+    Om logs into whatever sites he wants — session saved permanently.
+    Browser stays open until he closes it himself.
+    """
+    import concurrent.futures
+
+    def _run_in_thread():
+        import asyncio
+
+        async def _launch():
+            try:
+                from playwright.async_api import async_playwright
+            except ImportError:
+                return "playwright not installed"
+
+            truman_profile = os.path.expanduser("~/.truman_browser")
+            async with async_playwright() as p:
+                ctx = await p.chromium.launch_persistent_context(
+                    user_data_dir=truman_profile,
+                    channel="chrome",
+                    headless=False,   # visible — Om logs in manually
+                    args=["--disable-blink-features=AutomationControlled"],
+                )
+                page = await ctx.new_page()
+                await page.goto(url)
+                # Wait until Om closes the browser (all pages closed)
+                await ctx.wait_for_event("close", timeout=0)  # no timeout — wait forever
+                return "done — session saved"
+
+        return asyncio.run(_launch())
+
+    try:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
+            future = ex.submit(_run_in_thread)
+            return future.result(timeout=600)  # 10 min max for Om to log in
+    except concurrent.futures.TimeoutError:
+        return "timed out — close the browser manually when done"
+    except Exception as e:
+        return f"login browser failed: {e}"
+
+
 def _dispatch(action: str, payload: dict) -> str:
     if action == "ping":
         return "pong"
@@ -116,6 +223,10 @@ def _dispatch(action: str, payload: dict) -> str:
         return _write_file(payload.get("path", ""), payload.get("content", ""))
     if action == "run_shell":
         return _run_shell(payload.get("cmd", ""), payload.get("cwd"))
+    if action == "scrape_browser":
+        return _scrape_with_browser(payload.get("url", ""), payload.get("timeout", 30))
+    if action == "open_login_browser":
+        return _open_login_browser(payload.get("url", "https://www.linkedin.com"))
     raise ValueError(f"Unknown action: {action}")
 
 

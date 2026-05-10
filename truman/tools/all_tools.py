@@ -525,12 +525,53 @@ def delete_rule(rule_id: int) -> str:
 
 @tool
 def scrape_site(url: str) -> str:
-    """Scrape and read any website — returns clean markdown content. Use when Om says 'scrape this', 'read this site', 'get content from', 'what does this page say', or pastes a URL and wants the content."""
+    """Scrape and read any website — returns clean content. Handles auth-walled sites (LinkedIn, Twitter, etc)
+    by routing through Om's Chrome session on his Mac (uses his actual logged-in cookies). For public sites,
+    uses Firecrawl for clean markdown. Use when Om says 'scrape this', 'read this site', 'get content from',
+    'what does this page say', or pastes a URL."""
     if not os.environ.get("ENABLE_WEB_INTEL", "1") == "1":
         return "web intel is disabled (ENABLE_WEB_INTEL=0)."
+
+    # Auth-walled / heavy-JS domains → route through Mac Chrome (has Om's logins)
+    _AUTH_DOMAINS = ["linkedin.com", "twitter.com", "x.com", "instagram.com",
+                     "facebook.com", "tiktok.com", "reddit.com"]
+    needs_auth = any(d in url for d in _AUTH_DOMAINS)
+
+    if needs_auth:
+        # Try Mac bridge browser scrape first (uses Om's Chrome session)
+        try:
+            from truman.voice.orb import mac_request
+            result = mac_request("scrape_browser", {"url": url, "timeout": 30})
+            if result.get("ok") and result.get("result") and len(result["result"].strip()) > 100:
+                return result["result"][:8000]
+            elif not result.get("ok"):
+                return f"mac bridge offline — can't scrape {url} (needs your Chrome session). open your Mac."
+        except Exception as e:
+            return f"browser scrape failed: {e}"
+
+    # Public sites → Firecrawl (fast, clean markdown)
     try:
         from web_intel import scrape
-        return scrape(url)[:6000]
+        result = scrape(url)
+        if result and len(result.strip()) >= 100:
+            return result[:8000]
+        # Firecrawl returned empty → try extract fallback
+        try:
+            from web_intel import extract
+            fallback = extract(url, schema={"title": str, "content": str, "summary": str})
+            if fallback and any(v for v in fallback.values()):
+                return "\n".join([f"{k}: {v}" for k, v in fallback.items() if v])
+        except Exception:
+            pass
+        # Last resort → Mac browser
+        try:
+            from truman.voice.orb import mac_request
+            res = mac_request("scrape_browser", {"url": url, "timeout": 30})
+            if res.get("ok") and res.get("result") and len(res["result"].strip()) > 100:
+                return res["result"][:8000]
+        except Exception:
+            pass
+        return f"scrape returned empty — site may use heavy JS or anti-bot. url: {url}"
     except Exception as e:
         return f"scrape failed: {e}"
 
@@ -567,9 +608,58 @@ def extract_data(url: str, fields: str) -> str:
         return f"extract failed: {e}"
 
 
+@tool
+def browser_login(site: str = "linkedin") -> str:
+    """Open a visible Chrome window so Om can log into a site once — session saved forever.
+    Use when Om says 'log me into [site]', 'open browser to log in', 'set up [site] login', 'save my [site] session'.
+    Supported: linkedin, twitter, instagram, reddit, facebook, or any URL."""
+    _SITES = {
+        "linkedin":  "https://www.linkedin.com/login",
+        "twitter":   "https://twitter.com/login",
+        "x":         "https://x.com/login",
+        "instagram": "https://www.instagram.com/accounts/login",
+        "reddit":    "https://www.reddit.com/login",
+        "facebook":  "https://www.facebook.com/login",
+    }
+    url = _SITES.get(site.lower().strip(), site if site.startswith("http") else f"https://{site}")
+
+    if _is_local():
+        # Running locally on Mac — call mac_bridge directly
+        from truman.mac_bridge import _open_login_browser
+        result = _open_login_browser(url)
+        return f"browser closed — session saved. you can now scrape {site} anytime." if "done" in result else result
+
+    from truman.voice.orb import mac_request
+    result = mac_request("open_login_browser", {"url": url}, timeout=600)
+    if result.get("ok"):
+        return f"browser closed — {site} session saved to ~/.truman_browser. scraping {site} will now work."
+    return result.get("error", "mac bridge offline — make sure your Mac is on")
+
+
+@tool
+def save_result(content: str, filename: str = "") -> str:
+    """Save any text content (scrape output, research, notes, analysis) to a file on Om's Mac Desktop.
+    Use when Om says 'save this', 'save it', 'save to file', 'export this', or after scraping/research when he wants the data kept.
+    filename is optional — auto-generates timestamped name if not given. Always saves to ~/Desktop."""
+    import datetime
+    if not filename:
+        ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"truman_{ts}.md"
+    if "/" not in filename:
+        path = f"~/Desktop/{filename}"
+    else:
+        path = filename
+    # reuse write_mac_file logic directly
+    if _is_local():
+        return _local_write_file(path.replace("~", os.path.expanduser("~")), content)
+    from truman.voice.orb import mac_request
+    result = mac_request("write_file", {"path": path, "content": content})
+    return result.get("result") if result.get("ok") else f"mac bridge offline — can't save file right now"
+
+
 TOOLS = [web_search, get_weather, remember, recall, set_reminder, list_reminders,
          search_history, recent_conversations, read_mac_file, list_mac_dir, search_mac_files,
          write_mac_file, list_models, set_model,
          add_goal, list_goals, complete_goal, drop_goal, update_pref, log_sleep,
          add_rule, list_rules, delete_rule,
-         scrape_site, deep_search, extract_data]
+         scrape_site, deep_search, extract_data, save_result, browser_login]

@@ -1897,7 +1897,7 @@ async function refreshDrawer() {
         return `<span class="badge tool" style="${isSkill ? 'color:#a78bfa;border-color:#3a1e5f' : ''}">${isSkill ? '★' : '⚙'} ${t}</span>`;
       }).join('');
       const secs  = e.elapsed_ms ? (e.elapsed_ms/1000).toFixed(1)+'s' : '';
-      const tsShort = (e.ts||'').split('T').pop().split('.')[0] || e.ts || '';
+      const tsShort = e.ts ? new Date(e.ts.endsWith('Z') ? e.ts : e.ts + 'Z').toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'}) : '';
       const errHtml = e.error ? `<div class="log-err">${e.error}</div>` : '';
       const modelBadge = e.model ? `<span class="badge">${e.model}</span>` : '';
       const poolBadge  = e.pool  ? `<span class="badge pool-${e.pool}">${e.pool}</span>` : '';
