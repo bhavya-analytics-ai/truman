@@ -505,6 +505,9 @@ def _call_llm_with_tools(messages: list, tools: list, tool_map: dict,
 
 # ── Tool intent detection ─────────────────────────────────────────────────────
 _TOOL_PATTERNS = [
+    (re.compile(r"\b(scrape|crawl|read.*site|read.*page|get.*content.*from|what.*page.*say|what.*site.*say)\b", re.I), "scrape_site"),
+    (re.compile(r"\b(deep.*search|research.*topic|find.*out.*about|deep.*dive|detailed.*info)\b", re.I), "deep_search"),
+    (re.compile(r"\b(extract.*from|pull.*from.*site|get.*price|get.*field|extract.*data)\b", re.I), "extract_data"),
     (re.compile(r"\b(search|look up|find|google|news|current|latest|what.*happening)\b", re.I), "web_search"),
     (re.compile(r"\b(weather|temperature|forecast|rain|sunny)\b", re.I), "get_weather"),
     (re.compile(r"\b(remind me|set.*reminder|remind.*at|reminder)\b", re.I), "set_reminder"),
@@ -627,6 +630,19 @@ def _extract_arg(message: str, tool_name: str) -> dict:
     if tool_name == "delete_rule":
         m = re.search(r"(?:delete|remove|forget)\s+rule\s+(\d+)", msg, re.I)
         return {"rule_id": int(m.group(1)) if m else 0}
+    if tool_name == "scrape_site":
+        url_m = re.search(r"(https?://[^\s]+)", msg)
+        return {"url": url_m.group(1) if url_m else msg.strip()}
+    if tool_name == "deep_search":
+        q = re.sub(r"^(deep search|research|find out about|deep dive into|detailed info on)\s+", "", msg, flags=re.I).strip()
+        return {"query": q or msg}
+    if tool_name == "extract_data":
+        url_m = re.search(r"(https?://[^\s]+)", msg)
+        fields_m = re.search(r"(?:extract|get|pull)\s+(.+?)\s+from", msg, re.I)
+        return {
+            "url": url_m.group(1) if url_m else "",
+            "fields": fields_m.group(1) if fields_m else "title, description, price"
+        }
     return {}
 
 

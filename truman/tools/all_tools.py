@@ -523,8 +523,53 @@ def delete_rule(rule_id: int) -> str:
     return f"rule {rule_id} deleted."
 
 
+@tool
+def scrape_site(url: str) -> str:
+    """Scrape and read any website — returns clean markdown content. Use when Om says 'scrape this', 'read this site', 'get content from', 'what does this page say', or pastes a URL and wants the content."""
+    if not os.environ.get("ENABLE_WEB_INTEL", "1") == "1":
+        return "web intel is disabled (ENABLE_WEB_INTEL=0)."
+    try:
+        from web_intel import scrape
+        return scrape(url)[:6000]
+    except Exception as e:
+        return f"scrape failed: {e}"
+
+
+@tool
+def deep_search(query: str) -> str:
+    """Search the web with full page content — goes deeper than web_search, returns actual article text not just snippets. Use when Om asks to research a topic, 'find out about', 'deep dive', or needs detailed info not just headlines."""
+    if not os.environ.get("ENABLE_WEB_INTEL", "1") == "1":
+        return "web intel is disabled (ENABLE_WEB_INTEL=0)."
+    try:
+        from web_intel import search
+        results = search(query, limit=3, with_content=True)
+        if not results:
+            return "No results found."
+        parts = []
+        for r in results:
+            parts.append(f"**{r['title']}**\n{r['url']}\n{r.get('content','')[:1500]}")
+        return "\n\n---\n\n".join(parts)
+    except Exception as e:
+        return f"deep search failed: {e}"
+
+
+@tool
+def extract_data(url: str, fields: str) -> str:
+    """Extract specific structured data from a webpage. Use when Om wants specific fields pulled from a site — e.g. 'get the price and title from this page', 'extract company name and CEO'. Pass fields as comma-separated list like 'price, title, description'."""
+    if not os.environ.get("ENABLE_WEB_INTEL", "1") == "1":
+        return "web intel is disabled (ENABLE_WEB_INTEL=0)."
+    try:
+        from web_intel import extract
+        schema = {f.strip(): str for f in fields.split(",")}
+        result = extract(url, schema=schema)
+        return "\n".join([f"{k}: {v}" for k, v in result.items()])
+    except Exception as e:
+        return f"extract failed: {e}"
+
+
 TOOLS = [web_search, get_weather, remember, recall, set_reminder, list_reminders,
          search_history, recent_conversations, read_mac_file, list_mac_dir, search_mac_files,
          write_mac_file, list_models, set_model,
          add_goal, list_goals, complete_goal, drop_goal, update_pref, log_sleep,
-         add_rule, list_rules, delete_rule]
+         add_rule, list_rules, delete_rule,
+         scrape_site, deep_search, extract_data]
