@@ -2,7 +2,7 @@ conda create -n truman python=3.11
 conda activate truman
 
 
-# TRUMAN — Personal AI Operating System
+# TRUMAN - Personal AI Operating System
 ### Built by Om (Bhavya Pandya) | Powered by OpenAI Realtime API + Mem0 + SQLite + LangChain
 
 ---
