@@ -2,7 +2,7 @@
 
 Om's personal AI. Voice + text. Always on via Railway. Talks back, remembers everything, runs tools.
 
-**Status as of 2026-04-25:** Levels 1–5 + Option B shipped. NVIDIA NIM primary (kimi-k2-instruct → step-3.5-flash). No Groq on text agent. Static files extracted from orb.py. Sticky pool routing, session UUID tabs, image upload, pool badge, logs modal all live.
+**Status as of 2026-05-10:** Phase B8 live — LangGraph 12-node brain loop, LLM-driven tool selection (regex routing dropped). Real SSE streaming. Web Intel tools. 26 tools total.
 
 ---
 
@@ -39,8 +39,8 @@ Phone/Mac Browser
   │  /audio WS   (binary PCM + JSON control)
   ▼
 Railway (truman-production.up.railway.app)
-  orb.py (Flask + flask-sock, ~470 lines — routes only)
-  ├── /api/chat  → tool detection → direct execution → kimi-k2 / step-3.5-flash
+  orb.py (Flask + flask-sock — routes only)
+  ├── /api/chat  → LangGraph brain loop → SSE stream → kimi-k2 / step-3.5-flash
   ├── /api/upload → text extraction / vision model for images
   ├── /api/logs  → error log ring buffer (last 50)
   ├── /api/history → SQLite turn restore on page load
@@ -48,9 +48,16 @@ Railway (truman-production.up.railway.app)
   ├── /mac-bridge WS ← mac_bridge.py (Mac daemon)
   └── /health, /state, /logs
 
+LangGraph brain loop (brain/loop.py) — 12 nodes, sequential:
+  tier_router → classify_mood → load_memory → self_awareness → tool_retrieval
+  → [load_goals → recall_skills] → detect_pool → risk_gate → call_llm
+  → risk_gate_node → evaluate_output → save_memory
+  Trivial tier: skips load_goals, recall_skills, risk_gate_node (fast path)
+  LLM drives tool selection via bind_tools — no regex pre-emption
+
 realtime.py — OpenAI Realtime WS (gpt-4o-mini-realtime-preview, voice only)
 model_router.py — 9 pools, sticky routing, session override, pipeline mode
-agent.py — keyword tool detection, direct execution, per-session chat_history dict
+agent.py — LangGraph fallback handler, per-session history, attach handling
 ```
 
 ---
@@ -65,7 +72,10 @@ agent.py — keyword tool detection, direct execution, per-session chat_history 
 | `truman/core/config.py` | Env loader, `get_llm()`, POOL_* defaults (9 pools) |
 | `truman/core/persona.py` | SYSTEM prompt — identity, style, mood, tool rules, features list |
 | `truman/core/model_router.py` | 9 pools, sticky routing, session override, pipeline mode |
-| `truman/text/agent.py` | Tool detection, direct execution, per-session history, mood classifier |
+| `truman/text/agent.py` | LangGraph runner, fallback handler, per-session history, attach handling |
+| `truman/brain/loop.py` | LangGraph graph wiring — 12-node sequential brain |
+| `truman/brain/nodes.py` | All node implementations (tier_router, tool_retrieval, call_llm, etc.) |
+| `truman/brain/state.py` | TrumanState TypedDict |
 | `truman/voice/realtime.py` | Realtime WS loop, filters, context injection, transcript push |
 | `truman/voice/orb.py` | Flask routes + WebSocket handlers — serves static/ |
 | `truman/voice/static/dashboard.html` | Dashboard UI — HTML + CSS + JS |
