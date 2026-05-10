@@ -525,55 +525,58 @@ def delete_rule(rule_id: int) -> str:
 
 @tool
 def scrape_site(url: str) -> str:
-    """Scrape and read any website — returns clean content. Handles auth-walled sites (LinkedIn, Twitter, etc)
-    by routing through Om's Chrome session on his Mac (uses his actual logged-in cookies). For public sites,
-    uses Firecrawl for clean markdown. Use when Om says 'scrape this', 'read this site', 'get content from',
-    'what does this page say', or pastes a URL."""
+    """Scrape and read ANY website including auth-walled ones (LinkedIn, Twitter, Instagram, Reddit, Facebook).
+    Uses Om's real Chrome cookies via Mac bridge for authenticated sites.
+    Falls back to Firecrawl for public sites when Mac is offline.
+    Use when Om pastes a URL or says 'scrape this', 'read this', 'get content from'."""
     if not os.environ.get("ENABLE_WEB_INTEL", "1") == "1":
         return "web intel is disabled (ENABLE_WEB_INTEL=0)."
 
-    # Auth-walled / heavy-JS domains → route through Mac Chrome (has Om's logins)
     _AUTH_DOMAINS = ["linkedin.com", "twitter.com", "x.com", "instagram.com",
-                     "facebook.com", "tiktok.com", "reddit.com"]
+                     "facebook.com", "tiktok.com", "reddit.com", "threads.net"]
+
     needs_auth = any(d in url for d in _AUTH_DOMAINS)
 
+    # Always try Mac bridge first for auth domains
     if needs_auth:
-        # Try Mac bridge browser scrape first (uses Om's Chrome session)
         try:
             from truman.voice.orb import mac_request
-            result = mac_request("scrape_browser", {"url": url, "timeout": 30})
-            if result.get("ok") and result.get("result") and len(result["result"].strip()) > 100:
-                return result["result"][:8000]
-            elif not result.get("ok"):
-                return f"mac bridge offline — can't scrape {url} (needs your Chrome session). open your Mac."
+            result = mac_request("scrape_browser", {"url": url, "timeout": 45})
+            if result.get("ok") and len((result.get("result") or "").strip()) > 100:
+                return result["result"][:10000]
+            if not result.get("ok"):
+                return f"mac bridge offline — start the bridge on your Mac to scrape {url}"
         except Exception as e:
             return f"browser scrape failed: {e}"
 
-    # Public sites → Firecrawl (fast, clean markdown)
+    # Public sites: Firecrawl first (fastest, cleanest)
     try:
         from web_intel import scrape
         result = scrape(url)
         if result and len(result.strip()) >= 100:
-            return result[:8000]
-        # Firecrawl returned empty → try extract fallback
-        try:
-            from web_intel import extract
-            fallback = extract(url, schema={"title": str, "content": str, "summary": str})
-            if fallback and any(v for v in fallback.values()):
-                return "\n".join([f"{k}: {v}" for k, v in fallback.items() if v])
-        except Exception:
-            pass
-        # Last resort → Mac browser
-        try:
-            from truman.voice.orb import mac_request
-            res = mac_request("scrape_browser", {"url": url, "timeout": 30})
-            if res.get("ok") and res.get("result") and len(res["result"].strip()) > 100:
-                return res["result"][:8000]
-        except Exception:
-            pass
-        return f"scrape returned empty — site may use heavy JS or anti-bot. url: {url}"
-    except Exception as e:
-        return f"scrape failed: {e}"
+            return result[:10000]
+    except Exception:
+        pass
+
+    # Firecrawl failed → Mac browser (handles JS-heavy public sites too)
+    try:
+        from truman.voice.orb import mac_request
+        result = mac_request("scrape_browser", {"url": url, "timeout": 40})
+        if result.get("ok") and len((result.get("result") or "").strip()) > 100:
+            return result["result"][:10000]
+    except Exception:
+        pass
+
+    # Last resort: structured extract
+    try:
+        from web_intel import extract
+        fallback = extract(url, schema={"title": str, "content": str, "summary": str})
+        if fallback and any(v for v in fallback.values()):
+            return "\n".join(f"{k}: {v}" for k, v in fallback.items() if v)
+    except Exception:
+        pass
+
+    return f"couldn't scrape {url} — site may have strong bot protection. try pasting the content directly."
 
 
 @tool

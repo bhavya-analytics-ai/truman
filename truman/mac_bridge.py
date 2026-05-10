@@ -103,18 +103,44 @@ def _write_file(path: str, content: str) -> str:
     return f"Written {len(content)} chars to {p}"
 
 
-_CHROME_PROFILE = os.path.expanduser(
-    "~/Library/Application Support/Google/Chrome"
-)
+def _get_chrome_cookies(url: str) -> list[dict]:
+    """
+    Extract Om's real Chrome cookies for a given URL using browser-cookie3.
+    Works while Chrome is running — reads the encrypted SQLite DB directly.
+    Returns list of {name, value, domain, path} dicts for Playwright injection.
+    """
+    try:
+        import browser_cookie3
+        from urllib.parse import urlparse
+        domain = urlparse(url).netloc  # e.g. "www.linkedin.com"
+        # Extract root domain for cookie matching
+        parts = domain.split(".")
+        root = "." + ".".join(parts[-2:])  # e.g. ".linkedin.com"
+        jar = browser_cookie3.chrome(domain_name=root)
+        cookies = []
+        for c in jar:
+            cookies.append({
+                "name":   c.name,
+                "value":  c.value,
+                "domain": c.domain,
+                "path":   c.path or "/",
+            })
+        return cookies
+    except Exception as e:
+        print(f"[Bridge] cookie extract failed: {e}")
+        return []
+
 
 def _scrape_with_browser(url: str, timeout: int = 30) -> str:
     """
-    Scrape a URL using Om's Chrome cookies — inherits all his logins
-    (LinkedIn, Twitter, Reddit, etc).
-    Runs Playwright in a separate thread (mac_bridge is async; asyncio.run
-    can't be called from inside a running loop).
+    Scrape any URL using Om's real Chrome cookies — bypasses LinkedIn, Twitter,
+    Instagram, Reddit, Facebook auth walls. Runs Playwright in a thread
+    (mac_bridge is async; asyncio.run can't nest).
     """
     import concurrent.futures
+
+    # Pull cookies from real Chrome BEFORE entering thread (main thread = safe)
+    cookies = _get_chrome_cookies(url)
 
     def _run_in_thread():
         import asyncio
@@ -126,41 +152,62 @@ def _scrape_with_browser(url: str, timeout: int = 30) -> str:
                 return "playwright not installed on Mac"
 
             async with async_playwright() as p:
-                # Use a dedicated Truman browser dir so Chrome lock doesn't block us
-                truman_profile = os.path.expanduser("~/.truman_browser")
-                try:
-                    ctx = await p.chromium.launch_persistent_context(
-                        user_data_dir=truman_profile,
-                        channel="chrome",
-                        headless=True,
-                        args=["--disable-blink-features=AutomationControlled"],
-                    )
-                except Exception:
-                    # Chrome not found — use bundled chromium (no auth, but works for non-auth sites)
-                    browser = await p.chromium.launch(headless=True)
-                    ctx = await browser.new_context()
+                # Fresh Chromium with Om's cookies injected — no profile lock issues
+                browser = await p.chromium.launch(
+                    headless=True,
+                    args=[
+                        "--disable-blink-features=AutomationControlled",
+                        "--no-sandbox",
+                        "--disable-dev-shm-usage",
+                    ]
+                )
+                ctx = await browser.new_context(
+                    user_agent=(
+                        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                        "AppleWebKit/537.36 (KHTML, like Gecko) "
+                        "Chrome/124.0.0.0 Safari/537.36"
+                    ),
+                    viewport={"width": 1280, "height": 800},
+                )
+
+                # Inject all of Om's Chrome cookies for this domain
+                if cookies:
+                    await ctx.add_cookies(cookies)
 
                 page = await ctx.new_page()
+
+                # Mask automation signals
+                await page.add_init_script("""
+                    Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+                    window.chrome = { runtime: {} };
+                """)
+
                 try:
                     await page.goto(url, timeout=timeout * 1000, wait_until="domcontentloaded")
-                    await page.wait_for_timeout(2000)
+                    await page.wait_for_timeout(2500)  # let JS render
+
                     content = await page.evaluate("""() => {
-                        ['script','style','nav','footer','header','aside'].forEach(sel => {
+                        ['script','style','nav','footer','header','aside',
+                         '[role=dialog]','[aria-modal]'].forEach(sel => {
                             document.querySelectorAll(sel).forEach(el => el.remove());
                         });
-                        return document.body ? document.body.innerText : '';
+                        return document.body ? document.body.innerText.trim() : '';
                     }""")
                     title = await page.title()
-                    return f"# {title}\n\n{content[:8000]}"
+
+                    if not content or len(content) < 50:
+                        return f"page loaded but content empty — may still need login. url: {url}"
+                    return f"# {title}\n\n{content[:10000]}"
                 finally:
-                    await page.close()  # close page only — keep context/cookies alive
+                    await page.close()
+                    await browser.close()
 
         return asyncio.run(_scrape())
 
     try:
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
             future = ex.submit(_run_in_thread)
-            return future.result(timeout=timeout + 10)
+            return future.result(timeout=timeout + 15)
     except concurrent.futures.TimeoutError:
         return f"browser scrape timed out after {timeout}s"
     except Exception as e:
