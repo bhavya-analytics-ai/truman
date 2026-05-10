@@ -163,7 +163,7 @@
   .badge.pool-general { color: var(--accent2); border-color: #3a1e5f; }
   .badge.pool-reasoning { color: #60a5fa; border-color: #1e3a5f; }
   .badge.pool-fast { color: #34d399; border-color: #065f46; }
-  .badge.tool { color: #fbbf24; border-color: #5f4a1e; }
+  .badge.tool { color: #e2e8f0; border-color: #7c3aed88; background: #1e1a2e; }
 
   /* Status indicator */
   .status-line { align-self: flex-start; font-size: 13px; color: var(--text2); padding: 6px 4px; display: flex; align-items: center; gap: 8px; }
@@ -187,7 +187,7 @@
 
   /* mic orb visualizer */
   #mic-orb {
-    display:none; position:fixed; bottom:88px; left:50%;
+    display:none; position:fixed; bottom:140px; left:50%;
     transform:translateX(-50%); z-index:200;
     cursor:grab; user-select:none;
     touch-action:none;
@@ -221,10 +221,10 @@
   .ps-tool.active { display: inline; animation: statusFade 1s infinite; }
   .ps-timer { margin-left: auto; font-variant-numeric: tabular-nums; }
   /* Tool chips */
-  .tool-chip { display: inline-flex; align-items: center; gap: 5px; background: var(--bg3); border: 1px solid var(--border2); border-radius: 6px; padding: 3px 8px; font-size: 11px; margin: 3px 2px 0; color: var(--text2); transition: all 0.3s; }
-  .tool-chip.running { border-color: #3b82f6; color: #93c5fd; animation: statusFade 1.2s infinite; }
-  .tool-chip.done { border-color: #22c55e44; color: #86efac; animation: none; }
-  .tool-chip.error { border-color: #ef444444; color: #fca5a5; animation: none; }
+  .tool-chip { display: inline-flex; align-items: center; gap: 5px; background: var(--bg3); border: 1px solid var(--border2); border-radius: 6px; padding: 3px 8px; font-size: 11px; margin: 3px 2px 0; color: #e2e8f0; transition: all 0.3s; }
+  .tool-chip.running { border-color: #7c3aed; color: #fff; background: #2d1f4e; animation: statusFade 1.2s infinite; }
+  .tool-chip.done { border-color: #7c3aed88; color: #e2e8f0; background: #1e1a2e; animation: none; }
+  .tool-chip.error { border-color: #ef4444; color: #fca5a5; animation: none; }
   .tool-chip-result { font-size: 10px; opacity: 0.7; max-width: 200px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
   .tool-chip-step { font-size: 9px; opacity: 0.55; margin-left: 4px; font-variant-numeric: tabular-nums; }
   /* Streaming cursor */

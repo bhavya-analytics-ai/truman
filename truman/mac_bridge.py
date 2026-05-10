@@ -169,45 +169,20 @@ def _scrape_with_browser(url: str, timeout: int = 30) -> str:
 
 def _open_login_browser(url: str = "https://www.linkedin.com") -> str:
     """
-    Open a visible Chrome window using Truman's dedicated profile (~/.truman_browser).
-    Om logs into whatever sites he wants — session saved permanently.
-    Browser stays open until he closes it himself.
+    Open URL in Om's default browser (real Chrome with real cookies).
+    No Playwright, no separate profile — just opens the page so Om can log in.
+    Session is already saved in his real Chrome.
     """
-    import concurrent.futures
-
-    def _run_in_thread():
-        import asyncio
-
-        async def _launch():
-            try:
-                from playwright.async_api import async_playwright
-            except ImportError:
-                return "playwright not installed"
-
-            truman_profile = os.path.expanduser("~/.truman_browser")
-            async with async_playwright() as p:
-                ctx = await p.chromium.launch_persistent_context(
-                    user_data_dir=truman_profile,
-                    channel="chrome",
-                    headless=False,   # visible — Om logs in manually
-                    args=["--disable-blink-features=AutomationControlled"],
-                )
-                page = await ctx.new_page()
-                await page.goto(url)
-                # Wait until Om closes the browser (all pages closed)
-                await ctx.wait_for_event("close", timeout=0)  # no timeout — wait forever
-                return "done — session saved"
-
-        return asyncio.run(_launch())
-
     try:
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
-            future = ex.submit(_run_in_thread)
-            return future.result(timeout=600)  # 10 min max for Om to log in
-    except concurrent.futures.TimeoutError:
-        return "timed out — close the browser manually when done"
+        # macOS: open in default browser (Chrome) and bring to front
+        subprocess.run(["open", url], check=True)
+        subprocess.run(
+            ["osascript", "-e", 'tell application "Google Chrome" to activate'],
+            capture_output=True
+        )
+        return "opened in your browser — log in, then come back and ask me to scrape"
     except Exception as e:
-        return f"login browser failed: {e}"
+        return f"failed to open browser: {e}"
 
 
 def _dispatch(action: str, payload: dict) -> str:
