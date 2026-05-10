@@ -139,4 +139,5 @@ def chat_stream(user_input: str, session_id: str = "default", pool: str | None =
         "model":      model_label,
         "pool":       chosen_pool,
         "tool_calls": tool_calls,
+        "latency_ms": latency_ms,
     })
