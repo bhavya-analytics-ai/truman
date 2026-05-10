@@ -152,15 +152,28 @@ def _scrape_with_browser(url: str, timeout: int = 30) -> str:
                 return "playwright not installed on Mac"
 
             async with async_playwright() as p:
-                # Fresh Chromium with Om's cookies injected — no profile lock issues
-                browser = await p.chromium.launch(
-                    headless=True,
-                    args=[
-                        "--disable-blink-features=AutomationControlled",
-                        "--no-sandbox",
-                        "--disable-dev-shm-usage",
-                    ]
-                )
+                # Use real installed Chrome (not Playwright's Chromium) so
+                # LinkedIn/Twitter/etc see a real fingerprint + real cookies
+                try:
+                    browser = await p.chromium.launch(
+                        channel="chrome",   # uses /Applications/Google Chrome.app
+                        headless=True,
+                        args=[
+                            "--disable-blink-features=AutomationControlled",
+                            "--no-sandbox",
+                            "--disable-dev-shm-usage",
+                        ]
+                    )
+                except Exception:
+                    # Fallback to bundled Chromium if Chrome isn't installed
+                    browser = await p.chromium.launch(
+                        headless=True,
+                        args=[
+                            "--disable-blink-features=AutomationControlled",
+                            "--no-sandbox",
+                            "--disable-dev-shm-usage",
+                        ]
+                    )
                 ctx = await browser.new_context(
                     user_agent=(
                         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -259,6 +272,8 @@ async def _handle(ws):
     # Authenticate
     await ws.send(json.dumps({"type": "auth", "secret": BRIDGE_SECRET}))
 
+    loop = asyncio.get_event_loop()
+
     async for raw in ws:
         try:
             msg = json.loads(raw)
@@ -268,8 +283,12 @@ async def _handle(ws):
         req_id = msg.get("id", "")
         action = msg.get("action", "")
 
+        # Run dispatch in a thread executor so the async event loop stays free
+        # to process WebSocket pings — prevents disconnects on long scrapes
         try:
-            result = _dispatch(action, msg)
+            result = await loop.run_in_executor(
+                None, lambda: _dispatch(action, msg)
+            )
             await ws.send(json.dumps({"id": req_id, "ok": True, "result": result}))
         except Exception as e:
             await ws.send(json.dumps({"id": req_id, "ok": False, "error": str(e)}))

@@ -12,13 +12,15 @@ RISK_TIERS: dict[str, list[str]] = {
         "web_search", "get_weather", "recall", "list_goals", "list_models",
         "list_reminders", "search_history", "recent_conversations",
         "list_mac_dir", "search_mac_files", "read_mac_file",
+        # saving files is a basic feature — no confirmation needed
+        "save_result", "write_mac_file",
     ],
     "caution": [
         "set_reminder", "add_goal", "complete_goal", "drop_goal",
         "remember", "update_pref", "log_sleep",
     ],
     "risky": [
-        "write_mac_file", "set_model",
+        "set_model",
     ],
 }
 

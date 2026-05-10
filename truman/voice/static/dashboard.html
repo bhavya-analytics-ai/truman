@@ -285,6 +285,18 @@
   .ap-minimized { border-radius:12px; }
   .ap-minimized .ap-hdr { border-radius:12px; border-bottom:none; }
 
+  /* ── Drag-and-drop overlay ───────────────────────────────────────────────────── */
+  #drop-overlay {
+    display:none; position:fixed; inset:0; z-index:9999;
+    background:rgba(79,70,229,0.18); backdrop-filter:blur(2px);
+    border:3px dashed #7c3aed; border-radius:16px; margin:12px;
+    pointer-events:none;
+    align-items:center; justify-content:center; flex-direction:column; gap:10px;
+    color:#a78bfa; font-size:22px; font-weight:600; letter-spacing:0.02em;
+  }
+  #drop-overlay.active { display:flex; }
+  #drop-overlay svg { width:48px; height:48px; opacity:0.8; }
+
   /* ── Attachment chips ────────────────────────────────────────────────────────── */
   .attach-bar { display:none; padding:4px 12px 0; background:var(--bg2); gap:6px; flex-wrap:wrap; flex-shrink:0; }
   .attach-bar.has-files { display:flex; }
@@ -693,6 +705,14 @@
   </select>
 </div>
 
+<!-- Drag-and-drop overlay -->
+<div id="drop-overlay">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+    <polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+  </svg>
+  Drop image or file here
+</div>
 <!-- Context tray — files already sent, still active in LLM context (sticky, shows turns left) -->
 <div class="context-tray" id="context-tray" title="These files are still in Truman's context"></div>
 
@@ -1751,16 +1771,14 @@ function _removeChip(i) {
   _renderChips();
 }
 
-document.getElementById('file-input').addEventListener('change', async (e) => {
-  const files = Array.from(e.target.files);
-  e.target.value = '';
-  if (!files.length) return;
-
+// ── Shared file handler (used by input, drag-drop, paste) ─────────────────────
+async function handleFiles(files) {
+  if (!files || !files.length) return;
   for (const file of files) {
-    const ext = '.' + file.name.split('.').pop().toLowerCase();
-    const isImage = IMAGE_EXTS.has(ext);
+    const ext = '.' + (file.name || 'image.png').split('.').pop().toLowerCase();
+    const isImage = IMAGE_EXTS.has(ext) || file.type.startsWith('image/');
     const st = addStatus();
-    st.querySelector('.status-text').textContent = `reading ${file.name}...`;
+    st.querySelector('.status-text').textContent = `reading ${file.name || 'image'}...`;
     try {
       const fd = new FormData();
       fd.append('file', file);
@@ -1773,11 +1791,63 @@ document.getElementById('file-input').addEventListener('change', async (e) => {
                           attach_id: d.attach_id || null, mime: d.mime || ''});
     } catch(err) {
       st.remove();
-      addMsg('truman', `failed to read ${file.name}`, null);
+      addMsg('truman', `failed to read ${file.name || 'image'}`, null);
     }
   }
   _renderChips();
   input.focus();
+}
+
+document.getElementById('file-input').addEventListener('change', async (e) => {
+  const files = Array.from(e.target.files);
+  e.target.value = '';
+  await handleFiles(files);
+});
+
+// ── Drag-and-drop anywhere on page ────────────────────────────────────────────
+const _dropOverlay = document.getElementById('drop-overlay');
+let _dragCounter = 0;
+
+document.addEventListener('dragenter', (e) => {
+  if (!e.dataTransfer.types.includes('Files')) return;
+  e.preventDefault();
+  _dragCounter++;
+  _dropOverlay.classList.add('active');
+});
+
+document.addEventListener('dragleave', (e) => {
+  _dragCounter--;
+  if (_dragCounter <= 0) { _dragCounter = 0; _dropOverlay.classList.remove('active'); }
+});
+
+document.addEventListener('dragover', (e) => {
+  if (!e.dataTransfer.types.includes('Files')) return;
+  e.preventDefault();
+});
+
+document.addEventListener('drop', async (e) => {
+  e.preventDefault();
+  _dragCounter = 0;
+  _dropOverlay.classList.remove('active');
+  const files = Array.from(e.dataTransfer.files);
+  if (files.length) await handleFiles(files);
+});
+
+// ── Paste image from clipboard (Ctrl+V) ───────────────────────────────────────
+document.addEventListener('paste', async (e) => {
+  const items = Array.from(e.clipboardData?.items || []);
+  const imageItems = items.filter(it => it.kind === 'file' && it.type.startsWith('image/'));
+  if (!imageItems.length) return;
+  e.preventDefault();
+  const files = imageItems.map(it => {
+    const f = it.getAsFile();
+    // give it a timestamped name if missing
+    if (!f.name || f.name === 'image.png') {
+      return new File([f], `paste-${Date.now()}.png`, {type: f.type});
+    }
+    return f;
+  });
+  await handleFiles(files);
 });
 
 // ── Voice ─────────────────────────────────────────────────────────────────────
