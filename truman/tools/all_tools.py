@@ -541,7 +541,7 @@ def scrape_site(url: str) -> str:
     if needs_auth:
         try:
             from truman.voice.orb import mac_request
-            result = mac_request("scrape_browser", {"url": url, "timeout": 45})
+            result = mac_request("scrape_browser", {"url": url, "timeout": 50}, timeout=65.0)
             if result.get("ok") and len((result.get("result") or "").strip()) > 100:
                 return result["result"][:10000]
             if not result.get("ok"):
@@ -561,7 +561,7 @@ def scrape_site(url: str) -> str:
     # Firecrawl failed → Mac browser (handles JS-heavy public sites too)
     try:
         from truman.voice.orb import mac_request
-        result = mac_request("scrape_browser", {"url": url, "timeout": 40})
+        result = mac_request("scrape_browser", {"url": url, "timeout": 50}, timeout=65.0)
         if result.get("ok") and len((result.get("result") or "").strip()) > 100:
             return result["result"][:10000]
     except Exception:
