@@ -26,6 +26,7 @@ Om's personal AI. Voice + text. Always on via Railway. Talks back, remembers eve
 - **Error log modal** — "logs" button shows last 50 requests with timing, model, pool, status.
 - **Model tools** — `list_models`, `set_model`, `pipeline_mode`. Ask "what models do I have" or "use deepseek".
 - **History tools** — `search_history` FTS5 + `recent_conversations`.
+- **Web Intel tools** — `scrape_site`, `deep_search`, `extract_data`. Powered by self-hosted Firecrawl + SearXNG on Hetzner (46.224.203.138:3002). Search routes through Webshare residential proxies. "Scrape this site: [url]", "deep search: X", "extract price and title from [url]".
 
 ---
 
@@ -69,7 +70,7 @@ agent.py — keyword tool detection, direct execution, per-session chat_history 
 | `truman/voice/orb.py` | Flask routes + WebSocket handlers — serves static/ |
 | `truman/voice/static/dashboard.html` | Dashboard UI — HTML + CSS + JS |
 | `truman/voice/static/orb.html` | Orb animation UI — HTML + CSS + JS |
-| `truman/tools/all_tools.py` | 15 tools — single source for voice + text |
+| `truman/tools/all_tools.py` | 26 tools — single source for voice + text (includes scrape_site, deep_search, extract_data) |
 | `truman/tools/dispatch.py` | Schema conversion + dispatch for Realtime path |
 | `truman/storage/db.py` | SQLite (WAL + FTS5) |
 | `truman/storage/reflect.py` | Nightly summarization + Mem0 fact promotion |
