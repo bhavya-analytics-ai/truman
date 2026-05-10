@@ -184,6 +184,32 @@
   .send-btn:active { transform: scale(0.93); }
   .voice-btn { background: var(--bg3); border: 1px solid var(--border2); }
   .voice-btn.listening { background: #7c3aed; border-color: #7c3aed; animation: pulse 1.5s infinite; }
+
+  /* mic orb visualizer */
+  #mic-orb {
+    display:none; position:fixed; bottom:88px; left:50%;
+    transform:translateX(-50%); z-index:200;
+    cursor:grab; user-select:none;
+    touch-action:none;
+  }
+  #mic-orb.active { display:block; }
+  #mic-orb-ring {
+    width:64px; height:64px; border-radius:50%;
+    background: radial-gradient(circle, #7c3aed88 0%, #7c3aed22 60%, transparent 100%);
+    box-shadow: 0 0 24px #7c3aed88;
+    transition: transform 0.05s ease, box-shadow 0.05s ease;
+  }
+  #mic-orb-controls {
+    position:absolute; top:-18px; right:-18px;
+    display:flex; gap:4px;
+  }
+  #mic-orb-controls button {
+    width:16px; height:16px; border-radius:50%; border:none;
+    background:#3a3a4a; color:#aaa; font-size:9px; cursor:pointer;
+    display:flex; align-items:center; justify-content:center; padding:0;
+    line-height:1;
+  }
+  #mic-orb-controls button:hover { background:#7c3aed; color:#fff; }
   @keyframes pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(124,58,237,0.4); } 50% { box-shadow: 0 0 0 8px rgba(124,58,237,0); } }
   svg { pointer-events: none; }
 
@@ -616,7 +642,7 @@
       <option value="theme-cream">☀️ cream</option>
     </select>
     <button class="activity-btn" id="memory-btn" onclick="toggleMemory()" title="pinned facts about Om">memory</button>
-    <button class="activity-btn" id="activity-btn" onclick="toggleActivity()" title="Truman's brain activity">activity</button>
+    <button class="activity-btn" id="activity-btn" onclick="toggleDrawer()" title="Truman's events log">activity</button>
     <button class="activity-btn" id="ctrl-btn" onclick="toggleControl()" title="Control panel — flags, pools, eval, storage" style="color:#6ee7b7;">control</button>
     <button class="hdr-btn" onclick="exportChats()" title="download all chats as JSON">export</button>
     <label class="hdr-btn" style="cursor:pointer" title="restore chats from JSON">import<input type="file" accept=".json" style="display:none" onchange="importChats(event)"></label>
@@ -688,6 +714,13 @@
       <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
     </svg>
   </button>
+  <div id="mic-orb">
+    <div id="mic-orb-controls">
+      <button onclick="orbResize(-1)" title="shrink">−</button>
+      <button onclick="orbResize(1)" title="grow">+</button>
+    </div>
+    <div id="mic-orb-ring"></div>
+  </div>
   <button class="btn voice-btn" id="voice-btn" title="tap to talk">
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
       <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
@@ -1772,6 +1805,9 @@ async function startVoice() {
       setStatus('listen', 'listening');
       const src = audioCtx.createMediaStreamSource(micStream);
       processor = audioCtx.createScriptProcessor(4096, 1, 1);
+      const micOrb = document.getElementById('mic-orb');
+      const micOrbRing = document.getElementById('mic-orb-ring');
+      micOrb.classList.add('active');
       processor.onaudioprocess = ev => {
         if (!audioWs || audioWs.readyState !== 1) return;
         const f32 = ev.inputBuffer.getChannelData(0);
@@ -1785,15 +1821,29 @@ async function startVoice() {
           out[i] = Math.max(-32768, Math.min(32767, sample * 32768));
         }
         audioWs.send(out.buffer);
+        // drive orb with mic amplitude
+        let sum = 0;
+        for (let i = 0; i < f32.length; i++) sum += f32[i] * f32[i];
+        const rms = Math.sqrt(sum / f32.length);
+        const scale = 1 + Math.min(rms * 12, 1.2);  // 1x–2.2x
+        const glow = Math.round(24 + rms * 200);
+        micOrbRing.style.transform = `scale(${scale.toFixed(2)})`;
+        micOrbRing.style.boxShadow = `0 0 ${glow}px #7c3aed99`;
       };
       src.connect(processor); processor.connect(audioCtx.destination);
     };
     let nextPlay = 0;
+    let activeNodes = [];
     audioWs.onmessage = e => {
       if (typeof e.data === 'string') {
         try {
           const m = JSON.parse(e.data);
-          if (m.type === 'flush') nextPlay = 0;
+          if (m.type === 'flush') {
+            // hard-stop all scheduled audio immediately (barge-in fix)
+            activeNodes.forEach(n => { try { n.stop(); } catch(_) {} });
+            activeNodes = [];
+            nextPlay = 0;
+          }
           if (m.type === 'evicted') { stopVoice(); return; }
           if (m.type === 'transcript') {
             const role = m.role === 'user' ? 'user' : 'truman';
@@ -1813,6 +1863,8 @@ async function startVoice() {
       const now = audioCtx.currentTime;
       if (nextPlay < now + 0.01) nextPlay = now + PLAYBACK_BUFFER_SEC;
       node.start(nextPlay);
+      activeNodes.push(node);
+      node.onended = () => { activeNodes = activeNodes.filter(x => x !== node); };
       nextPlay += buf.duration;
     };
     audioWs.onerror = () => {};
@@ -1828,6 +1880,7 @@ async function startVoice() {
 function stopVoice() {
   isVoiceActive = false; reconnecting = false;
   voiceBtn.classList.remove('listening');
+  document.getElementById('mic-orb').classList.remove('active');
   setStatus('idle', 'idle');
   voiceBtn.title = 'tap to talk';
   if (processor) { try { processor.disconnect(); } catch(e) {} processor = null; }
@@ -1838,6 +1891,46 @@ function stopVoice() {
 }
 
 voiceBtn.addEventListener('click', () => { isVoiceActive ? stopVoice() : startVoice(); });
+
+// ── Mic orb drag + resize ─────────────────────────────────────────────────────
+let _orbSize = 64;
+const _orbEl = document.getElementById('mic-orb');
+const _orbRing = document.getElementById('mic-orb-ring');
+
+function orbResize(dir) {
+  _orbSize = Math.max(32, Math.min(160, _orbSize + dir * 20));
+  _orbRing.style.width  = _orbSize + 'px';
+  _orbRing.style.height = _orbSize + 'px';
+}
+
+(function() {
+  let dragging = false, startX, startY, startLeft, startBottom;
+  _orbEl.addEventListener('pointerdown', e => {
+    if (e.target.tagName === 'BUTTON') return; // don't drag on +/- buttons
+    dragging = true;
+    _orbEl.setPointerCapture(e.pointerId);
+    _orbEl.style.cursor = 'grabbing';
+    startX = e.clientX; startY = e.clientY;
+    const rect = _orbEl.getBoundingClientRect();
+    startLeft   = rect.left;
+    startBottom = window.innerHeight - rect.bottom;
+    _orbEl.style.transform = 'none';  // drop centering once dragged
+    _orbEl.style.left   = startLeft + 'px';
+    _orbEl.style.bottom = startBottom + 'px';
+  });
+  _orbEl.addEventListener('pointermove', e => {
+    if (!dragging) return;
+    const dx = e.clientX - startX;
+    const dy = e.clientY - startY;
+    _orbEl.style.left   = Math.max(0, Math.min(window.innerWidth - _orbSize,  startLeft + dx)) + 'px';
+    _orbEl.style.bottom = Math.max(0, Math.min(window.innerHeight - _orbSize, startBottom - dy)) + 'px';
+  });
+  _orbEl.addEventListener('pointerup', e => {
+    dragging = false;
+    _orbEl.style.cursor = 'grab';
+    _orbEl.releasePointerCapture(e.pointerId);
+  });
+})();
 
 // ── Status pill ───────────────────────────────────────────────────────────────
 const statusDot   = document.getElementById('status-dot');
