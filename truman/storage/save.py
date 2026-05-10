@@ -24,11 +24,25 @@ def _persist_turn(turn: dict[str, Any]) -> None:
 
     # Persist user + assistant turns
     try:
+        import uuid as _uuid2
         from truman.storage import db
         # session_id from chat() is a string (e.g. "default") — resolve to int
         session_int = db.get_or_create_session(session_id)
         db.log_turn(session_int, "user", user_input)
         db.log_turn(session_int, "assistant", response)
+        # Write a synthetic trace event so the activity panel shows this turn
+        latency_ms = turn.get("latency_ms", 0)
+        tool_calls = turn.get("tool_calls", [])
+        tool_names = ", ".join(t["name"] for t in tool_calls) if tool_calls else ""
+        summary = f'"{user_input[:60]}" → {model} {latency_ms}ms' + (f' [{tool_names}]' if tool_names else '')
+        db.log_trace(
+            session_id=session_id,
+            turn_id=str(_uuid2.uuid4()),
+            node="chat",
+            status="end",
+            summary=summary,
+            duration_ms=latency_ms,
+        )
     except Exception as e:
         print(f"[save] log_turn failed: {e}")
 
