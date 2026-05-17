@@ -232,18 +232,18 @@ def _is_complex(msg: str) -> bool:
 
 
 # ── LLM — NVIDIA only, pool-aware model selection ───────────────────────────
-# Phase 1.6: removed dead kimi-k2-instruct, kimi-k2-thinking, step-3.5-flash, llama-4-scout
+# Phase 1.6b: nemotron-49b demoted — streaming total 50s+ exceeds 12-18s timeout → empty responses.
+# Primary = llama3.3-70b (ttft 0.38s, total 6.9s, reliable). nemotron-nano as fast fallback.
 _CHAT_MODELS = [
-    ("nvidia/llama-3.3-nemotron-super-49b-v1", "nemotron-49b"),
     ("meta/llama-3.3-70b-instruct",            "llama3.3-70b"),
+    ("nvidia/llama-3.1-nemotron-nano-8b-v1",   "nemotron-nano"),
 ]
 
 _POOL_CHAT_MODELS: dict[str, list] = {
-    "general":   [("nvidia/llama-3.3-nemotron-super-49b-v1",        "nemotron-49b"),
-                  ("meta/llama-3.3-70b-instruct",                    "llama3.3-70b"),
+    "general":   [("meta/llama-3.3-70b-instruct",                    "llama3.3-70b"),
                   ("nvidia/llama-3.1-nemotron-nano-8b-v1",           "nemotron-nano")],
     "reasoning": [("qwen/qwen3-coder-480b-a35b-instruct",           "qwen3-coder"),
-                  ("nvidia/llama-3.3-nemotron-super-49b-v1",        "nemotron-49b")],
+                  ("meta/llama-3.3-70b-instruct",                    "llama3.3-70b")],
     "coding":    [("qwen/qwen3-coder-480b-a35b-instruct",           "qwen3-coder"),
                   ("meta/llama-3.3-70b-instruct",                    "llama3.3-70b")],
     "agentic":   [("qwen/qwen3-coder-480b-a35b-instruct",           "qwen3-coder"),
