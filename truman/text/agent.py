@@ -232,19 +232,26 @@ def _is_complex(msg: str) -> bool:
 
 
 # ── LLM — NVIDIA only, pool-aware model selection ───────────────────────────
-# general/reasoning → llama-70b (fast, solid), coding/agentic → kimi-k2 (deep)
+# Phase 1.6: removed dead kimi-k2-instruct, kimi-k2-thinking, step-3.5-flash, llama-4-scout
 _CHAT_MODELS = [
-    ("meta/llama-3.3-70b-instruct",  "llama70"),
-    ("moonshotai/kimi-k2-instruct",  "kimi-k2"),
+    ("nvidia/llama-3.3-nemotron-super-49b-v1", "nemotron-49b"),
+    ("meta/llama-3.3-70b-instruct",            "llama3.3-70b"),
 ]
 
 _POOL_CHAT_MODELS: dict[str, list] = {
-    "general":   [("meta/llama-3.3-70b-instruct", "llama70"),  ("moonshotai/kimi-k2-instruct", "kimi-k2")],
-    "reasoning": [("moonshotai/kimi-k2-instruct", "kimi-k2"),  ("meta/llama-3.3-70b-instruct", "llama70")],
-    "coding":    [("moonshotai/kimi-k2-instruct", "kimi-k2"),  ("stepfun-ai/step-3.5-flash",   "step-flash")],
-    "agentic":   [("moonshotai/kimi-k2-instruct", "kimi-k2"),  ("stepfun-ai/step-3.5-flash",   "step-flash")],
-    "docs":      [("meta/llama-3.3-70b-instruct", "llama70"),  ("moonshotai/kimi-k2-instruct", "kimi-k2")],
-    "vision":    [("meta/llama-3.2-90b-vision-instruct", "llama-vision"), ("meta/llama-4-scout-17b-16e-instruct", "scout")],
+    "general":   [("nvidia/llama-3.3-nemotron-super-49b-v1",        "nemotron-49b"),
+                  ("meta/llama-3.3-70b-instruct",                    "llama3.3-70b"),
+                  ("nvidia/llama-3.1-nemotron-nano-8b-v1",           "nemotron-nano")],
+    "reasoning": [("qwen/qwen3-coder-480b-a35b-instruct",           "qwen3-coder"),
+                  ("nvidia/llama-3.3-nemotron-super-49b-v1",        "nemotron-49b")],
+    "coding":    [("qwen/qwen3-coder-480b-a35b-instruct",           "qwen3-coder"),
+                  ("meta/llama-3.3-70b-instruct",                    "llama3.3-70b")],
+    "agentic":   [("qwen/qwen3-coder-480b-a35b-instruct",           "qwen3-coder"),
+                  ("meta/llama-3.3-70b-instruct",                    "llama3.3-70b")],
+    "docs":      [("meta/llama-4-maverick-17b-128e-instruct",       "llama4-maverick"),
+                  ("meta/llama-3.3-70b-instruct",                    "llama3.3-70b")],
+    "vision":    [("meta/llama-3.2-90b-vision-instruct",            "llama3.2-90b-vision"),
+                  ("meta/llama-4-maverick-17b-128e-instruct",       "llama4-maverick")],
 }
 
 def _call_llm(messages: list, complex_msg: bool = False, temperature: float = 0.7):
