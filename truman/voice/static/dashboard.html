@@ -1160,32 +1160,94 @@ function showPopup(e, s) {
 function hidePopup() { if (_ssbPopup) { _ssbPopup.remove(); _ssbPopup = null; } }
 
 // ── Export / Import ───────────────────────────────────────────────────────────
+
+// Parse [Image: NAME|attach:ID] and [File: NAME|attach:ID] tokens from turn content.
+// Returns [] if none found. Does not modify content.
+function parseAttachmentsFromContent(content) {
+  if (!content) return [];
+  const attachments = [];
+  const pat = /\[(Image|File):\s*([^|\]]+?)\|attach:([a-f0-9]+)\]/gi;
+  let m;
+  while ((m = pat.exec(content)) !== null) {
+    attachments.push({
+      id:           m[3],
+      filename:     m[2].trim(),
+      kind:         m[1].toLowerCase() === 'image' ? 'image' : 'file',
+      download_url: `/api/attachments/${m[3]}`
+    });
+  }
+  return attachments;
+}
+
 async function exportChats() {
   showToast('preparing export…');
   try {
-    // Fetch all sessions from server
+    // Bug-2 fix: /api/sessions returns {groups:[{day, sessions:[]}]}, not {sessions:[]}
     const sessRes = await fetch('/api/sessions');
     const sessData = await sessRes.json();
-    const allSessions = sessData.sessions || [];
-    const out = { exported: new Date().toISOString(), sessions: [] };
+    const groups = Array.isArray(sessData.groups) ? sessData.groups : [];
+    const allSessions = groups.flatMap(g => Array.isArray(g.sessions) ? g.sessions : []);
+
+    if (allSessions.length === 0) {
+      console.warn('[export] no sessions returned from /api/sessions', sessData);
+      showToast('no sessions to export — check console');
+      return;
+    }
+
+    let totalTurns = 0;
+    const exportedSessions = [];
+
     for (const s of allSessions) {
       const bid = s.browser_id || String(s.id);
+      // Bug-3 fix: /api/history returns {turns:[...]}, not a bare array
       const histRes = await fetch(`/api/history?session_id=${encodeURIComponent(bid)}`);
-      const turns = await histRes.json();
-      out.sessions.push({
-        id: bid,
-        label: s.label || '(untitled)',
-        started: s.started_at,
-        turns: Array.isArray(turns) ? turns : []
+      const histJson = await histRes.json();
+      const rawTurns = Array.isArray(histJson.turns) ? histJson.turns : [];
+
+      // Build structured turns with inline attachment metadata
+      const turns = rawTurns.map(t => {
+        const entry = {
+          role:    t.role,
+          content: t.content,
+          ts:      t.ts
+        };
+        const attachments = parseAttachmentsFromContent(t.content);
+        if (attachments.length > 0) entry.attachments = attachments;
+        return entry;
+      });
+
+      totalTurns += turns.length;
+      exportedSessions.push({
+        id:         bid,
+        label:      s.label || '(untitled)',
+        started_at: s.started_at,
+        turn_count: turns.length,
+        turns
       });
     }
+
+    if (totalTurns === 0) {
+      console.warn('[export] sessions found but all have 0 turns', allSessions);
+      showToast('sessions found but no turns — check console');
+    }
+
+    const out = {
+      schema_version: 'truman_chat_export_v1',
+      exported_at:    new Date().toISOString(),
+      source:         'dashboard',
+      session_count:  exportedSessions.length,
+      turn_count:     totalTurns,
+      sessions:       exportedSessions
+    };
+
     const blob = new Blob([JSON.stringify(out, null, 2)], {type: 'application/json'});
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
     a.download = `truman-export-${new Date().toISOString().slice(0,10)}.json`;
     a.click();
-    showToast(`exported ${out.sessions.length} session(s) ✓`);
+    showToast(`exported ${out.session_count} session(s), ${out.turn_count} turns ✓`);
   } catch(e) {
+    console.error('[export] failed', e);
     showToast('export failed: ' + e.message);
   }
 }
