@@ -331,3 +331,51 @@ Diagnosis: model is verbose (4002 chars for 5-step plan vs llama70's 1943 chars)
 | File containment (instruction preserved) | **PRODUCTION VERIFIED** |
 | Tool JSON containment (Guard 1 — any position) | **PRODUCTION VERIFIED** |
 | Empty-response cascade (NIM 400 guard) | **PRODUCTION VERIFIED** |
+
+---
+
+## Phase 2.0A — GitHub URL Safety Gate
+
+### Evidence
+- **Date:** 2026-05-20
+- **Git commit:** `3936bce` — "fix: gate github repo intake behind confirmation"
+- **Files changed:** `truman/skills/registry.py`, `truman/skills/github/server.py`, `truman/tools/all_tools.py`
+- **Railway flag:** `ENABLE_MCP_GITHUB=0` (set via `railway variables set`)
+
+### Problem fixed
+`detect_skill()` in `registry.py` previously routed **any** `github.com/` URL → `ingest_repo` unconditionally. `_ingest()` in `server.py` immediately spawned a `git clone --depth=1` background thread with no user confirmation. `scrape_site` docstring said "Use when Om pastes a URL", causing LLM to scrape bare URL pastes.
+
+### Changes
+| File | Change |
+|---|---|
+| `skills/registry.py` | Bare URL → `ask_intent`; explicit clone keywords → `ingest_repo`; explicit inspect keywords → `inspect_repo` |
+| `skills/github/server.py` | Added `ask_intent` (returns intent menu), `inspect_repo` (GitHub API + README, no clone), `_sandbox_path()` helper; `_ingest()` now requires `confirmed=True` to spawn thread |
+| `tools/all_tools.py` | `scrape_site` docstring: removed "pastes a URL", added "Do NOT call this just because a URL appears" |
+
+### Local tests (7/7 PASS — pre-commit)
+| Test | Result |
+|---|---|
+| A: bare URL → `ask_intent` | ✅ PASS |
+| B: "clone URL" → `ingest_repo` | ✅ PASS |
+| C: `ingest_repo(confirmed=False)` → confirmation prompt, no clone | ✅ PASS |
+| D: `ingest_repo(confirmed=True)` → spawns thread | ✅ PASS |
+| E: `scrape_site` docstring no longer says "pastes a URL" | ✅ PASS |
+| F: "inspect URL" → `inspect_repo` | ✅ PASS |
+| G: no unconditional subprocess+clone in `_ingest()` | ✅ PASS |
+
+### Production tests
+| Test | Result | Notes |
+|---|---|---|
+| Bare URL paste → no clone | ✅ PASS | `"skill":""` confirms GitHub skill disabled (`ENABLE_MCP_GITHUB=0`); LLM fell back to `web_search` |
+| No `memory_repos` row created | ✅ PASS | 4 turns stored (2 runs), no repo row |
+| `ask_intent` response on URL paste | ⚠️ N/A | GitHub skill OFF — path never reached; gate confirmed via local tests |
+
+### Final classification
+| Area | Status |
+|---|---|
+| Bare URL → no auto-clone (ENABLE_MCP_GITHUB=0) | **PRODUCTION VERIFIED** |
+| `ingest_repo` confirmation gate (`confirmed=False` blocks clone) | **LOCAL VERIFIED** |
+| `ask_intent` intent menu on bare URL | **LOCAL VERIFIED** |
+| `scrape_site` URL-paste trigger removed | **LOCAL VERIFIED** |
+
+**Note:** Full production test of `ask_intent` path requires `ENABLE_MCP_GITHUB=1`. Set it back to 1 once Om is ready to test the full confirmation flow end-to-end.
