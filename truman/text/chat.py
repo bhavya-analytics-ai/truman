@@ -22,22 +22,32 @@ _HISTORY_WINDOW = 16
 
 
 def _strip_file_content(text: str) -> str:
-    """Strip extracted file/image body text after attachment markers, keeping only the token.
+    """Strip extracted file/image body text after attachment markers.
+    Preserves user instruction that follows a blank-line (\\n\\n) boundary.
 
-    [File: name|attach:ID]\\nFULL TEXT...  → [File: name|attach:ID]
-    [Image: name|attach:ID]\\nDESCRIPTION  → [Image: name|attach:ID]
-    Legacy [File: name]\\nFULL TEXT...     → [File: name]
-    Normal messages with no markers        → unchanged
+    [File: name|attach:ID]\\nBODY\\n\\nInstruction  → [File: name|attach:ID]\\n\\nInstruction
+    [File: name|attach:ID]\\nBODY                   → [File: name|attach:ID]
+    Legacy [File: name]\\nBODY\\n\\nInstruction      → [File: name]\\n\\nInstruction
+    Normal messages with no markers                  → unchanged
 
     Used before storing to _HISTORY or DB so future turns don't carry 30K of context.
     The CURRENT turn still passes full user_input to the LLM for comprehension.
     """
     if not text or ("[File:" not in text and "[Image:" not in text):
         return text
-    # Consume everything after each marker up to the next marker or end of string
+
+    def _replacer(m: _re.Match) -> str:
+        marker = m.group(1)
+        body = m.group(2)  # everything after marker\n, up to next marker or end
+        # Phase 1.9B: preserve user instruction after blank-line boundary
+        sep = body.find('\n\n')
+        if sep >= 0:
+            return marker + body[sep:]  # marker + \n\nInstruction...
+        return marker
+
     cleaned = _re.sub(
-        r'(\[(?:File|Image):[^\]]*\])\n[\s\S]*?(?=\[(?:File|Image):|$)',
-        r'\1',
+        r'(\[(?:File|Image):[^\]]*\])\n([\s\S]*?)(?=\[(?:File|Image):|$)',
+        _replacer,
         text,
         flags=_re.IGNORECASE,
     )

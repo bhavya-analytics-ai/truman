@@ -1383,10 +1383,11 @@ function renderUserText(text) {
 function _renderTrumanBubble(bubbleEl, text) {
   const full = text || '';
 
-  // Guard 1: detect leaked tool-call JSON in content
+  // Guard 1: detect leaked tool-call JSON anywhere in content
+  // Phase 1.9B: removed startsWith('{') — now catches prose-prefix + JSON leaks too
   // (model output {"type":"function","name":"..."} as text instead of via tool_calls field)
   const _TOOL_JSON_RE = /\{"type"\s*:\s*"function"|"name"\s*:\s*"[a-z_]{3,}"\s*,\s*"(?:arguments|parameters)"/i;
-  if (_TOOL_JSON_RE.test(full) && full.trim().startsWith('{')) {
+  if (_TOOL_JSON_RE.test(full)) {
     bubbleEl.innerHTML = '<span style="color:var(--text3);font-size:12px;background:var(--bg3);' +
       'padding:4px 10px;border-radius:6px;display:inline-block;border:1px solid var(--border2)">' +
       '⚠️ tool-call text leaked — collapsed</span>';

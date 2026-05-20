@@ -12,12 +12,23 @@ from typing import Any
 
 def _strip_file_content(text: str) -> str:
     """Defense-in-depth: strip file body text from user_input before DB write.
+    Preserves user instruction after a blank-line (\\n\\n) boundary.
     Should already be stripped by chat.py, but catches any path that bypasses it."""
     if not text or ("[File:" not in text and "[Image:" not in text):
         return text
+
+    def _replacer(m: _re.Match) -> str:
+        marker = m.group(1)
+        body = m.group(2)
+        # Phase 1.9B: preserve user instruction after blank-line boundary
+        sep = body.find('\n\n')
+        if sep >= 0:
+            return marker + body[sep:]
+        return marker
+
     cleaned = _re.sub(
-        r'(\[(?:File|Image):[^\]]*\])\n[\s\S]*?(?=\[(?:File|Image):|$)',
-        r'\1',
+        r'(\[(?:File|Image):[^\]]*\])\n([\s\S]*?)(?=\[(?:File|Image):|$)',
+        _replacer,
         text,
         flags=_re.IGNORECASE,
     )
