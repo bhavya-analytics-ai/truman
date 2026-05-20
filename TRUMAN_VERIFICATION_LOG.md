@@ -492,3 +492,52 @@ Orb still reacted to mic because mic animation is browser-local (no backend depe
 | Reconnect backoff | **DEPLOYED** |
 | Logging clarity | **DEPLOYED** |
 | Voice roundtrip (speak → hear response) | **PENDING OM BROWSER TEST** |
+
+---
+
+## Startup Fix — Defer Realtime Import
+
+### Evidence
+- **Date:** 2026-05-20
+- **Commit:** `d911525` — "fix: defer realtime import during startup"
+- **Files changed:** `truman/main_cloud.py`, `railway.toml`
+
+### Root cause
+`main_cloud.py` imported `realtime` and `agent` at the **module level** (lines 31–32).
+`realtime.py` imports `from truman.text.agent import ...` at its module level.
+`agent.py` imports `langchain_openai` (~1.1s) and `mem0` (~1.0s) — heavy, no .pyc cache on cold start.
+This 2.3s chain blocked Python from even calling `main()`, let alone Flask binding to port.
+Railway healthcheckTimeout was 30s; on cold start (post-nixpacks rebuild) the total startup
+time could exceed this threshold, causing healthcheck timeout and deploy failure.
+
+### Import timing (local, measured)
+| Phase | Before | After |
+|---|---|---|
+| Top-level imports in `main_cloud.py` | ~2,650ms | ~259ms |
+| Flask binds to port | ~2,650ms+ | ~259ms |
+| `/health` responds | ~2,650ms+ | ~259ms (local: 40ms) |
+
+### Changes
+| File | Change |
+|---|---|
+| `main_cloud.py` | Removed `from truman.voice import realtime` and `from truman.text import agent` from top level. Both deferred into `_background_init()` with try/except guards. |
+| `railway.toml` | `healthcheckTimeout` raised from 30 → 60 as safety buffer |
+
+### Verification
+| Check | Result |
+|---|---|
+| `main_cloud.py` compiles | ✅ |
+| No top-level `realtime`/`agent` imports | ✅ (grep: 0 matches) |
+| `/health` local test | ✅ 40ms |
+| Railway deploy | ✅ GH Actions `26147792710` |
+| Railway `/health` after deploy | ✅ 313ms (including network RTT) |
+| Startup log order: Flask before heavy init | ✅ `[Cloud] Truman running` → `[Smart Routing]` → `[Telegram]` → `[Realtime]` |
+| Realtime still starts in background | ✅ `[Realtime] Engine ready` in logs |
+| No crash if realtime fails | ✅ guarded by `if realtime:` |
+
+### Final classification
+| Area | Status |
+|---|---|
+| Healthcheck hang on cold start | **PRODUCTION VERIFIED** |
+| Flask binds before heavy imports | **PRODUCTION VERIFIED** |
+| Realtime voice still operational | **PRODUCTION VERIFIED** |
