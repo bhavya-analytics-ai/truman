@@ -28,8 +28,10 @@ import time
 import threading
 from truman.voice import orb
 from truman.scheduling import proactive
-from truman.voice import realtime
-from truman.text import agent
+# NOTE: realtime + agent are NOT imported at the top level.
+# Both pull in langchain_openai + mem0 (~2.3s on cold start) and would block
+# Flask from binding to port before Railway's healthcheck fires.
+# They are imported lazily inside _background_init() below.
 
 
 def _start_nightly_reflection():
@@ -58,6 +60,21 @@ def _noop_speak(text):
 
 def _background_init():
     """Heavy init in background so Flask binds first and healthcheck passes."""
+    # ── Deferred heavy imports (kept out of module-level to let Flask bind first)
+    # langchain_openai + mem0 take ~2.3 s on a cold start (no .pyc cache).
+    # Importing them here means Railway's healthcheck hits a live /health endpoint
+    # well before this code runs.
+    try:
+        from truman.text import agent
+    except Exception as _e:
+        print(f"[Cloud] agent import failed: {_e}")
+        agent = None  # type: ignore[assignment]
+    try:
+        from truman.voice import realtime
+    except Exception as _e:
+        print(f"[Cloud] realtime import failed: {_e}")
+        realtime = None  # type: ignore[assignment]
+
     # Mount MCP servers if configured
     from truman.tools.mcp_config import MCP_SERVERS
     if MCP_SERVERS:
@@ -81,18 +98,21 @@ def _background_init():
         print(f"[Smart Routing] init_tool_embeddings failed: {e}")
 
     # ── [CORE] Message handling infrastructure ────────────────────────────────
-    agent.get_agent()   # warm up brain
+    if agent:
+        agent.get_agent()   # warm up brain
 
     # [CORE] Telegram poller — primary inbound channel (works when Mac is off)
-    try:
-        from truman.delivery.telegram import start_poller as _tg_start
-        _tg_start(agent.run)
-    except Exception as e:
-        print(f"[Cloud] Telegram poller failed to start: {e}")
+    if agent:
+        try:
+            from truman.delivery.telegram import start_poller as _tg_start
+            _tg_start(agent.run)
+        except Exception as e:
+            print(f"[Cloud] Telegram poller failed to start: {e}")
 
     # ── [SUPPORT] Background services ────────────────────────────────────────
     _start_nightly_reflection()                  # 2am UTC maintenance pass
-    proactive.start_proactive_push(agent.run)    # morning brief + nudges
+    if agent:
+        proactive.start_proactive_push(agent.run)    # morning brief + nudges
 
     # [SUPPORT] Gmail poller — secondary inbound (gated, off by default)
     if os.environ.get("ENABLE_GMAIL_POLLING", "0") == "1":
@@ -103,7 +123,8 @@ def _background_init():
         except Exception as e:
             print(f"[Cloud] Gmail poller failed to start: {e}")
 
-    realtime.start()    # [SUPPORT] WebRTC audio bridge
+    if realtime:
+        realtime.start()    # [SUPPORT] WebRTC audio bridge
     print("[Cloud] Background init complete.")
 
 

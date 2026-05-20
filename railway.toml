@@ -5,7 +5,7 @@ builder = "nixpacks"
 startCommand = "bash start.sh"
 restartPolicyType = "always"
 healthcheckPath = "/health"
-healthcheckTimeout = 30
+healthcheckTimeout = 60
 
 # Volume mount: in Railway dashboard → Service → Volumes → Add Volume
 # Mount path: /data  (db.py auto-detects and uses /data/truman.db when /data exists)
