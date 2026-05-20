@@ -1949,6 +1949,14 @@ document.addEventListener('paste', async (e) => {
 let audioWs = null, audioCtx = null, micStream = null, processor = null;
 let isVoiceActive = false, reconnecting = false;
 const PLAYBACK_BUFFER_SEC = 0.20;
+// Reconnect backoff: 2s → 4s → 10s (cap). Resets on successful session.
+let _reconnectDelay = 2000;
+function _nextReconnectDelay() {
+  const d = _reconnectDelay;
+  _reconnectDelay = Math.min(_reconnectDelay * 2, 10000);
+  return d;
+}
+function _resetReconnectDelay() { _reconnectDelay = 2000; }
 
 async function startVoice() {
   if (isVoiceActive || reconnecting) return;
@@ -1964,6 +1972,7 @@ async function startVoice() {
     audioWs = new WebSocket(wsUrl);
     audioWs.binaryType = 'arraybuffer';
     audioWs.onopen = () => {
+      _resetReconnectDelay();   // successful connect — reset backoff
       isVoiceActive = true;
       voiceBtn.classList.add('listening');
       voiceBtn.title = 'tap to disconnect';
@@ -2037,13 +2046,16 @@ async function startVoice() {
       if (!isVoiceActive) return;
       stopVoice();
       reconnecting = true;
-      setTimeout(() => { reconnecting = false; startVoice(); }, 2000);
+      const delay = _nextReconnectDelay();
+      console.log(`[Voice] WS closed — reconnecting in ${delay}ms`);
+      setTimeout(() => { reconnecting = false; startVoice(); }, delay);
     };
   } catch(e) { stopVoice(); }
 }
 
 function stopVoice() {
   isVoiceActive = false; reconnecting = false;
+  _resetReconnectDelay();
   voiceBtn.classList.remove('listening');
   document.getElementById('mic-orb').classList.remove('active');
   setStatus('idle', 'idle');

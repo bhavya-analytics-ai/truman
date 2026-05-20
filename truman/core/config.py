@@ -127,5 +127,5 @@ os.environ["LANGCHAIN_API_KEY"]      = LANGCHAIN_API_KEY or ""
 SECURITY_QUESTION = "What's Om's birthdate?"
 SECURITY_ANSWERS  = ["2001", "january", "jan"]
 
-REALTIME_MODEL = "gpt-4o-mini-realtime-preview"
-REALTIME_VOICE = "ash"
+REALTIME_MODEL = os.getenv("REALTIME_MODEL", "gpt-4o-realtime-preview")
+REALTIME_VOICE = os.getenv("REALTIME_VOICE", "ash")

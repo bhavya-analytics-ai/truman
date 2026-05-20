@@ -177,7 +177,7 @@ async def _handle_events(ws):
                 print(f"[DB] start_session failed: {e}")
                 _session_id = None
             _last_activity = time.time()
-            print("[Realtime] Connected. Listening...")
+            print(f"[Realtime] ✓ Connected — model={REALTIME_MODEL} voice={REALTIME_VOICE}. Listening...")
             orb.set_state(orb.LISTENING)
 
         # ── User speaking → barge-in + cancel in-flight response
@@ -268,6 +268,8 @@ async def _handle_events(ws):
                 audio_out.put_nowait(audio)
             except queue.Full:
                 pass   # drop on backpressure
+            if _asst_last_audio_at == 0.0:
+                print("[Realtime] ✓ First audio.delta received — audio flowing to browser")
             _asst_last_audio_at = time.time()   # track when we last sent audio to speaker
             orb.set_state(orb.SPEAKING)
 
@@ -325,8 +327,13 @@ async def _handle_events(ws):
             # suppress harmless barge-in noise (cancel fired when nothing was playing)
             if isinstance(err, dict) and err.get("code") == "response_cancel_not_active":
                 pass
+            elif isinstance(err, dict) and err.get("code") == "model_not_found":
+                print(f"[Realtime Error] model_not_found: {err.get('message','')}")
+                print(f"[Realtime Error] → set REALTIME_MODEL env var to a valid model name")
             else:
-                print(f"[Realtime Error] {err}")
+                code = err.get("code", "?") if isinstance(err, dict) else "?"
+                msg  = err.get("message", str(err)) if isinstance(err, dict) else str(err)
+                print(f"[Realtime Error] code={code} msg={msg!r}")
 
 
 # ── Session config ────────────────────────────────────────────────────────────
@@ -419,9 +426,14 @@ async def _idle_watchdog(ws):
 async def _run_session():
     global _ws, _session_active, _last_activity
 
+    global _asst_last_audio_at
+    _asst_last_audio_at = 0.0   # reset so first-audio log fires on every new session
+
+    print(f"[Realtime] Connecting → model={REALTIME_MODEL} voice={REALTIME_VOICE}")
     try:
         async with websockets.connect(WS_URL, additional_headers=WS_HEADERS) as ws:
             _ws = ws
+            print(f"[Realtime] WebSocket open — waiting for session.created...")
 
             await ws.send(json.dumps({
                 "type": "session.update",
@@ -455,10 +467,10 @@ async def _run_session():
                 _idle_watchdog(ws),
             )
 
-    except websockets.exceptions.ConnectionClosed:
-        print("[Realtime] Connection closed.")
+    except websockets.exceptions.ConnectionClosed as e:
+        print(f"[Realtime] Connection closed (code={e.code} reason={e.reason!r})")
     except Exception as e:
-        print(f"[Realtime] Session error: {e}")
+        print(f"[Realtime] Session error: {type(e).__name__}: {e}")
     finally:
         global _session_id
         try:

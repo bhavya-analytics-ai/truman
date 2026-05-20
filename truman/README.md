@@ -10,7 +10,7 @@ Om's personal AI OS. Voice + text. Always on via Railway. Talks back, remembers 
 
 ## What Truman Does Today
 
-- **Voice chat** via OpenAI Realtime API (`gpt-4o-mini-realtime-preview`, voice `ash`). Session auto-starts when browser connects.
+- **Voice chat** via OpenAI Realtime API (`gpt-4o-realtime-preview`, voice `ash`). Session auto-starts when browser connects.
 - **Dashboard** at `/dashboard` — mobile-first chat UI. Text + voice unified. Voice turns show as chat bubbles. History loads from SQLite on page open.
 - **Browser-hosted audio** — mic + speaker in browser tab. WebRTC AEC. 200ms jitter buffer. Linear interpolation downsampling.
 - **Always-on Railway deploy** at `https://truman-production.up.railway.app`. Entry: `truman/main_cloud.py`. SQLite on persistent disk.
@@ -73,7 +73,7 @@ Mac Bridge (mac_bridge.py) — runs on Om's Mac:
   - open_login_browser: subprocess open + osascript activate → real Chrome opens visible
   - write_file: saves any content to Mac filesystem
 
-realtime.py — OpenAI Realtime WS (gpt-4o-mini-realtime-preview, voice only)
+realtime.py — OpenAI Realtime WS (gpt-4o-realtime-preview, voice only)
 model_router.py — 9 pools, sticky routing, session override, pipeline mode
 agent.py — LangGraph fallback handler, per-session history, attach handling
 ```
@@ -219,7 +219,7 @@ railway variables set KEY="value"
 ## Environment Variables
 
 ```
-OPENAI_API_KEY          voice only (gpt-4o-mini-realtime-preview)
+OPENAI_API_KEY          voice only (gpt-4o-realtime-preview)
 NVIDIA_API_KEY          primary text model provider (all pools)
 GROQ_API_KEY            optional pool fallback
 OPENROUTER_API_KEY      optional pool fallback
