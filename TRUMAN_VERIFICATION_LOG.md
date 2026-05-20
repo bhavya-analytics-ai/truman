@@ -434,3 +434,61 @@ Secondary issue: `git` was not installed in the Railway nixpacks build, causing 
 | `inspect_repo` → metadata/README, no clone | **PRODUCTION VERIFIED** |
 | Non-GitHub URL → LLM handles normally | **PRODUCTION VERIFIED** |
 | `git` installed on Railway (skill loads) | **PRODUCTION VERIFIED** |
+
+---
+
+## Voice-1 — Realtime Audio Output Restored
+
+### Evidence
+- **Date:** 2026-05-20
+- **Commit:** `580f2db` — "fix: restore realtime voice output"
+- **Files changed:** `truman/core/config.py`, `truman/voice/realtime.py`, `truman/voice/static/dashboard.html`, `truman/README.md`
+- **Railway var set:** `REALTIME_MODEL=gpt-4o-realtime-preview`
+
+### Root cause
+`REALTIME_MODEL` was hardcoded to `"gpt-4o-mini-realtime-preview"` in `config.py:130`.
+OpenAI returned `model_not_found` on every session attempt. Session auto-closed immediately.
+Browser `onclose` handler retried every 2s flat — infinite loop, no audio ever produced.
+Orb still reacted to mic because mic animation is browser-local (no backend dependency).
+
+### Evidence from Railway logs (pre-fix)
+```
+[Realtime] Session ON
+[Orb] Audio client connected (sole consumer)
+[Realtime Error] model_not_found: The model `gpt-4o-mini-realtime-preview` does not exist
+[Realtime] Connection closed.
+[Realtime] Session ON    ← 2s retry loop
+[Orb] Audio client connected (sole consumer)
+[Realtime] Connection closed.   ← repeats forever
+```
+
+### Changes
+| File | Change |
+|---|---|
+| `config.py` | `REALTIME_MODEL = os.getenv("REALTIME_MODEL", "gpt-4o-realtime-preview")` — env-driven, Railway override works |
+| `config.py` | `REALTIME_VOICE = os.getenv("REALTIME_VOICE", "ash")` — same pattern |
+| `realtime.py` | Log model+voice on connect, WebSocket open, session.created, first audio.delta |
+| `realtime.py` | `model_not_found` error gets specific actionable message |
+| `realtime.py` | `_asst_last_audio_at` reset per session so first-audio log fires every session |
+| `dashboard.html` | Reconnect backoff: 2s → 4s → 10s (cap). Resets on successful WS open and `stopVoice()` |
+| `README.md` | Updated model name references |
+
+### No remaining hardcoded model references
+`grep gpt-4o-mini-realtime-preview *.py *.html *.js *.toml` → 0 results in runtime files
+
+### Expected logs after fix (per session)
+```
+[Realtime] Connecting → model=gpt-4o-realtime-preview voice=ash
+[Realtime] WebSocket open — waiting for session.created...
+[Realtime] ✓ Connected — model=gpt-4o-realtime-preview voice=ash. Listening...
+[Realtime] ✓ First audio.delta received — audio flowing to browser
+```
+
+### Final classification
+| Area | Status |
+|---|---|
+| `model_not_found` error eliminated | **DEPLOYED** |
+| `REALTIME_MODEL` env-driven | **DEPLOYED** |
+| Reconnect backoff | **DEPLOYED** |
+| Logging clarity | **DEPLOYED** |
+| Voice roundtrip (speak → hear response) | **PENDING OM BROWSER TEST** |
