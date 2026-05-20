@@ -1379,6 +1379,37 @@ function renderUserText(text) {
     .replace(/\n/g, '<br>');
 }
 
+// Phase 1.9A — safe truman bubble renderer with guards
+function _renderTrumanBubble(bubbleEl, text) {
+  const full = text || '';
+
+  // Guard 1: detect leaked tool-call JSON in content
+  // (model output {"type":"function","name":"..."} as text instead of via tool_calls field)
+  const _TOOL_JSON_RE = /\{"type"\s*:\s*"function"|"name"\s*:\s*"[a-z_]{3,}"\s*,\s*"(?:arguments|parameters)"/i;
+  if (_TOOL_JSON_RE.test(full) && full.trim().startsWith('{')) {
+    bubbleEl.innerHTML = '<span style="color:var(--text3);font-size:12px;background:var(--bg3);' +
+      'padding:4px 10px;border-radius:6px;display:inline-block;border:1px solid var(--border2)">' +
+      '⚠️ tool-call text leaked — collapsed</span>';
+    return;
+  }
+
+  // Guard 2: max-length collapse for very long responses
+  const MAX = 2000;
+  if (full.length > MAX) {
+    const shortHtml = renderMarkdown(full.slice(0, MAX));
+    bubbleEl.innerHTML = shortHtml;
+    const btn = document.createElement('span');
+    btn.style.cssText = 'cursor:pointer;color:var(--accent2);font-size:12px;' +
+      'display:block;margin-top:8px;user-select:none';
+    btn.textContent = '▼ show more (' + full.length + ' chars)';
+    btn.onclick = () => { bubbleEl.innerHTML = renderMarkdown(full); };
+    bubbleEl.appendChild(btn);
+    return;
+  }
+
+  bubbleEl.innerHTML = renderMarkdown(full);
+}
+
 // ── Timestamp helper ──────────────────────────────────────────────────────────
 function _nowTs() {
   return new Date().toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
@@ -1398,11 +1429,12 @@ function _renderAttachments(text) {
     (_, fname, aid) => {
       return `<div style="margin:4px 0"><a href="/api/attachments/${aid}" download="${fname}" style="color:var(--accent2);font-size:13px;text-decoration:none">📄 ${fname} <span style="font-size:10px;opacity:0.6">(download)</span></a></div>`;
     });
-  // Legacy — no attach_id (old messages): just show icon + filename
-  text = text.replace(/\[Image:\s*([^\]]+)\]/gi, (_, fname) =>
-    `<span style="font-size:13px">🖼 ${fname} <span style="font-size:10px;opacity:0.5">(image — refresh to see)</span></span>`);
-  text = text.replace(/\[File:\s*([^\]]+)\]/gi, (_, fname) =>
-    `<span style="font-size:13px">📄 ${fname}</span>`);
+  // Legacy — no attach_id (old messages): show icon + filename, consume trailing body text
+  // Phase 1.9A: ([\s\S]*?) consumes extracted file content so it doesn't dump into chat
+  text = text.replace(/\[Image:\s*([^\]|]+)\]([\s\S]*?)(?=\[(?:File|Image):|$)/gi, (_, fname) =>
+    `<span style="font-size:13px">🖼 ${fname.trim()} <span style="font-size:10px;opacity:0.5">(image — refresh to see)</span></span>`);
+  text = text.replace(/\[File:\s*([^\]|]+)\]([\s\S]*?)(?=\[(?:File|Image):|$)/gi, (_, fname) =>
+    `<span style="font-size:13px">📄 ${fname.trim()}</span>`);
   return text;
 }
 
@@ -1415,7 +1447,7 @@ function addMsg(role, text, meta) {
   bubble.className = 'bubble';
 
   if (role === 'truman') {
-    bubble.innerHTML = renderMarkdown(text || '');
+    _renderTrumanBubble(bubble, text);
   } else {
     // user messages: check for attachment markers first
     const hasAttach = text && (text.includes('[Image:') || text.includes('[File:'));
@@ -1637,8 +1669,8 @@ async function send() {
       return;
     }
 
-    // Replace raw streamed text with full markdown render
-    streamBubble.innerHTML = renderMarkdown(fullText);
+    // Replace raw streamed text with full markdown render (with Phase 1.9A guards)
+    _renderTrumanBubble(streamBubble, fullText);
 
     // Append meta badges
     if (finalMeta) {

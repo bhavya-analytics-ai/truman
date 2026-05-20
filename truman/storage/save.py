@@ -5,8 +5,23 @@ chat() calls enqueue_save() and returns immediately. A single daemon thread
 persists turns and runs eval in the background. Never blocks the reply.
 """
 import queue
+import re as _re
 import threading
 from typing import Any
+
+
+def _strip_file_content(text: str) -> str:
+    """Defense-in-depth: strip file body text from user_input before DB write.
+    Should already be stripped by chat.py, but catches any path that bypasses it."""
+    if not text or ("[File:" not in text and "[Image:" not in text):
+        return text
+    cleaned = _re.sub(
+        r'(\[(?:File|Image):[^\]]*\])\n[\s\S]*?(?=\[(?:File|Image):|$)',
+        r'\1',
+        text,
+        flags=_re.IGNORECASE,
+    )
+    return cleaned.strip() or text
 
 _QUEUE: "queue.Queue[dict | None]" = queue.Queue()
 _STARTED = False
@@ -28,8 +43,11 @@ def _persist_turn(turn: dict[str, Any]) -> None:
         from truman.storage import db
         # session_id from chat() is a string (e.g. "default") — resolve to int
         session_int = db.get_or_create_session(session_id)
-        db.log_turn(session_int, "user", user_input)
-        db.log_turn(session_int, "assistant", response)
+        # Phase 1.9A: strip file body (defense-in-depth — chat.py should already do this)
+        db.log_turn(session_int, "user", _strip_file_content(user_input))
+        # Phase 1.9A: skip empty responses — empty string would fail NIM on next turn
+        if response and response.strip():
+            db.log_turn(session_int, "assistant", response)
         # Write a synthetic trace event so the activity panel shows this turn
         latency_ms = turn.get("latency_ms", 0)
         tool_calls = turn.get("tool_calls", [])

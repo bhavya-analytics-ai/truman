@@ -7,6 +7,7 @@ no mood classifier, no per-turn DB load.
 
 Save + eval run in background — reply ships immediately.
 """
+import re as _re
 import time
 from collections import defaultdict
 from typing import Iterator
@@ -20,9 +21,37 @@ _HISTORY: dict[str, list[dict]] = defaultdict(list)
 _HISTORY_WINDOW = 16
 
 
+def _strip_file_content(text: str) -> str:
+    """Strip extracted file/image body text after attachment markers, keeping only the token.
+
+    [File: name|attach:ID]\\nFULL TEXT...  → [File: name|attach:ID]
+    [Image: name|attach:ID]\\nDESCRIPTION  → [Image: name|attach:ID]
+    Legacy [File: name]\\nFULL TEXT...     → [File: name]
+    Normal messages with no markers        → unchanged
+
+    Used before storing to _HISTORY or DB so future turns don't carry 30K of context.
+    The CURRENT turn still passes full user_input to the LLM for comprehension.
+    """
+    if not text or ("[File:" not in text and "[Image:" not in text):
+        return text
+    # Consume everything after each marker up to the next marker or end of string
+    cleaned = _re.sub(
+        r'(\[(?:File|Image):[^\]]*\])\n[\s\S]*?(?=\[(?:File|Image):|$)',
+        r'\1',
+        text,
+        flags=_re.IGNORECASE,
+    )
+    return cleaned.strip() or text
+
+
 def _build_messages(user_input: str, session_id: str) -> list[dict]:
     msgs = [{"role": "system", "content": get_system_prompt()}]
-    msgs.extend(_HISTORY[session_id][-_HISTORY_WINDOW:])
+    # Phase 1.9A: skip history entries with empty/whitespace content — NIM 400 guard
+    clean_history = [
+        m for m in _HISTORY[session_id][-_HISTORY_WINDOW:]
+        if (m.get("content") or "").strip()
+    ]
+    msgs.extend(clean_history)
     msgs.append({"role": "user", "content": user_input})
     return msgs
 
@@ -50,9 +79,11 @@ def chat(user_input: str, session_id: str = "default", pool: str | None = None) 
     latency_ms = int((time.time() - t0) * 1000)
     response = (raw or "").strip()
 
-    # Update in-memory history
-    _HISTORY[session_id].append({"role": "user", "content": user_input})
-    _HISTORY[session_id].append({"role": "assistant", "content": response})
+    # Phase 1.9A: store only marker tokens in history (no 30K file bodies)
+    _HISTORY[session_id].append({"role": "user", "content": _strip_file_content(user_input)})
+    # Only store non-empty responses — empty strings cause NIM 400 on next turn
+    if response:
+        _HISTORY[session_id].append({"role": "assistant", "content": response})
     if len(_HISTORY[session_id]) > _HISTORY_WINDOW * 2:
         _HISTORY[session_id] = _HISTORY[session_id][-(_HISTORY_WINDOW * 2):]
 
@@ -60,7 +91,7 @@ def chat(user_input: str, session_id: str = "default", pool: str | None = None) 
 
     enqueue_save({
         "session_id": session_id,
-        "user_input": user_input,
+        "user_input": _strip_file_content(user_input),  # strip file body before DB write
         "response": response,
         "model": model_label,
         "pool": chosen_pool,
@@ -123,9 +154,11 @@ def chat_stream(user_input: str, session_id: str = "default", pool: str | None =
     response  = "".join(full_response).strip()
     latency_ms = int((_time.time() - t0) * 1000)
 
-    # Update in-memory history
-    _HISTORY[session_id].append({"role": "user",      "content": user_input})
-    _HISTORY[session_id].append({"role": "assistant",  "content": response})
+    # Phase 1.9A: store only marker tokens in history (no 30K file bodies)
+    _HISTORY[session_id].append({"role": "user",     "content": _strip_file_content(user_input)})
+    # Only store non-empty responses — empty strings cause NIM 400 on next turn
+    if response:
+        _HISTORY[session_id].append({"role": "assistant", "content": response})
     if len(_HISTORY[session_id]) > _HISTORY_WINDOW * 2:
         _HISTORY[session_id] = _HISTORY[session_id][-(_HISTORY_WINDOW * 2):]
 
@@ -134,7 +167,7 @@ def chat_stream(user_input: str, session_id: str = "default", pool: str | None =
 
     enqueue_save({
         "session_id": session_id,
-        "user_input": user_input,
+        "user_input": _strip_file_content(user_input),  # strip file body before DB write
         "response":   response,
         "model":      model_label,
         "pool":       chosen_pool,
