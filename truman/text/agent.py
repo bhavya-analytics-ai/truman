@@ -818,6 +818,30 @@ def run(user_input: str, mood: str = "", pool: str | None = None, session_id: st
     """
     use_claude_shape = _os.environ.get("ENABLE_CLAUDE_SHAPE", "1") == "1"
 
+    # Phase 2.0B: skill pre-check — intercept before LLM/tool planner fires.
+    # detect_skill() runs keyword matching only (no LLM call, no network).
+    # If it returns a match, route directly and bypass the tool planner entirely.
+    # This prevents the LLM from auto-calling scrape_site on bare GitHub URLs.
+    if _os.environ.get("ENABLE_MCP", "1") == "1":
+        try:
+            from truman.skills.registry import detect_skill as _detect_skill, route as _route
+            _skill_name, _tool_name = _detect_skill(user_input)
+            if _skill_name and _tool_name:
+                _skill_result = _route(_skill_name, _tool_name, user_input)
+                print(f"[skill-intercept] {_skill_name}.{_tool_name} → intercepted before LLM")
+                return {
+                    "response":    _skill_result,
+                    "model":       "skill",
+                    "pool":        "skill",
+                    "tool_calls":  [{"name": f"{_skill_name}.{_tool_name}"}],
+                    "mood":        "neutral",
+                    "warnings":    [],
+                    "skill":       _skill_name,
+                    "attachments": [],
+                }
+        except Exception as _se:
+            print(f"[skill-intercept] error (skipping): {type(_se).__name__}: {_se}")
+
     # Claude-shape: one LLM call, tools fire natively. Multimodal still uses LangGraph.
     if use_claude_shape and not (attach_ids or []):
         try:
