@@ -37,10 +37,22 @@ def detect_skill(user_input: str) -> tuple[str | None, str | None]:
     _load_skills()
     text = user_input.lower()
 
-    # GitHub: ingest URL
-    if "github.com/" in text:
-        if "github" in _SKILLS:
+    # GitHub: URL detected — route by EXPLICIT intent keyword.
+    # Phase 2.0A: never auto-ingest on bare URL paste — ask intent first.
+    if "github.com/" in text and "github" in _SKILLS:
+        # Explicit clone/learn/ingest request → ingest_repo (still needs confirmed=True inside)
+        if any(k in text for k in ("clone", "ingest", "learn this repo", "learn the repo",
+                                    "add this repo", "index this repo", "index the repo",
+                                    "add as skill", "register this repo")):
             return "github", "ingest_repo"
+        # Explicit inspect-only request → metadata + README, no clone
+        if any(k in text for k in ("inspect", "what is this repo", "tell me about this repo",
+                                    "about this repo", "what does this repo", "summarize this repo",
+                                    "describe this repo", "show me this repo", "info on this repo",
+                                    "what's this repo", "whats this repo")):
+            return "github", "inspect_repo"
+        # Bare URL with no action keyword → ask intent, do nothing else
+        return "github", "ask_intent"
 
     # GitHub: list all repos Truman knows
     if any(k in text for k in ("list repos", "what repos", "which repos", "repos you know",

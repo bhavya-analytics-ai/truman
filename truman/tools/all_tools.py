@@ -528,7 +528,8 @@ def scrape_site(url: str) -> str:
     """Scrape and read ANY website including auth-walled ones (LinkedIn, Twitter, Instagram, Reddit, Facebook).
     Uses Om's real Chrome cookies via Mac bridge for authenticated sites.
     Falls back to Firecrawl for public sites when Mac is offline.
-    Use when Om pastes a URL or says 'scrape this', 'read this', 'get content from'."""
+    Use ONLY when Om explicitly says 'scrape', 'read this page', 'crawl', or 'get content from this URL'.
+    Do NOT call this just because a URL appears in the message — wait for an explicit instruction."""
     if not os.environ.get("ENABLE_WEB_INTEL", "1") == "1":
         return "web intel is disabled (ENABLE_WEB_INTEL=0)."
 

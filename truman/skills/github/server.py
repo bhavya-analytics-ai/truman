@@ -38,7 +38,9 @@ class GitHubSkill(SkillBase):
 
     def list_tools(self) -> list[dict]:
         return [
-            {"name": "ingest_repo",    "description": "Clone a GitHub repo and ingest into concept graph", "args": ["url"]},
+            {"name": "ask_intent",     "description": "Ask what to do with a pasted GitHub URL — shown on bare URL, no clone", "args": ["url"]},
+            {"name": "inspect_repo",   "description": "Fetch repo metadata + README from GitHub API without cloning", "args": ["url"]},
+            {"name": "ingest_repo",    "description": "Clone a GitHub repo and ingest (requires confirmed=True)", "args": ["url", "confirmed"]},
             {"name": "list_repos",     "description": "List all repos Truman has ingested", "args": []},
             {"name": "list_repo",      "description": "List files in a specific cloned repo", "args": ["repo_name"]},
             {"name": "read_file",      "description": "Read a file from a cloned repo", "args": ["repo_name", "path"]},
@@ -48,7 +50,12 @@ class GitHubSkill(SkillBase):
     def call(self, tool_name: str, **kwargs) -> str:
         try:
             ui = kwargs.get("user_input", "")
-            if tool_name == "ingest_repo":    return self._ingest(self._extract_url(ui, kwargs.get("url", "")))
+            url = self._extract_url(ui, kwargs.get("url", ""))
+            # Phase 2.0A: new safe-first tools
+            if tool_name == "ask_intent":     return self._ask_intent_response(url)
+            if tool_name == "inspect_repo":   return self._inspect_repo(url)
+            # ingest_repo requires confirmed=True — never auto-starts
+            if tool_name == "ingest_repo":    return self._ingest(url, confirmed=kwargs.get("confirmed", False))
             if tool_name == "list_repos":     return self._list_repos()
             if tool_name == "list_repo":      return self._list_repo(kwargs.get("repo_name") or self._guess_repo(ui), subdir=self._guess_subdir(ui))
             if tool_name == "read_file":      return self._read(kwargs.get("repo_name") or self._guess_repo(ui), kwargs.get("path") or self._guess_path(ui))
@@ -69,6 +76,10 @@ class GitHubSkill(SkillBase):
 
     def _clone_path(self, repo_name: str) -> str:
         return os.path.join(_REPOS_DIR, repo_name)
+
+    def _sandbox_path(self, repo_name: str) -> str:
+        """Display-friendly sandbox path shown in confirmation prompts."""
+        return self._clone_path(repo_name)
 
     def _guess_repo(self, user_input: str) -> str:
         """Try to find a repo name mentioned in the user message."""
@@ -116,11 +127,71 @@ class GitHubSkill(SkillBase):
             return "README.md"
         return "README.md"
 
-    def _ingest(self, url: str) -> str:
+    def _ask_intent_response(self, url: str) -> str:
+        """Phase 2.0A: shown when a GitHub URL is pasted without an explicit action keyword."""
+        repo_name = self._repo_name(url) if url else "unknown"
+        return (
+            f"github URL detected: **{repo_name}**\n\n"
+            f"what do you want to do?\n"
+            f"  a) **inspect** — fetch metadata + README, no clone\n"
+            f"  b) **clone and learn** — clone repo, index patterns as a Truman skill\n"
+            f"  c) **install CLI** — clone, detect package manager, propose install plan\n"
+            f"  d) **ignore** — treat as plain text / just discuss it\n\n"
+            f"reply with a, b, c, or d — or just say what you want."
+        )
+
+    def _inspect_repo(self, url: str) -> str:
+        """Fetch GitHub API metadata + README without cloning anything."""
+        import re as _re
+        m = _re.match(r"https?://github\.com/([\w\-\.]+)/([\w\-\.]+)", url or "")
+        if not m:
+            return f"[github] can't parse repo URL: {url!r}"
+        owner, repo = m.group(1), m.group(2).replace(".git", "")
+        meta: dict = {}
+        try:
+            import requests as _req
+            api = _req.get(
+                f"https://api.github.com/repos/{owner}/{repo}",
+                headers={"Accept": "application/vnd.github.v3+json"},
+                timeout=8,
+            )
+            if api.ok:
+                meta = api.json()
+        except Exception as e:
+            meta = {"_error": str(e)}
+        readme = ""
+        try:
+            import requests as _req2
+            r = _req2.get(
+                f"https://raw.githubusercontent.com/{owner}/{repo}/HEAD/README.md",
+                timeout=8,
+            )
+            if r.ok:
+                readme = r.text[:3000]
+        except Exception:
+            pass
+        lines = [f"**{owner}/{repo}**"]
+        if meta.get("description"):      lines.append(f"description : {meta['description']}")
+        if meta.get("language"):         lines.append(f"language    : {meta['language']}")
+        if meta.get("stargazers_count") is not None:
+                                         lines.append(f"stars       : {meta['stargazers_count']}")
+        if meta.get("size"):             lines.append(f"size        : ~{meta['size']} KB")
+        if meta.get("license") and meta["license"].get("name"):
+                                         lines.append(f"license     : {meta['license']['name']}")
+        if meta.get("topics"):           lines.append(f"topics      : {', '.join(meta['topics'][:8])}")
+        if meta.get("_error"):           lines.append(f"(GitHub API unreachable: {meta['_error']})")
+        if readme:
+            lines.append(f"\n**README (first 3000 chars):**\n{readme}")
+        elif not meta or meta.get("_error"):
+            lines.append("(README not fetched — GitHub API may be rate-limited)")
+        lines.append("\nto clone and learn this repo, say **clone this repo** or **learn this repo**.")
+        return "\n".join(lines)
+
+    def _ingest(self, url: str, confirmed: bool = False) -> str:
         """
-        Fire-and-forget: spawn a background thread to clone + ingest.
-        Returns immediately so chat doesn't hang on slow clones.
-        Status visible via list_repos and events drawer.
+        Phase 2.0A: requires confirmed=True to start clone.
+        Without confirmation, returns a description of what will happen and asks for explicit consent.
+        Only confirmed=True spawns the background clone thread.
         """
         if not url:
             return "[github] no URL found"
@@ -128,6 +199,19 @@ class GitHubSkill(SkillBase):
             return f"[github] not a GitHub URL: {url}"
 
         repo_name = self._repo_name(url)
+        sandbox   = self._sandbox_path(repo_name)
+
+        if not confirmed:
+            return (
+                f"**clone + learn: {repo_name}**\n\n"
+                f"what will happen:\n"
+                f"  1. git clone --depth=1 {url}\n"
+                f"     → into: {sandbox}\n"
+                f"  2. read up to {_MAX_INGEST_FILES} text files\n"
+                f"  3. LLM extracts key patterns → stored in learned_skills table\n\n"
+                f"reply **confirm clone** to proceed, or **cancel** to stop."
+            )
+
         import threading
         threading.Thread(target=self._ingest_worker, args=(url, repo_name), daemon=True).start()
         return f"started cloning {repo_name} in background. ask me 'list repos' in a couple minutes — when it shows up there, i've fully ingested it."
