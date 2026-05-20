@@ -54,8 +54,11 @@ def _persist_turn(turn: dict[str, Any]) -> None:
         from truman.storage import db
         # session_id from chat() is a string (e.g. "default") — resolve to int
         session_int = db.get_or_create_session(session_id)
-        # Phase 1.9A: strip file body (defense-in-depth — chat.py should already do this)
-        db.log_turn(session_int, "user", _strip_file_content(user_input))
+        # Phase 1.9C: user_input is already stripped by chat.py before enqueue_save.
+        # Calling _strip_file_content again here caused double-strip: the 1.9B-preserved
+        # instruction (\n\nInstruction) was stripped back to just the marker because
+        # the second pass sees body="\nInstruction" (no \n\n) and returns marker only.
+        db.log_turn(session_int, "user", user_input)
         # Phase 1.9A: skip empty responses — empty string would fail NIM on next turn
         if response and response.strip():
             db.log_turn(session_int, "assistant", response)
