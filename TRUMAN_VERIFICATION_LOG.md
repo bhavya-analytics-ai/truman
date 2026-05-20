@@ -379,3 +379,58 @@ Diagnosis: model is verbose (4002 chars for 5-step plan vs llama70's 1943 chars)
 | `scrape_site` URL-paste trigger removed | **LOCAL VERIFIED** |
 
 **Note:** Full production test of `ask_intent` path requires `ENABLE_MCP_GITHUB=1`. Set it back to 1 once Om is ready to test the full confirmation flow end-to-end.
+
+---
+
+## Phase 2.0B — detect_skill Wired into Claude-Shape Production Path
+
+### Evidence
+- **Date:** 2026-05-20
+- **Commits:** `e948d05` (agent.py intercept), `2be0e75` (nixpacks git), `bfXXXXX` (log)
+- **Files changed:** `truman/text/agent.py`, `nixpacks.toml`
+- **Railway flags:** `ENABLE_MCP_GITHUB=1`, `ENABLE_MCP=1`
+
+### Problem fixed
+`detect_skill()` was only wired into the LangGraph path (`brain/nodes.py`). Production uses claude-shape (`ENABLE_CLAUDE_SHAPE=1`), which skipped skill detection entirely. The LLM was deciding what to do with GitHub URLs and called `scrape_site` on bare URL paste. The Phase 2.0A registry/server fixes had no effect on production.
+
+Secondary issue: `git` was not installed in the Railway nixpacks build, causing `shutil.which("git") is not None` to fail in `GitHubSkill.is_available()`, so the skill never loaded on Railway.
+
+### Changes
+| File | Change |
+|---|---|
+| `truman/text/agent.py` | Added skill pre-check block (24 lines) at top of `run()` — calls `detect_skill()` + `route()` before LLM/tool planner fires; guarded by `ENABLE_MCP` kill switch; fails soft on exception |
+| `nixpacks.toml` | Added `[phases.setup] nixPkgs = ["git"]` so `git` is available on Railway |
+
+### Local tests (7/7 PASS)
+| Test | Result |
+|---|---|
+| A: bare URL → `ask_intent` | ✅ PASS |
+| B: clone intent → `ingest_repo` (confirmation prompt) | ✅ PASS |
+| C: inspect intent → `inspect_repo` route | ✅ PASS |
+| D: non-GitHub URL → no intercept | ✅ PASS |
+| E: normal message → no intercept | ✅ PASS |
+| F: `agent.run()` never calls `ingest_repo` directly | ✅ PASS |
+| G: `ENABLE_MCP=0` guard present in `run()` | ✅ PASS |
+
+### Production tests (4/4 PASS)
+| Test | Result | Evidence |
+|---|---|---|
+| A: bare URL → `ask_intent` | ✅ PASS | `"skill":"github"`, `"model":"skill"`, intent menu in response |
+| B: clone intent → confirmation prompt, no clone | ✅ PASS | `"skill":"github"`, `"confirm clone"` in response, no thread |
+| C: inspect → metadata + README, no clone | ✅ PASS | `"skill":"github"`, 30k stars/Apache license/topics returned |
+| D: non-GitHub URL → normal LLM flow | ✅ PASS | `"skill":""`, `"model":"llama3.3-70b"`, `web_search` called |
+
+### Verified: no auto-clone possible
+- `skill:github` + `model:skill` confirms intercept fired before LLM
+- `ingest_repo` path still requires `confirmed=True` (Phase 2.0A gate intact)
+- No `memory_repos` row created for any test session
+- No `git clone` log lines in Railway logs
+
+### Final classification
+| Area | Status |
+|---|---|
+| Bare URL → `ask_intent` (claude-shape path) | **PRODUCTION VERIFIED** |
+| Clone intent → confirmation prompt only | **PRODUCTION VERIFIED** |
+| `inspect_repo` → metadata/README, no clone | **PRODUCTION VERIFIED** |
+| Non-GitHub URL → LLM handles normally | **PRODUCTION VERIFIED** |
+| `git` installed on Railway (skill loads) | **PRODUCTION VERIFIED** |
