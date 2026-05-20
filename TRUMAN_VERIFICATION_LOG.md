@@ -125,3 +125,124 @@
 |---|---|---|---|
 | Export returns full structured JSON | BROKEN | PARTIAL | Logic fixed + simulated. Needs live test to VERIFIED. |
 | Attachment metadata in export | BROKEN | PARTIAL | parseAttachmentsFromContent() added, tested against real DB token |
+
+---
+
+## Phase 1.5 — Railway POOL_* Env Vars Update
+
+### Evidence
+- **Date:** 2026-05-17
+- **Git commit:** env var change only (no code commit)
+- **File changed:** Railway env vars only
+
+### What was changed
+| Variable | Before | After |
+|---|---|---|
+| POOL_GENERAL | 5 models (kimi DEAD, step BROKEN) | 3 models: nemotron-49b, llama3.3-70b, nemotron-nano |
+| POOL_CODING | 3 models (kimi DEAD) | 2 models: qwen3-coder-480b, llama3.3-70b |
+| POOL_REASONING | 2 models (kimi-think DEAD) | 2 models: qwen3-coder-480b, nemotron-49b |
+| POOL_AGENTIC | 3 models (kimi DEAD) | 2 models: qwen3-coder-480b, llama3.3-70b |
+| POOL_VISION | 3 models (scout 404) | 2 models: llama3.2-90b-vision, llama4-maverick |
+| POOL_DOCS | 3 models (kimi DEAD) | 2 models: llama4-maverick, llama3.3-70b |
+
+### Critical Finding
+Railway POOL_* env vars are only read by `model_router.py` (LangGraph path, ENABLE_CLAUDE_SHAPE=0).
+Default production path is ENABLE_CLAUDE_SHAPE=1 (claude-shape) → uses `_POOL_CHAT_MODELS` in `agent.py` (hardcoded).
+Env var update had zero effect on default production chat. Code fix required → Phase 1.6.
+
+### Status: PARTIAL
+- LangGraph path: FIXED (env vars correct)
+- Claude-shape path: unchanged until Phase 1.6
+
+---
+
+## Phase 1.6 — Claude-shape Hardcoded Model Pool Fix
+
+### Evidence
+- **Date:** 2026-05-17
+- **Git commits:** a66f82a (initial fix), 20827c9 (demote nemotron-49b)
+- **File changed:** `truman/text/agent.py` lines 234–255
+
+### What was changed
+`_CHAT_MODELS` and `_POOL_CHAT_MODELS` in `truman/text/agent.py`:
+
+| Pool | Before | After |
+|---|---|---|
+| general | llama70 → kimi-k2 (DEAD) | llama3.3-70b → nemotron-nano |
+| reasoning | kimi-k2 (DEAD) → llama70 | qwen3-coder → llama3.3-70b |
+| coding | kimi-k2 (DEAD) → step-flash (BROKEN) | qwen3-coder → llama3.3-70b |
+| agentic | kimi-k2 (DEAD) → step-flash (BROKEN) | qwen3-coder → llama3.3-70b |
+| docs | llama70 → kimi-k2 (DEAD) | llama4-maverick → llama3.3-70b |
+| vision | llama3.2-90b-vision → scout (404) | llama3.2-90b-vision → llama4-maverick |
+
+### Discovery: nemotron-49b streaming incompatibility
+nemotron-super-49b tested: TTFT=0.6s but total stream=51.8s for substantive prompts.
+Production streaming timeout is 12-18s → first content token arrives after timeout → empty responses.
+Demoted from primary to removed entirely from claude-shape path.
+Diagnosis: model is verbose (4002 chars for 5-step plan vs llama70's 1943 chars) with slow generation.
+
+### Removed dead/broken models
+- `moonshotai/kimi-k2-instruct` (410 EOL) — removed from all pools
+- `stepfun-ai/step-3.5-flash` (content=None) — removed from all pools
+- `meta/llama-4-scout-17b-16e-instruct` (404) — removed from vision fallback
+- `nvidia/llama-3.3-nemotron-super-49b-v1` (streaming timeout) — removed from claude-shape path
+
+### Production test results (Railway, commit 20827c9)
+| ID | Prompt | Model | Pool | Latency | Fallback | Status |
+|---|---|---|---|---|---|---|
+| A | yo | llama3.3-70b | general | 1.50s | no | ✅ OK |
+| B | give me a one sentence status check | llama3.3-70b | general | 9.83s | no | ✅ OK |
+| C | write a tiny Python function that adds two numbers | llama3.3-70b | general | 6.01s | no | ✅ OK |
+| D | make a 5 step plan to verify storage | llama3.3-70b | general | 4.02s | no | ✅ OK |
+| E | what can you do with files? | llama3.3-70b | general | 5.53s | no | ✅ OK |
+
+### Railway logs confirmation
+`[CHAT] model=llama3.3-70b  pool=general` — new model label visible in production logs.
+
+### Remaining model risks
+| Risk | Severity | Notes |
+|---|---|---|
+| POOL_CREATIVE, POOL_DESIGN still have dead kimi-k2-thinking | MEDIUM | Not in scope — LangGraph path only, rarely used |
+| POOL_FAST still has step-3.5-flash (broken) | MEDIUM | Not in scope — rarely triggered |
+| pool=general routes all test prompts (detect_pool not differentiating coding/reasoning prompts) | LOW | Intent detection logic separate issue — not broken |
+| llama4-maverick in POOL_DOCS has variable latency (1–6s) | LOW | Acceptable — fallback to llama3.3-70b works |
+
+### Status: VERIFIED
+- All 5 production tests passed
+- No empty responses
+- No fallbacks triggered
+- Dead/broken models removed from all production-active pools
+- Railway logs confirm new code running
+
+---
+
+## Phase 1.9A — Contain File and Tool Chat Pollution
+
+### Evidence
+- **Date:** 2026-05-19
+- **Git commit:** eb35499
+- **Files changed:** `truman/text/chat.py`, `truman/storage/save.py`, `truman/voice/static/dashboard.html`
+
+### Root causes fixed
+| Bug | Root Cause | Fix |
+|---|---|---|
+| File body injected into history | `_HISTORY` appended raw `user_input` including 30K file body | `_strip_file_content()` in `chat.py` — strips body, keeps `[File: name\|attach:ID]` token only |
+| File body written to DB turns | `save.py` called `db.log_turn()` with raw `user_input` | Defense-in-depth `_strip_file_content()` in `save.py` before `db.log_turn()` |
+| NIM 400 cascade on next turn | Empty `""` assistant response stored in `_HISTORY` → passed to NIM → rejected with `string_too_short` | `_build_messages()` filters entries where `content.strip()` is empty; empty responses never appended to `_HISTORY` |
+| Tool-call JSON leaked to chat bubble | LLM occasionally prefixes response with raw `{"type":"function",...}` JSON | `_renderTrumanBubble()` in `dashboard.html` detects and collapses fake JSON prefix; hard cap at 2000 chars with "show more" |
+
+### Unit tests (local, before commit)
+| Test | Result |
+|---|---|
+| `_strip_file_content` — 8 cases (bare file, attach token, image, multi-file, no marker, empty, only marker, legacy) | ✅ 8/8 pass |
+| `_renderTrumanBubble` JSON detection — 5 cases (json prefix, normal, empty, short, code block) | ✅ 5/5 pass |
+| Python compile — `chat.py`, `save.py` | ✅ clean |
+
+### Status: PARTIAL
+- Code complete, unit-tested, committed (eb35499)
+- Railway server down at time of commit — live production tests not run
+- **Pending tests (run after Railway comes back up):**
+  - Test A: send file attachment, verify DB `turns` stores only `[File: name|attach:ID]` not body
+  - Test B: send prompt that returns empty → send follow-up → confirm no NIM 400 in logs
+  - Test C: trigger tool call → confirm response renders cleanly in dashboard (no raw JSON bubble)
+  - Test D: send a 3000-char response → confirm "show more" collapse appears in dashboard
