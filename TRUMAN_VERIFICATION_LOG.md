@@ -241,8 +241,49 @@ Diagnosis: model is verbose (4002 chars for 5-step plan vs llama70's 1943 chars)
 ### Status: PARTIAL
 - Code complete, unit-tested, committed (eb35499)
 - Railway server down at time of commit — live production tests not run
+- Two gaps found during local verification → fixed in Phase 1.9B (see below)
 - **Pending tests (run after Railway comes back up):**
   - Test A: send file attachment, verify DB `turns` stores only `[File: name|attach:ID]` not body
   - Test B: send prompt that returns empty → send follow-up → confirm no NIM 400 in logs
   - Test C: trigger tool call → confirm response renders cleanly in dashboard (no raw JSON bubble)
   - Test D: send a 3000-char response → confirm "show more" collapse appears in dashboard
+
+---
+
+## Phase 1.9B — Harden Chat Pollution Guards
+
+### Evidence
+- **Date:** 2026-05-19
+- **Git commit:** daafac1
+- **Files changed:** `truman/text/chat.py`, `truman/storage/save.py`, `truman/voice/static/dashboard.html`
+
+### Gaps closed from Phase 1.9A
+| Gap | Root Cause | Fix |
+|---|---|---|
+| User instruction after file body was lost in stored history/DB | `_strip_file_content` replaced everything after marker with just the marker, discarding trailing instruction | Replacer now checks for `\n\n` boundary; instruction after blank line is preserved: `[File: x]\nBODY\n\nInstruction` → `[File: x]\n\nInstruction` |
+| Tool-call JSON leaked to chat bubble when preceded by prose | Guard 1 condition `full.trim().startsWith('{')` only caught bare JSON; `"I will do it:\n{...}"` slipped through | Removed `.startsWith('{')` — regex now runs `search()` over full text; `"type":"function"` specificity prevents false positives |
+
+### Unit tests (local, before commit)
+| Test | Result |
+|---|---|
+| A — file body stripped + instruction preserved (attach token) | ✅ PASS |
+| B — legacy file body stripped + instruction preserved | ✅ PASS |
+| C — no instruction present → only marker stored | ✅ PASS |
+| D — normal message unchanged | ✅ PASS |
+| EDGE — multi-file with mixed instruction / no-instruction | ✅ PASS |
+| E — bare fake tool JSON collapses | ✅ PASS |
+| F — prose prefix + JSON collapses (was leaking in 1.9A) | ✅ PASS |
+| G1 — normal JSON without tool signature does NOT collapse | ✅ PASS |
+| G2 — fenced Python dict does NOT collapse | ✅ PASS |
+| G3 — mid-text tool JSON after several lines collapses | ✅ PASS |
+| G4 — normal assistant message does NOT collapse | ✅ PASS |
+| Python compile — `chat.py`, `save.py` | ✅ clean |
+
+### Status: LOCAL VERIFIED
+- All 11 local tests pass
+- No false positives on non-tool JSON
+- Railway server down — production tests pending
+- **Pending tests (run after Railway comes back up):**
+  - Test A: send file + instruction, verify DB stores `[File: x]\n\nInstruction` not body
+  - Test B: trigger tool call with prose prefix → confirm bubble collapses in dashboard
+  - Test C: send normal message with JSON in response (e.g. code example) → confirm no collapse
